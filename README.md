@@ -4,6 +4,8 @@ Scapy-SSL/TLS
 Support for parsing SSL/TLS in Scapy (http://www.secdev.org/projects/scapy/).
 
 
+!! work in progress !!
+
 Installation
 --------
 1. deploy ssl_tls.py to ./scapy/layers
