@@ -24,8 +24,6 @@ Installation
 	<class 'scapy.layers.ssl_tls.TLSRecord'>
 	   
 ```
-Example
---------
 
 
 ## Output
@@ -45,6 +43,7 @@ Example
 
 
 ```
+
 
 ## Authors
 * tintinweb  ( http://oststrom.com  | http://github.com/tintinweb)
