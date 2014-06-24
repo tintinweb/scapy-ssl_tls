@@ -8,8 +8,9 @@ Support for parsing SSL/TLS in Scapy (http://www.secdev.org/projects/scapy/).
 
 Installation
 --------
-1. deploy ssl_tls.py to ./scapy/layers
-2. modify ./scapy/config.py to autoload this new layer
+1) deploy ssl_tls.py to ./scapy/layers
+
+2) modify ./scapy/config.py to autoload this new layer
 ```diff
 	config.py::Conf::load_layers 
 	375,376c375
@@ -17,8 +18,8 @@ Installation
 	<                    "ssl_tls", ]
 	---
 	>                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp"]
-```
-3. test
+ ```
+3) try it
 ```python
 	#> scapy
 	   
@@ -96,6 +97,26 @@ tls packet from example.py
 
 ```
 
+socket stream example:
+```
+import scapy
+from scapy.layers.ssl_tls import *
+
+import socket
+
+target = ('target.local',443)
+
+# create tcp socket
+s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+s.connect(target)
+
+p = TLSRecord(version="TLS_1_1")/TLSHeartBeat(length=2**14-1,data='bleed...')
+
+s.sendall(p)
+resp = s.recv(1024)
+print "resp: %s"%repr(resp)
+s.close()
+```
 
 ## Authors
 * tintinweb  ( http://oststrom.com  | http://github.com/tintinweb)
