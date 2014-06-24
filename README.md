@@ -98,7 +98,7 @@ tls packet from example.py
 ```
 
 socket stream example:
-```
+```python
 import scapy
 from scapy.layers.ssl_tls import *
 
