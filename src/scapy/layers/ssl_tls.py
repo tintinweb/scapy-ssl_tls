@@ -4,7 +4,7 @@
 # http://www.secdev.org/projects/scapy/doc/build_dissect.html
 from scapy.packet import Packet, bind_layers
 from scapy.fields import *
-from scapy.layers.inet import TCP
+from scapy.layers.inet import TCP, UDP
 import os, time
 
 class BLenField(LenField):
@@ -68,7 +68,13 @@ class XFieldLenField(FieldLenField):
 TLS_VERSIONS = {0x0300:"SSL_3_0",
                   0x0301:"TLS_1_0",
                   0x0302:"TLS_1_1",
-                  0x0303:"TLS_1_2"}
+                  0x0303:"TLS_1_2",
+                  
+                  0x0100:"PROTOCOL_DTLS_1_0_OPENSSL_PRE_0_9_8f",
+                  0xfeff:"DTLS_1_0",
+                  0xfefd:"DTLS_1_1",
+                  
+                  }
 
 TLS_CONTENT_TYPES = {0x14:"change_cipher_spec",
                         0x15:"alert",
@@ -200,7 +206,7 @@ class TLSRecord(Packet):
 class TLSHandshake(Packet):
     name = "TLS Handshake"
     fields_desc = [ByteEnumField("type", 0xff, TLS_HANDSHAKE_TYPES),
-                   XBLenField("length",None, fmt="!I", numbytes=3),]
+                   XBLenField("length",None, fmt="!I", numbytes=3, length_from=lambda x:x.payload),]
 
 
 class TLSServerName(Packet):
@@ -297,6 +303,50 @@ class TLSChangeCipherSpec(Packet):
 
 
 
+class DTLSRecord(Packet):
+    name = "DTLS Record"
+    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
+                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
+                   ShortField("epoch",None),
+                   XBLenField("sequence",None, fmt="!Q", numbytes=6),
+                   XLenField("length",None, fmt="!H"),]
+
+class DTLSHandshake(Packet):
+    name = "DTLS Handshake"
+    fields_desc = TLSHandshake.fields_desc+[
+                   ShortField("sequence",None),
+                   XBLenField("fragment_offset",None, fmt="!I", numbytes=3),
+                   XBLenField("length",None, fmt="!I", numbytes=3, length_from=lambda x:x.payload),
+                   ]
+
+class DTLSClientHello(Packet):
+    name = "DTLS Client Hello"
+    fields_desc = [XShortEnumField("version", 0xfeff, TLS_VERSIONS),
+                   IntField("gmt_unix_time",int(time.time())),
+                   StrFixedLenField("random_bytes",os.urandom(28),28),
+                   XFieldLenField("session_id_length",None,length_of="session_id",fmt="B"),
+                   StrLenField("session_id",'',length_from=lambda x:x.session_id_length),
+                   
+                   XFieldLenField("cookie_length",None,length_of="cookie",fmt="B"),
+                   StrLenField("cookie",'',length_from=lambda x:x.cookie_length),
+                   
+                   XFieldLenField("cipher_suites_length",None,length_of="cipher_suites",fmt="H"),
+                   FieldListField("cipher_suites",None,XShortEnumField("cipher",None,TLS_CIPHER_SUITES),length_from=lambda x:x.cipher_suites_length),
+                   
+                   XFieldLenField("compression_methods_length",None,length_of="compression_methods",fmt="B"),
+                   FieldListField("compression_methods",None,ByteEnumField("compression",None,TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
+                   
+                   XFieldLenField("extensions_length",None,length_of="extensions",fmt="H"),
+                   PacketListField("extensions",None,TLSExtension(), length_from=lambda x:x.extension_length),
+                   ]   
+    
+
+class DTLSHelloVerify(Packet):
+    name = "DTLS Hello Verify"
+    fields_desc = [XShortEnumField("version", 0xfeff, TLS_VERSIONS),
+                   XFieldLenField("cookie_length",None,length_of="cookie",fmt="B"),
+                   StrLenField("cookie",'',length_from=lambda x:x.cookie_length),
+                   ]
 # entry class
 class SSL(Packet):
     name = "SSL"
@@ -314,6 +364,7 @@ class SSL(Packet):
 
 # bind magic
 bind_layers(TCP, SSL, dport=443)
+bind_layers(UDP, SSL, dport=4433)
 bind_layers(TLSRecord, TLSAlert, {'content_type':0x15})
 
 
@@ -326,12 +377,7 @@ bind_layers(TLSHandshake,TLSCertificate, {'type':0x0b})
 
 # --> extensions
 bind_layers(TLSExtension,TLSServerNameIndication, {'type': 0x0000})
-
 # <--
 
 bind_layers(TLSRecord, TLSChangeCipherSpec, {'content_type':0x14})
 bind_layers(TLSRecord, TLSHeartBeat, {'content_type':0x18})
-
-
-
-
