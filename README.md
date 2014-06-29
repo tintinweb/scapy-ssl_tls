@@ -1,7 +1,8 @@
 Scapy-SSL/TLS
 =============
 
-Support for parsing SSL/TLS in Scapy (http://www.secdev.org/projects/scapy/).
+Support for parsing/building SSL/TLS and DTLS in Scapy (http://www.secdev.org/projects/scapy/).
+
 
 
 !! work in progress !!
