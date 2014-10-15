@@ -25,7 +25,8 @@ Installation
 	>                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp"]
  ```
 3) try it
-```#> scapy
+```python
+#> scapy
 	   
 	>>> TLSRecord
 	<class 'scapy.layers.ssl_tls.TLSRecord'>
