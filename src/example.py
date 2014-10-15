@@ -10,7 +10,7 @@ if __name__=="__main__":
     import socket
     
     
-    target = ('10.17.71.241',443)
+    target = ('www.remote.host',443)            # MAKE SURE TO CHANGE THIS
     
     # create tcp socket
     s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -19,8 +19,8 @@ if __name__=="__main__":
     # create TLS Handhsake / Client Hello packet
     p = TLSRecord(version='TLS_1_2')/ \
             TLSHandshake()/ \
-                TLSClientHello(compression_methods= [TLSCompressionMethod.NULL,TLSCompressionMethod.DEFLATE]+range(255),
-                               cipher_suites= [TLSCipherSuite.NULL_WITH_NULL_NULL]+range(0xff),
+                TLSClientHello(compression_methods= [TLSCompressionMethod.NULL,TLSCompressionMethod.DEFLATE]+range(255-2),
+                               cipher_suites= [TLSCipherSuite.NULL_WITH_NULL_NULL]+range(0xff-1),
                                extensions=[
                                        TLSExtension()/ \
                                             TLSServerNameIndication(server_names= [TLSServerName(data="a"*500,length=16),
