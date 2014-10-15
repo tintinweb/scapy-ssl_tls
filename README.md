@@ -52,7 +52,7 @@ Installation
 
 ```
 
-tls packet from example.py
+tls packet from example_client_hello_complex_invalid.py - contains invalid length fields and should raise TLSAlerts()
 ```python
 
 >>> p.show()
@@ -102,7 +102,7 @@ tls packet from example.py
 
 ```
 
-socket stream example:
+socket stream heartbleed example:
 ```python
 import scapy
 from scapy.layers.ssl_tls import *
@@ -122,6 +122,36 @@ resp = s.recv(1024)
 print "resp: %s"%repr(resp)
 s.close()
 ```
+
+socket stream valid client handshake allowing all ciphers/compressions.
+```python
+import scapy
+from scapy.layers.ssl_tls import *
+
+import socket
+
+
+target = ('www.remote.host',443)            # MAKE SURE TO CHANGE THIS
+
+# create tcp socket
+s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+s.connect(target)
+
+# create TLS Handhsake / Client Hello packet
+p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=range(0xff), cipher_suites=range(0xff))
+            
+p.show()
+
+
+print "sending TLS payload"
+s.sendall(str(p))
+resp = s.recv(1024)
+print "received, %s"%repr(resp)
+
+s.close()
+```
+
+
 
 ## Authors
 * tintinweb  ( http://oststrom.com  | http://github.com/tintinweb)

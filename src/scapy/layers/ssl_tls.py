@@ -108,7 +108,7 @@ TLS_EXTENSION_TYPES = {
 
 TLS_ALERT_LEVELS = { 0x01: "warning",
                      0x02: "fatal",
-                     0xff: "unknwon",}
+                     0xff: "unknown",}
 
 TLS_ALERT_DESCRIPTIONS = {    
                     0:"CLOSE_NOTIFY",
