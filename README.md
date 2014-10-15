@@ -5,7 +5,11 @@ Support for parsing/building SSL/TLS and DTLS in Scapy (http://www.secdev.org/pr
 
 
 
-!! work in progress !!
+!! work in progress !!   
+Please note that this code is highly experimental, do not expect everything to work and feel free to contribute:   
+* bugfixes   
+* new stuff   
+* tests   
 
 Installation
 --------
@@ -21,8 +25,7 @@ Installation
 	>                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp"]
  ```
 3) try it
-```python
-	#> scapy
+```#> scapy
 	   
 	>>> TLSRecord
 	<class 'scapy.layers.ssl_tls.TLSRecord'>
