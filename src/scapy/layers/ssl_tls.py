@@ -206,7 +206,7 @@ class TLSRecord(Packet):
 class TLSHandshake(Packet):
     name = "TLS Handshake"
     fields_desc = [ByteEnumField("type", 0xff, TLS_HANDSHAKE_TYPES),
-                   XBLenField("length",None, fmt="!I", numbytes=3, length_from=lambda x:x.payload),]
+                   XBLenField("length",None, fmt="!I", numbytes=3),]
 
 
 class TLSServerName(Packet):
@@ -316,7 +316,7 @@ class DTLSHandshake(Packet):
     fields_desc = TLSHandshake.fields_desc+[
                    ShortField("sequence",None),
                    XBLenField("fragment_offset",None, fmt="!I", numbytes=3),
-                   XBLenField("length",None, fmt="!I", numbytes=3, length_from=lambda x:x.payload),
+                   XBLenField("length",None, fmt="!I", numbytes=3),
                    ]
 
 class DTLSClientHello(Packet):
