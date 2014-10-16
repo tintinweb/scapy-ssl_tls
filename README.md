@@ -151,6 +151,44 @@ print "received, %s"%repr(resp)
 s.close()
 ```
 
+manually dissect the response as SSL()
+```python
+>>> SSL(resp).show()
+###[ SSL/TLS ]###
+  \records\
+   |###[ TLS Record ]###
+   |  content_type= handshake
+   |  version= TLS_1_0
+   |  length= 0x4a
+   |###[ TLS Handshake ]###
+   |     type= server_hello
+   |     length= 0x46
+   |###[ TLS Server Hello ]###
+   |        version= TLS_1_0
+   |        gmt_unix_time= 1413462175
+   |        random_bytes= '/\x91\x14O\xdd(/\x80<\xd5\xe4\xe4\x87Np\xdd\xb9-o\xd5\xf1d_\x96\x89\xad\x83\xcc'
+   |        session_id_length= 0x20
+   |        session_id= '\x89\xc7V\x0eyO9\xe4\xc0\x89\xfa\xe1,\xf2\xe4\xed?\xe5\xfd\xaa\xc4\x93\x00L\x9dG\x93 \xe8<H\x07'
+   |        cipher_suite= RSA_WITH_RC4_128_MD5
+   |        compression_method= DEFLATE
+   |        extensions_length= None
+   |        \extensions\
+   |###[ TLS Record ]###
+   |  content_type= handshake
+   |  version= TLS_1_0
+   |  length= 0x5d9
+   |###[ TLS Handshake ]###
+   |     type= certificate
+   |     length= 0x5d5
+   |###[ TLS Certificate List ]###
+   |        length= 0x5d2
+   |        \certificates\
+   |         |###[ TLS Certificate ]###
+   |         |  length= 0x5cf
+   |         |  data= '0\x82\x05\xcb0\x82\x03\xb3\xa0\x03...'...
+
+```
+
 
 
 ## Authors

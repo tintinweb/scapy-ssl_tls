@@ -219,7 +219,7 @@ class TLSServerName(Packet):
 class TLSServerNameIndication(Packet):
     name = "TLS Extension Servername Indication"
     fields_desc = [XFieldLenField("length",None,length_of="server_names",fmt="H"),
-                   PacketListField("server_names",None,TLSServerName(),length_from=lambda x:x.length),
+                   PacketListField("server_names",None,TLSServerName,length_from=lambda x:x.length),
                   ]
 
 class TLSExtension(Packet):
@@ -243,7 +243,7 @@ class TLSClientHello(Packet):
                    FieldListField("compression_methods",None,ByteEnumField("compression",None,TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
                    XFieldLenField("extensions_length",None,length_of="extensions",fmt="H"),
-                   PacketListField("extensions",None,TLSExtension(), length_from=lambda x:x.extension_length),
+                   PacketListField("extensions",None,TLSExtension, length_from=lambda x:x.extension_length),
                    ]
     
 class TLSServerHello(Packet):
@@ -258,7 +258,7 @@ class TLSServerHello(Packet):
                    ByteEnumField("compression_method", 0x00, TLS_COMPRESSION_METHODS),
 
                    XFieldLenField("extensions_length",None,length_of="extensions",fmt="H"),
-                   PacketListField("extensions",None,TLSExtension(), length_from=lambda x:x.extension_length),
+                   PacketListField("extensions",None,TLSExtension, length_from=lambda x:x.extension_length),
                    ]
 
 class TLSAlert(Packet):
@@ -294,13 +294,12 @@ class TLSCertificateList(Packet):
     name = "TLS Certificate List"
     fields_desc = [
                    XBLenField("length",None,length_of="certificates",fmt="!I", numbytes=3),
-                   PacketListField("certificates",None,TLSCertificate(), length_from=lambda x:x.length),
+                   PacketListField("certificates",None,TLSCertificate, length_from=lambda x:x.length),
                   ]   
 
 class TLSChangeCipherSpec(Packet):
     name = "TLS ChangeCipherSpec"
     fields_desc = [ StrField("message",None, fmt="H")]
-
 
 
 class DTLSRecord(Packet):
@@ -337,7 +336,7 @@ class DTLSClientHello(Packet):
                    FieldListField("compression_methods",None,ByteEnumField("compression",None,TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
                    XFieldLenField("extensions_length",None,length_of="extensions",fmt="H"),
-                   PacketListField("extensions",None,TLSExtension(), length_from=lambda x:x.extension_length),
+                   PacketListField("extensions",None,TLSExtension, length_from=lambda x:x.extension_length),
                    ]   
     
 
@@ -349,35 +348,66 @@ class DTLSHelloVerify(Packet):
                    ]
 # entry class
 class SSL(Packet):
-    name = "SSL"
-    def do_dissect(self, s):
+    '''
+    COMPOUND CLASS for SSL
+    '''
+    name = "SSL/TLS"
+    fields_desc = [PacketListField("records",None,TLSRecord)]
+    
+    def pre_dissect(self, s):
+        # figure out if we're UDP or TCP
+        
+        if self.underlayer and self.underlayer.haslayer(UDP):
+            self.guessed_next_layer = DTLSRecord
+        else:
+            self.guessed_next_layer = TLSRecord
+        self.fields_desc=[PacketListField("records",None,self.guessed_next_layer)]
         return s
 
-    def guess_payload_class(self, payload):
+    def do_dissect(self, s):
+        pos = 0
+        cls = self.guessed_next_layer                        # FIXME: detect DTLS
+        cls_len=len(cls())
         try:
-            raise
-        except:
+            while pos <=len(s):
+            # consume payloads and add them to records list
+                record = cls(s[pos:],_internal=1)         # FIXME: performance
+                layer_len = cls_len + record.length
+                if layer_len==None:
+                    break
+                record = cls(s[pos:pos+layer_len])
+                pos+=layer_len
+                #print pos,len(s)
+                self.records.append(record)
+        except Exception, e:
             pass
-        return Packet.guess_payload_class(self, payload)
-
+            #raise e
+        return s[pos:]
 
 
 # bind magic
 bind_layers(TCP, SSL, dport=443)
+bind_layers(TCP, SSL, sport=443)
 bind_layers(UDP, SSL, dport=4433)
-bind_layers(TLSRecord, TLSAlert, {'content_type':0x15})
+bind_layers(UDP, SSL, sport=4433)
 
+# TLSRecord
+bind_layers(TLSRecord, TLSChangeCipherSpec, {'content_type':0x14})
+bind_layers(TLSRecord, TLSHeartBeat, {'content_type':0x18})
+bind_layers(TLSRecord, TLSAlert, {'content_type':0x15})
 
 bind_layers(TLSRecord, TLSHandshake, {'content_type':0x16})
 # --> handshake proto
 bind_layers(TLSHandshake,TLSClientHello, {'type':0x01})
 bind_layers(TLSHandshake,TLSServerHello, {'type':0x02})
-bind_layers(TLSHandshake,TLSCertificate, {'type':0x0b})
+bind_layers(TLSHandshake,TLSCertificateList, {'type':0x0b})
 # <---
 
 # --> extensions
 bind_layers(TLSExtension,TLSServerNameIndication, {'type': 0x0000})
 # <--
 
-bind_layers(TLSRecord, TLSChangeCipherSpec, {'content_type':0x14})
-bind_layers(TLSRecord, TLSHeartBeat, {'content_type':0x18})
+
+# DTLSRecord
+bind_layers(DTLSRecord, DTLSHandshake, {'content_type':0x16})
+bind_layers(DTLSHandshake, DTLSClientHello, {'type':0x01})
