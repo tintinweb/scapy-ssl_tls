@@ -190,6 +190,36 @@ manually dissect the response as SSL()
 ```
 
 
+socket stream example to test remote implementations for protocol downgrading attemps (following latest SSL POODLE attacks) - example_ssl_tls_SCSV_fallback_test.py
+```python
+-----------------------
+for: ('www.google.com', 443)
+   record      hello   
+('TLS_1_2', 'TLS_1_2')  ... TLSServerHello:            outer TLS_1_2 inner TLS_1_2
+('TLS_1_2', 'TLS_1_1')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_1
+('TLS_1_2', 'TLS_1_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_0
+('TLS_1_2', 'SSL_3_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  SSL_3_0
+('TLS_1_1', 'TLS_1_2')  ... TLSServerHello:            outer TLS_1_2 inner TLS_1_2
+('TLS_1_1', 'TLS_1_1')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_1
+('TLS_1_1', 'TLS_1_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_0
+('TLS_1_1', 'SSL_3_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  SSL_3_0
+('TLS_1_0', 'TLS_1_2')  ... TLSServerHello:            outer TLS_1_2 inner TLS_1_2
+('TLS_1_0', 'TLS_1_1')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_1
+('TLS_1_0', 'TLS_1_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_0
+('TLS_1_0', 'SSL_3_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  SSL_3_0
+('SSL_3_0', 'TLS_1_2')  ... TLSServerHello:            outer TLS_1_2 inner TLS_1_2
+('SSL_3_0', 'TLS_1_1')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_1
+('SSL_3_0', 'TLS_1_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  TLS_1_0
+('SSL_3_0', 'SSL_3_0')  ... TLSAlert.INAPPROPRIATE_FALLBACK  SSL_3_0
+overall:
+    TLS_FALLBACK_SCSV_SUPPORTED   ...  True
+    TLS_FALLBACK_SCSV_OK          ...  False
+    SSLv3_ENABLED                 ...  True
+
+
+```
+
+
 
 ## Authors
 * tintinweb  ( http://oststrom.com  | http://github.com/tintinweb)
