@@ -1,0 +1,87 @@
+#! /usr/bin/env python
+# -*- coding: UTF-8 -*-
+# Author : tintinweb@oststrom.com <github.com/tintinweb>
+
+# https://tools.ietf.org/html/draft-ietf-tls-downgrade-scsv-00
+if __name__=="__main__":
+    import scapy
+    from scapy.all import *
+    import socket
+    import itertools
+    #<----- for local testing only
+    sys.path.append("../scapy/layers")
+    from ssl_tls import *
+    #------>
+    
+    PROTOS = ("TLS_1_2","TLS_1_1","TLS_1_0","SSL_3_0")
+    TESTS = itertools.product(PROTOS,repeat=2)
+    RESULTS = []
+    
+    TLS_FALLBACK_SCSV_SUPPORTED = False
+    TLS_FALLBACK_SCSV_OK = True
+    SSLV3_ENABLED = True
+    
+    target = ('www.google.com',443)            # MAKE SURE TO CHANGE THIS
+            
+    for t in TESTS:
+        print "----------------"
+        print "TEST : %s"%repr(t)
+        print "----------------"
+        print "connecting.."
+
+        print "connected."
+        # create tcp socket
+        s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        s.connect(target)
+        
+        # create TLS Handhsake / Client Hello packet
+        outer,inner = t
+        p = TLSRecord(version=outer)/TLSHandshake()/TLSClientHello(version=inner,
+                                                                       compression_methods=range(0xff), 
+                                                                       cipher_suites=range(0xff)+[0x5600],
+                                                                       )         
+        p.show()
+        print "sending TLS payload"
+        s.sendall(str(p))
+        resp = s.recv(10240)
+        s.close()
+        print "received, %s"%repr(resp)
+        resp = SSL(resp)
+        resp.show()
+        
+        if resp.haslayer(TLSAlert):
+            v = resp[TLSRecord].version
+            if resp[TLSAlert].description==86:        # INAPPROPRIATE_FALLBACK
+                print "[* ] SUCCESS - server is patched and supports TLS_FALLBACK_SCSV"
+                RESULTS.append((t,"TLSAlert.INAPPROPRIATE_FALLBACK  %s"%TLS_VERSIONS.get(v,v)))
+                TLS_FALLBACK_SCSV_SUPPORTED=True      # we've caught the SCSV alert
+            else:
+                print "[- ] UNKNOWN - server responds with unexpected alert"
+                a_descr=resp[TLSAlert].description
+                RESULTS.append((t,"TLSAlert.%s"%TLS_ALERT_DESCRIPTIONS.get(a_descr,a_descr)))
+                
+        elif resp.haslayer(TLSServerHello):
+            print "[!!] FAILED - server allows downgrade to %s"%t[1]
+            v_outer = resp[TLSRecord].version
+            v = resp[TLSServerHello].version
+            RESULTS.append((t,"TLSServerHello:            outer %s inner %s"%(TLS_VERSIONS.get(v_outer,v_outer),TLS_VERSIONS.get(v,v))))
+            if t[0]!=t[1]:      # we expect a server hello for inner==outer protocol version
+                TLS_FALLBACK_SCSV_OK = False
+            if t[1]=="TLS_3_0":
+                SSLV3_ENABLED=False
+        else:
+            print "[!!] UNKNOWN - unexpected response.."
+            RESULTS.append((t,"Unexpected response"))
+            if t[0]!=t[1]:      # we expect a server hello for inner==outer protocol version
+                TLS_FALLBACK_SCSV_OK = False
+            
+    print "-----------------------"
+    print "for: %s"%repr(target)
+    print "   record      hello   "
+    for t,r in RESULTS:
+        print "%s  ... %s"%(t,r)
+    print "overall:"
+    print "    TLS_FALLBACK_SCSV_SUPPORTED   ...  %s"%repr((TLS_FALLBACK_SCSV_SUPPORTED))
+    print "    TLS_FALLBACK_SCSV_OK          ...  %s"%repr((TLS_FALLBACK_SCSV_OK))
+    print "    SSLv3_ENABLED                 ...  %s"%repr((SSLV3_ENABLED))
+    
