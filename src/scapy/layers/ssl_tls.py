@@ -42,6 +42,7 @@ class BLenField(LenField):
         if x is None:
             if not (self.length_of or self.count_of):
                  x = len(pkt.payload)
+                 x = self.adjust(pkt,x)
                  return x
              
             if self.length_of is not None:
@@ -75,6 +76,7 @@ TLS_VERSIONS = {0x0300:"SSL_3_0",
                   0xfefd:"DTLS_1_1",
                   
                   }
+
 
 TLS_CONTENT_TYPES = {0x14:"change_cipher_spec",
                         0x15:"alert",
@@ -116,8 +118,8 @@ TLS_ALERT_DESCRIPTIONS = {
                     20:"BAD_RECORD_MAC",
                     21:"DESCRIPTION_FAILED_RESERVED",
                     22:"RECORD_OVERFLOW",
-                    30:"DECOMPRESSION_FAILUR",
-                    40:"HANDSHAKE_FAILUR",
+                    30:"DECOMPRESSION_FAILURE",
+                    40:"HANDSHAKE_FAILURE",
                     41:"NO_CERTIFICATE_RESERVED",
                     43:"BAD_CERTIFICATE",
                     43:"UNSUPPORTED_CERTIFICATE",
@@ -132,6 +134,7 @@ TLS_ALERT_DESCRIPTIONS = {
                     60:"EXPORT_RESTRICTION_RESERVED",
                     70:"PROTOCOL_VERSION",
                     71:"INSUFFICIENT_SECURITY",
+                    86:"INAPPROPRIATE_FALLBACK",
                     80:"INTERNAL_ERROR",
                     90:"USER_CANCELED",
                     100:"NO_RENEGOTIATION",
@@ -185,6 +188,7 @@ class TLSCipherSuite:
     DHE_RSA_WITH_CAMELLIA_256_CBC_SHA = 0x0088
     ECDH_ECDSA_WITH_AES_256_CBC_SHA =0xc005
     RSA_WITH_CAMELLIA_256_CBC_SHA = 0x0084
+    TLS_FALLBACK_SCSV = 0x5600
     
 TLS_CIPHER_SUITES = dict((v,k) for k,v in TLSCipherSuite.__dict__.items() if not k.startswith("__"))
 
