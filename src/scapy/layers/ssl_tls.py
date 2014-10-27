@@ -373,7 +373,7 @@ class TLSCertificateList(Packet):
                     break
                 element = cls(s[pos:pos+layer_len])
                 pos+=layer_len
-                print pos,len(s)
+                #print pos,len(s)
                 self.certificates.append(element)
         except Exception, e:
             pass
