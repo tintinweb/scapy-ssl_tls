@@ -101,11 +101,18 @@ TLS_HANDSHAKE_TYPES = {0x00:"hello_request",
 
 TLS_EXTENSION_TYPES = {
                        0x0000:"server_name",
-                       0x0023:"session_ticket_tls",
-                       0x000f:"heartbeat",
-                       0x000f:"status_request",
-                       0xff01:"renegotiationg_info",
+                       0x0001:"max_fragment_length",
+                       0x0002:"client_certificate_url",
+                       0x0003:"trusted_ca_keys",
+                       0x0004:"truncated_hmac",
+                       0x0005:"status_request",
+                       0x000a:"elliptic_curves",
+                       0x000b:"ec_point_formats",
                        0x000d:"signature_algorithms",
+                       0x000f:"heartbeat",
+                       0x0023:"session_ticket_tls",
+                       0x3374:"next_protocol_negotiation",
+                       0xff01:"renegotiationg_info",
                        }
 
 TLS_ALERT_LEVELS = { 0x01: "warning",
@@ -139,8 +146,19 @@ TLS_ALERT_DESCRIPTIONS = {
                     90:"USER_CANCELED",
                     100:"NO_RENEGOTIATION",
                     110:"UNSUPPORTED_EXTENSION",
+                    111:"CERTIFICATE_UNOBTAINABLE",
+                    112:"UNRECOGNIZED_NAME",
+                    113:"BAD_CERTIFICATE_STATUS_RESPNSE",
+                    114:"BAD_CERTIFICATE_HASH_VALUE",
                     255:"UNKNOWN_255",}
 
+TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM = {
+                                    0x01: 2**9,
+                                    0x02: 2**10,
+                                    0x03: 2**11,
+                                    0x04: 2**12,
+                                    0xff: 'unknown',
+                                    }
 
 
 class TLSCipherSuite:
@@ -231,7 +249,33 @@ class TLSExtension(Packet):
     fields_desc = [XShortEnumField("type", 0x0000, TLS_EXTENSION_TYPES),
                    XLenField("length",None, fmt="!H"),
                   ]
+#https://www.ietf.org/rfc/rfc3546.txt
+class TLSExtMaxFragmentLength(Packet):
+    name = "TLS Extension Max Fragment Length"
+    fields_desc = [ByteEnumField("max_fragment_length", 0xff, TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM)]
+    
+CERT_CHAIN_TYPE = { 0x00: 'individual_certs',
+                    0x01: 'pkipath',
+                    0xff: 'unknown'}
+TLS_TYPE_BOOLEAN = {0x00: 'false',
+                    0x01: 'true'}
 
+class TLSURLAndOptionalHash(Packet):
+    name = "TLS Extension Certificate URL/Hash"
+    fields_desc = [XFieldLenField("url_length",None,length_of="url",fmt="H"),
+                  StrLenField("url","",length_from=lambda x:x.url_length),
+                  ByteEnumField("hash_present", 0x00, TLS_TYPE_BOOLEAN),
+                  StrLenField("sha1hash","",length_from=lambda x:20 if x.hash_present else 0),    #opaque SHA1Hash[20];
+                  ]
+    
+class TLSExtCertificateURL(Packet):
+    name = "TLS Extension Certificate URL"
+    fields_desc = [ByteEnumField("type", 0xff, CERT_CHAIN_TYPE),
+                   XFieldLenField("length",None,length_of="server_names",fmt="H"),
+                   PacketListField("certificate_urls",None,TLSURLAndOptionalHash,length_from=lambda x:x.length)
+                   ]
+
+    
 class TLSClientHello(Packet):
     name = "TLS Client Hello"
     fields_desc = [XShortEnumField("version", 0x0301, TLS_VERSIONS),
@@ -285,6 +329,17 @@ class TLSServerKeyExchange(Packet):
     fields_desc = [ XBLenField("length",None, fmt="!I", numbytes=3),
                     StrLenField("data",os.urandom(329),length_from=lambda x:x.length),]
 
+class TLSDHServerParams(Packet):
+    name = "TLS Diffie-Hellman Server Params"
+    fields_desc = [XFieldLenField("p_length",None,length_of="p",fmt="!H"),
+                   StrLenField("p",'',length_from=lambda x:x.p_length),
+                   XFieldLenField("g_length",None,length_of="g",fmt="!H"),
+                   StrLenField("g",'',length_from=lambda x:x.g_length),
+                   XFieldLenField("pubkey_length",None,length_of="pubkey",fmt="!H"),
+                   StrLenField("pubkey",'',length_from=lambda x:x.pubkey_length),
+                   XFieldLenField("signature_length",None,length_of="signature",fmt="!H"),
+                   StrLenField("signature",'',length_from=lambda x:x.signature_length),]
+                   
 class TLSServerHelloDone(Packet):
     name = "TLS Server Hello Done"
     fields_desc = [ XBLenField("length",None, fmt="!I", numbytes=3),
@@ -292,7 +347,7 @@ class TLSServerHelloDone(Packet):
 class TLSCertificate(Packet):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length",None, length_of="data", fmt="!I", numbytes=3),
-                    StrLenField("data","",length_from=lambda x:x.length),]
+                    StrLenField("data","",length_from=lambda x:x.length),]      #BERcodec_Object.dec(data,context=ASN1_Class_X509)
     
 class TLSCertificateList(Packet):
     name = "TLS Certificate List"
@@ -300,6 +355,31 @@ class TLSCertificateList(Packet):
                    XBLenField("length",None,length_of="certificates",fmt="!I", numbytes=3),
                    PacketListField("certificates",None,TLSCertificate, length_from=lambda x:x.length),
                   ]   
+    
+    def do_dissect(self, s):
+        pos=0
+        #length field 
+        self.length=struct.unpack("!I",'\x00'+s[:3])[0]
+        pos += 3
+        #certificate list
+        cls = TLSCertificate
+        cls_len=len(cls())
+        try:
+            while pos <=len(s):
+                # consume payloads and add them to records list
+                element = cls(s[pos:],_internal=1)         # FIXME: performance
+                layer_len = cls_len + element.length
+                if layer_len==None:
+                    break
+                element = cls(s[pos:pos+layer_len])
+                pos+=layer_len
+                print pos,len(s)
+                self.certificates.append(element)
+        except Exception, e:
+            pass
+            #raise e
+        return s[pos:]
+        
 
 class TLSChangeCipherSpec(Packet):
     name = "TLS ChangeCipherSpec"
@@ -409,6 +489,8 @@ bind_layers(TLSHandshake,TLSCertificateList, {'type':0x0b})
 
 # --> extensions
 bind_layers(TLSExtension,TLSServerNameIndication, {'type': 0x0000})
+bind_layers(TLSExtension,TLSExtMaxFragmentLength, {'type': 0x0001})
+bind_layers(TLSExtension,TLSExtCertificateURL, {'type': 0x0002})
 # <--
 
 
