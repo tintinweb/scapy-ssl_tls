@@ -3,13 +3,23 @@ Scapy-SSL/TLS
 
 Support for parsing/building SSL/TLS and DTLS in Scapy (http://www.secdev.org/projects/scapy/).
 
+SSLv2,SSLv3(TLS),TLS,DTLS packet crafting and auto dissection.
+
 
 
 !! work in progress !!   
-Please note that this code is highly experimental, do not expect everything to work and feel free to contribute:   
+Please note that this code is highly experimental, you'll experience odd behavior so feel free to contribute:   
 * bugfixes   
 * new stuff   
 * tests   
+
+
+Features
+---------
+* SSLv2 handshake
+* TLS/SSL3 records
+* TLS handshake
+* DTLS records and handshake
 
 Installation
 --------
@@ -219,6 +229,23 @@ overall:
 
 ```
 
+socket stream SSLv2 dissection example
+```python
+-----------------------
+###[ SSL/TLS ]###
+  \records   \
+   |###[ SSLv2 Record ]###
+   |  length    = 0x3e
+   |  content_type= client_hello
+   |###[ SSLv2 Client Hello ]###
+   |     version   = SSL_2_0
+   |     cipher_suites_length= 0x15
+   |     session_id_length= 0x10
+   |     challenge_length= 0x10
+   |     cipher_suites= [131200, 393280, 65664, 262272, 458944, 524416, 327808]
+   |     session_id= 'aaaaaaaaaaaaaaaa'
+   |     challenge = 'aaaaaaaaaaaaaaaa'
+```
 
 
 ## Authors
