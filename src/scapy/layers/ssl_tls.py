@@ -8,9 +8,10 @@ from scapy.layers.inet import TCP, UDP
 import os, time
 
 class BLenField(LenField):
-    def __init__(self, name, default, fmt = "I", adjust=lambda pkt,x:x, numbytes=None, length_of=None, count_of=None):
+    def __init__(self, name, default, fmt = "I", adjust_i2m=lambda pkt,x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt,x:x):
         self.name = name
-        self.adjust=adjust
+        self.adjust_i2m=adjust_i2m
+        self.adjust_m2i=adjust_m2i
         self.numbytes=numbytes
         self.length_of= length_of
         self.count_of = count_of
@@ -42,7 +43,7 @@ class BLenField(LenField):
         if x is None:
             if not (self.length_of or self.count_of):
                  x = len(pkt.payload)
-                 x = self.adjust(pkt,x)
+                 x = self.adjust_i2m(pkt,x)
                  return x
              
             if self.length_of is not None:
@@ -51,8 +52,10 @@ class BLenField(LenField):
             else:
                 fld,fval = pkt.getfield_and_val(self.count_of)
                 f = fld.i2count(pkt, fval)
-            x = self.adjust(pkt,f)
+            x = self.adjust_i2m(pkt,f)
         return x
+    def m2i(self, pkt, x):
+        return self.adjust_m2i(pkt, x)
 
 class XBLenField(BLenField):
     def i2repr(self, pkt, x):
@@ -64,9 +67,47 @@ class XLenField(LenField):
     
 class XFieldLenField(FieldLenField):
     def i2repr(self, pkt, x):
-        return lhex(self.i2h(pkt, x))    
+        return lhex(self.i2h(pkt, x))   
+    
+class BEnumField(EnumField):
+    def __init__(self, name, default, enum, fmt="!I", numbytes=None):
+        EnumField.__init__(self, name, default, enum, fmt)
+        self.numbytes=numbytes
+        
+        self.name = name
+        if fmt[0] in "@=<>!":
+            self.fmt = fmt
+        else:
+            self.fmt = "!"+fmt
+        self.default = self.any2i(None,default)
+        self.sz = struct.calcsize(self.fmt) if not numbytes else numbytes
+        self.owners = []
 
-TLS_VERSIONS = {0x0300:"SSL_3_0",
+    def addfield(self, pkt, s, val):
+        """Add an internal value  to a string"""
+        pack = struct.pack(self.fmt, self.i2m(pkt,val))
+        if self.numbytes:
+            pack=pack[len(pack)-self.numbytes:]
+        return s+pack
+    def getfield(self, pkt, s):
+        """Extract an internal value from a string"""
+        upack_data = s[:self.sz]
+        # prepend struct.calcsize()-len(data) bytes to satisfy struct.unpack
+        upack_data = '\x00'*(struct.calcsize(self.fmt)-self.sz) + upack_data
+            
+        return  s[self.sz:], self.m2i(pkt, struct.unpack(self.fmt, upack_data)[0])
+        
+    def i2repr_one(self, pkt, x):
+        if self not in conf.noenum and not isinstance(x,VolatileValue) and x in self.i2s:
+            return self.i2s[x]
+        return lhex(x)
+
+class XBEnumField(BEnumField):
+    def i2repr(self, pkt, x):
+        return lhex(self.i2h(pkt, x))   
+    
+TLS_VERSIONS = {  0x0002:"SSL_2_0",
+                  0x0300:"SSL_3_0",
                   0x0301:"TLS_1_0",
                   0x0302:"TLS_1_1",
                   0x0303:"TLS_1_2",
@@ -207,6 +248,7 @@ class TLSCipherSuite:
     ECDH_ECDSA_WITH_AES_256_CBC_SHA =0xc005
     RSA_WITH_CAMELLIA_256_CBC_SHA = 0x0084
     TLS_FALLBACK_SCSV = 0x5600
+
     
 TLS_CIPHER_SUITES = dict((v,k) for k,v in TLSCipherSuite.__dict__.items() if not k.startswith("__"))
 
@@ -423,6 +465,7 @@ class DTLSClientHello(Packet):
                    PacketListField("extensions",None,TLSExtension, length_from=lambda x:x.extension_length),
                    ]   
     
+SSLv2_CERTIFICATE_TYPES = { 0x01: 'x.509'}
 
 class DTLSHelloVerify(Packet):
     name = "DTLS Hello Verify"
@@ -430,6 +473,85 @@ class DTLSHelloVerify(Packet):
                    XFieldLenField("cookie_length",None,length_of="cookie",fmt="B"),
                    StrLenField("cookie",'',length_from=lambda x:x.cookie_length),
                    ]
+    
+    
+SSLv2_MESSAGE_TYPES={0x01:'client_hello',
+                     0x04: 'server_hello',
+                     0x02: 'client_master_key'}
+
+
+class SSLv2CipherSuite:
+    '''
+    make ciphersuites available as class props (autocompletion)
+    '''
+    DES_192_EDE3_CBC_WITH_MD5 = 0x0700c0
+    IDEA_128_CBC_WITH_MD5 = 0x050080
+    RC2_CBC_128_CBC_WITH_MD5 = 0x030080
+    RC4_128_WITH_MD5 = 0x010080
+    RC4_64_WITH_MD5 = 0x080080
+    DES_64_CBC_WITH_MD5 = 0x060040
+    RC2_CBC_128_CBC_WITH_MD5 = 0x040080
+    RC4_128_EXPORT40_WITH_MD5 = 0x020080
+    
+SSL2_CIPHER_SUITES = dict((v,k) for k,v in SSLv2CipherSuite.__dict__.items() if not k.startswith("__"))
+
+
+class SSLv2Record(Packet):
+    name = "SSLv2 Record"
+    fields_desc = [XBLenField("length",None, fmt="!H", adjust_i2m=lambda pkt,x: x+0x8000+1, adjust_m2i= lambda pkt,x:x-0x8000),     # length=halfbyte+byte with MSB(high(1stbyte)) =1 || +1 for lengt(content_type)
+                   ByteEnumField("content_type", 0xff, SSLv2_MESSAGE_TYPES),
+                   ]
+
+class SSLv2ClientHello(Packet):
+    name = "SSLv2 Client Hello"
+    fields_desc = [
+                   XShortEnumField("version", 0x0002, TLS_VERSIONS),
+
+                   XFieldLenField("cipher_suites_length",None,length_of="cipher_suites",fmt="H"),
+                   XFieldLenField("session_id_length",None,length_of="session_id",fmt="H"),
+                   XFieldLenField("challenge_length",None,length_of="challenge",fmt="H"),
+                   
+                   FieldListField("cipher_suites",None,XBEnumField("cipher",None,SSL2_CIPHER_SUITES, fmt="!I", numbytes=3),length_from=lambda x:x.cipher_suites_length),
+                   StrLenField("session_id",'',length_from=lambda x:x.session_id_length),
+                   StrLenField("challenge",'',length_from=lambda x:x.challenge_length),
+                   ]
+    
+    
+SSLv2_CERTIFICATE_TYPES = { 0x01: 'x.509'}
+
+
+class SSLv2ServerHello(Packet):
+    name = "SSLv2 Server Hello"
+    fields_desc = [
+                   ByteEnumField("session_id_hit", 0x00, TLS_TYPE_BOOLEAN),
+                   ByteEnumField("certificate_type", 0x01, SSLv2_CERTIFICATE_TYPES),
+                   XShortEnumField("version", 0x0002, TLS_VERSIONS),
+
+                   XFieldLenField("certificate_length",None,length_of="certificates",fmt="H"),
+                   XFieldLenField("cipher_suites_length",None,length_of="cipher_suites",fmt="H"),
+                   XFieldLenField("connection_id_length",None,length_of="connection_id",fmt="H"),
+                   
+                   StrLenField("certificates",'',length_from=lambda x:x.certificates_length),
+                   FieldListField("cipher_suites",None,XBEnumField("cipher",None,SSL2_CIPHER_SUITES, fmt="!I", numbytes=3),length_from=lambda x:x.cipher_suites_length),
+                   StrLenField("connection_id",'',length_from=lambda x:x.connection_id_length),
+                   ]
+
+class SSLv2ClientMasterKey(Packet):
+    name = "SSLv2 Client Master Key"
+    fields_desc = [
+                   XBEnumField("cipher_suite", 0x0002, SSL2_CIPHER_SUITES, fmt="!I", numbytes=3),  #fixme: 3byte wide
+
+                   XFieldLenField("clear_key_length",None,length_of="clear_key",fmt="H"),
+                   XFieldLenField("encrypted_key_length",None,length_of="encrypted_key",fmt="H"),
+                   XFieldLenField("key_argument_length",None,length_of="key_argument",fmt="H"),
+                   
+                   StrLenField("clear_key",'',length_from=lambda x:x.clear_key_length),
+                   StrLenField("encrypted_key",'',length_from=lambda x:x.clear_key_length),
+                   StrLenField("key_argument",'',length_from=lambda x:x.key_argument_length),
+                   ]
+    
+
+
 # entry class
 class SSL(Packet):
     '''
@@ -443,6 +565,9 @@ class SSL(Packet):
         
         if self.underlayer and self.underlayer.haslayer(UDP):
             self.guessed_next_layer = DTLSRecord
+        elif ord(s[0])&0x80:
+            # SSLv2 Header
+            self.guessed_next_layer = SSLv2Record
         else:
             self.guessed_next_layer = TLSRecord
         self.fields_desc=[PacketListField("records",None,self.guessed_next_layer)]
@@ -497,3 +622,9 @@ bind_layers(TLSExtension,TLSExtCertificateURL, {'type': 0x0002})
 # DTLSRecord
 bind_layers(DTLSRecord, DTLSHandshake, {'content_type':0x16})
 bind_layers(DTLSHandshake, DTLSClientHello, {'type':0x01})
+
+
+#SSLv2 
+bind_layers(SSLv2Record, SSLv2ServerHello, {'content_type':0x04})
+bind_layers(SSLv2Record, SSLv2ClientHello, {'content_type':0x01})
+bind_layers(SSLv2Record, SSLv2ClientMasterKey, {'content_type':0x02})
