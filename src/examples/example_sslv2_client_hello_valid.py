@@ -13,7 +13,7 @@ if __name__=="__main__":
     #------>
     
     
-    target = ('192.168.220.131',4433)            # MAKE SURE TO CHANGE THIS
+    target = ('remote.host',443)            # MAKE SURE TO CHANGE THIS
     
     # create tcp socket
     s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
