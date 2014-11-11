@@ -7,6 +7,12 @@ from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 import os, time
 
+try:
+    import ssl_tls_crypto
+except ImportError, ie:
+    print "Import Error - most likely due to missing pycrypto libraries - disabling crypto functionality"
+    print repr(ie)
+
 class BLenField(LenField):
     def __init__(self, name, default, fmt = "I", adjust_i2m=lambda pkt,x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt,x:x):
         self.name = name
@@ -366,10 +372,36 @@ class TLSHeartBeat(Packet):
                   StrLenField("padding","", length_from=lambda x: 'P'*(16-x.length)),
                   ]
 
+class TLSClientKeyExchange(Packet):
+    name = "TLS Client Key Exchange"
+    fields_desc = [ XBLenField("length",None, fmt="!H",) ]
+
 class TLSServerKeyExchange(Packet):
-    name = "TLS Server Key Exchange"
-    fields_desc = [ XBLenField("length",None, fmt="!I", numbytes=3),
-                    StrLenField("data",os.urandom(329),length_from=lambda x:x.length),]
+    name = "TLS Client Key Exchange"
+    fields_desc = [ XBLenField("length",None, fmt="!H") ]
+    
+class TLSKexParamEncryptedPremasterSecret(Packet):
+    name = "TLS Kex encrypted PreMasterSecret"
+    fields_desc = [ #FieldLenField("length",None,length_of="data",fmt="H"),
+                    StrLenField("data",None) ]
+
+class TLSKexParamDH(Packet):
+    name = "TLS Kex DH Params"
+    fields_desc = [ #FieldLenField("length",None,length_of="data",fmt="H"),
+                    StrLenField("data",None) ]
+
+class TLSFinished(Packet):
+    name = "TLS Handshake Finished"
+    fields_desc = [ #FieldLenField("length",None,length_of="data",fmt="H"),
+                    StrLenField("data",None) ]
+    
+    def build(self, master_secret, finished_label, hash_handshake_messages):
+        '''
+        master_secret
+        finished_label = ['client finished','server finished']
+        hash_handshake_messages 
+        '''
+        self.data = ssl_tls_crypto.prf(master_secret,finished_label,hash_handshake_messages)
 
 class TLSDHServerParams(Packet):
     name = "TLS Diffie-Hellman Server Params"
@@ -425,7 +457,58 @@ class TLSCertificateList(Packet):
 
 class TLSChangeCipherSpec(Packet):
     name = "TLS ChangeCipherSpec"
-    fields_desc = [ StrField("message",None, fmt="H")]
+    fields_desc = [ StrField("message",'\x01', fmt="H")]
+
+
+
+class TLSCiphertext(Packet):
+    name = "TLS Ciphertext"
+    fields_desc = [ StrField("data",None, fmt="H"),
+                    StrField("mac", None, fmt="H")]
+    
+
+    def encrypt(self, record):
+        t = record[TLSRecord]
+        
+        # compute MAC
+        # encrypt DATA+MAC
+        
+        
+    def decrypt(self):
+        return TLSRecord()
+    
+class TLSPlaintext(Packet):
+    name = "TLS Plaintext"
+    fields_desc = [ StrField("data", None, fmt="H") ]
+
+    ptr_methods = {'default':                   {'encode': lambda x:x,
+                                                 'decode': lambda x:x},
+                  TLSCompressionMethod.DEFLATE: {'encode': lambda x:x.encode('zlib'),
+                                                 'decode': lambda x:x.decode('zlib')},
+                   }
+    
+    def compress(self, method, data=None):
+        self.method=method
+        data = data or self.data
+        return TLSCompressed(self.ptr_methods.get(self.method, self.ptr_methods['default'])['encode'](data))
+        
+        
+class TLSCompressed(Packet):
+    name = "TLS Compressed"
+    fields_desc = [ StrField("data", None, fmt="H") ]
+    
+    ptr_methods = {'default':                   {'encode': lambda x:x,
+                                                 'decode': lambda x:x},
+                  TLSCompressionMethod.DEFLATE: {'encode': lambda x:x.encode('zlib'),
+                                                 'decode': lambda x:x.decode('zlib')},
+                   }
+    
+    def decompress(self, method, data=None):
+        self.method=method
+        data = data or self.data
+        
+        return TLSPlaintext(self.ptr_methods.get(self.method, self.ptr_methods['default'])['decode'](data))
+        
 
 
 class DTLSRecord(Packet):
@@ -594,6 +677,22 @@ class SSL(Packet):
         return s[pos:]
 
 
+    def encrypt(self, master_secret):
+        pass
+    
+    def encrypt_stream(self):
+        '''
+              HMAC_hash(MAC_write_secret, seq_num + TLSCompressed.type +
+                     TLSCompressed.version + TLSCompressed.length +
+                     TLSCompressed.fragment));
+        '''
+        pass
+    
+    def decrypt(self, master_secret): pass
+    
+    def compress(self): pass
+    def decompress(self): pass
+ 
 # bind magic
 bind_layers(TCP, SSL, dport=443)
 bind_layers(TCP, SSL, sport=443)
@@ -610,7 +709,16 @@ bind_layers(TLSRecord, TLSHandshake, {'content_type':0x16})
 bind_layers(TLSHandshake,TLSClientHello, {'type':0x01})
 bind_layers(TLSHandshake,TLSServerHello, {'type':0x02})
 bind_layers(TLSHandshake,TLSCertificateList, {'type':0x0b})
+bind_layers(TLSHandshake,TLSClientKeyExchange, {'type':0x10})
+bind_layers(TLSHandshake,TLSServerKeyExchange, {'type':0x0c})
+bind_layers(TLSHandshake,TLSFinished, {'type':0x20})
 # <---
+bind_layers(TLSServerKeyExchange,TLSKexParamEncryptedPremasterSecret)
+bind_layers(TLSClientKeyExchange,TLSKexParamEncryptedPremasterSecret)
+
+bind_layers(TLSServerKeyExchange,TLSKexParamDH)
+bind_layers(TLSClientKeyExchange,TLSKexParamDH)
+
 
 # --> extensions
 bind_layers(TLSExtension,TLSServerNameIndication, {'type': 0x0000})
