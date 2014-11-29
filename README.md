@@ -23,7 +23,7 @@ Features
 
 Installation
 --------
-1) deploy ssl_tls.py to ./scapy/layers
+1) copy all files inside src/scapy/layers to ./scapy/layers
 
 2) modify ./scapy/config.py to autoload this new layer
 ```diff
