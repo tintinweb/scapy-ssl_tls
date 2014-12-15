@@ -22,7 +22,7 @@ def sendrcv(sock, p, bufflen=1024):
     return resp
 
 if __name__=="__main__":
-
+    history = []
     import scapy
     from scapy.all import *    
     import socket
@@ -39,7 +39,8 @@ if __name__=="__main__":
     
     # create TLS Handhsake / Client Hello packet
     p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=None, cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA])
-                
+          
+        
     p.show()
 
     r = sendrcv(s,str(p))
@@ -47,10 +48,18 @@ if __name__=="__main__":
 
     # send premaster secret
     #p = TLSRecord()/TLSHandshake()/TLSClientKeyExchange()/TLSKexParamDH("haha")
-
+    client_hello = p
+    server_hello = SSL(r)  
+    history.append(client_hello)
+    history.append(server_hello)
 
     #generate random premaster secret
-    pms = 'a'*48
+    secparams = ssl_tls_crypto.TLSSecurityParameters()
+    secparams.premaster_secret = 'a'*48
+    secparams.generate(secparams.premaster_secret, client_hello[TLSClientHello].random_bytes, server_hello[TLSServerHello].random_bytes)
+    
+    print repr(secparams.master_secret)    
+
     # encrypt pms with server pubkey from first cert
     #extract server cert (first one counts)
     cert = SSL(r)[TLSCertificateList].certificates[0].data
@@ -60,7 +69,7 @@ if __name__=="__main__":
     print pubkey.can_sign()
     print pubkey.publickey()
     
-    enc= pubkey.encrypt(pms,None)
+    enc= pubkey.encrypt(secparams.premaster_secret,None)
     print len(''.join(enc[0])),enc
     pms = ''.join(enc)
     
@@ -77,10 +86,19 @@ if __name__=="__main__":
     r = sendrcv(s,str(p))
     SSL(r).show()
     
+
+    print secparams
     # send encrypted finish with hash of previous msgs
+    msg_hash= secparams.prf.prf_numbytes(secparams.master_secret,
+                                         secparams.prf.TLS_MD_CLIENT_FINISH_CONST,
+                                         secparams.prf.hash(''.join(str(h[TLSHandshake]) for h in history)),
+                                         numbytes=12)
+    
     # TODO: incomplete
     
-    p = TLSRecord()/TLSCiphertext().encrypt(TLSPlaintext().compress(str(TLSHandshake()/TLSFinished().build(pms,"server finished","122"))))
+    
+    
+    p = TLSRecord()/TLSCiphertext().encrypt(TLSPlaintext().compress(str(TLSHandshake()/TLSFinished(data=msg_hash))))
     r = sendrcv(s,str(p))
     SSL(r).show()
     
