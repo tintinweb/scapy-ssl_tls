@@ -106,7 +106,7 @@ class TLSPRF(object):
         return HMAC.new(key=key, msg=msg, digestmod=self.algorithm).digest()
     
     def hash(self, msg):
-        return self.algorithm.new(msg).digest
+        return self.algorithm.new(msg).digest()
                
 class TLSSecurityParameters(object):
     
