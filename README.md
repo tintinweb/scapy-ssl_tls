@@ -21,8 +21,9 @@ Features
 * TLS handshake
 * DTLS records and handshake
 * TLS Session Tracking
-** Key Re-generation for RSA key_exchange based ciphers
-** TLS Decryption dueo to re-calculated keys
+ * Key Re-generation for RSA key_exchange based ciphers (*RSA_WITH_*)
+ * TLS Session sniffing
+
 
 Installation
 --------
