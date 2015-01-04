@@ -21,7 +21,7 @@ if __name__=="__main__":
     TLS_FALLBACK_SCSV_OK = True
     SSLV3_ENABLED = True
     
-    target = ('www.google.com',443)            # MAKE SURE TO CHANGE THIS
+    target = ('www.google.org',443)            # MAKE SURE TO CHANGE THIS
             
     for t in TESTS:
         print "----------------"
@@ -29,11 +29,11 @@ if __name__=="__main__":
         print "----------------"
         print "connecting.."
 
-        print "connected."
+
         # create tcp socket
         s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         s.connect(target)
-        
+        print "connected." 
         # create TLS Handhsake / Client Hello packet
         outer,inner = t
         p = TLSRecord(version=outer)/TLSHandshake()/TLSClientHello(version=inner,
@@ -52,19 +52,19 @@ if __name__=="__main__":
         if resp.haslayer(TLSAlert):
             v = resp[TLSRecord].version
             if resp[TLSAlert].description==86:        # INAPPROPRIATE_FALLBACK
-                print "[* ] SUCCESS - server is patched and supports TLS_FALLBACK_SCSV"
-                RESULTS.append((t,"TLSAlert.INAPPROPRIATE_FALLBACK  %s"%TLS_VERSIONS.get(v,v)))
+                print "[* ] SUCCESS - server honors TLS_FALLBACK_SCSV"
+                RESULTS.append((t,"resp: TLSAlert.INAPPROPRIATE_FALLBACK  %s"%TLS_VERSIONS.get(v,v)))
                 TLS_FALLBACK_SCSV_SUPPORTED=True      # we've caught the SCSV alert
             else:
                 print "[- ] UNKNOWN - server responds with unexpected alert"
                 a_descr=resp[TLSAlert].description
-                RESULTS.append((t,"TLSAlert.%s"%TLS_ALERT_DESCRIPTIONS.get(a_descr,a_descr)))
+                RESULTS.append((t,"resp: TLSAlert.%s"%TLS_ALERT_DESCRIPTIONS.get(a_descr,a_descr)))
                 
         elif resp.haslayer(TLSServerHello):
             print "[!!] FAILED - server allows downgrade to %s"%t[1]
             v_outer = resp[TLSRecord].version
             v = resp[TLSServerHello].version
-            RESULTS.append((t,"TLSServerHello:            outer %s inner %s"%(TLS_VERSIONS.get(v_outer,v_outer),TLS_VERSIONS.get(v,v))))
+            RESULTS.append((t,"resp: TLSServerHello:            outer %s inner %s"%(TLS_VERSIONS.get(v_outer,v_outer),TLS_VERSIONS.get(v,v))))
             if t[0]!=t[1]:      # we expect a server hello for inner==outer protocol version
                 TLS_FALLBACK_SCSV_OK = False
             if t[1]=="TLS_3_0":
