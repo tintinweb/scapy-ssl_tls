@@ -2,7 +2,6 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
-
 def sendrcv(sock, p, bufflen=1024):
     sock.settimeout(5)
     print "sending TLS payload"
@@ -18,11 +17,10 @@ def sendrcv(sock, p, bufflen=1024):
         print "timeout"
         
         
-    print "received, %d --  %s"%(len(resp),repr(resp))
+    #print "received, %d --  %s"%(len(resp),repr(resp))
     return resp
 
 if __name__=="__main__":
-    history = []
     import scapy
     from scapy.all import *    
     import socket
@@ -30,43 +28,41 @@ if __name__=="__main__":
     sys.path.append("../scapy/layers")
     from ssl_tls import *
     import ssl_tls_crypto
+    from Crypto.Cipher import PKCS1_v1_5
     #------>
     target = ('192.168.220.131',4433)            # MAKE SURE TO CHANGE THIS
     
     # create tcp socket
+    print "* connecting ..."
     s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     s.connect(target)
     
+    # feed privatekey for ssl decryption and master_secret regeneration
+    print "* init TLSSessionContext"
     session = ssl_tls_crypto.TLSSessionCtx()
+    print "* load servers privatekey for auto master-key decryption (RSA key only)"
     session.rsa_load_privkey(open('c:\\_tmp\\polarssl.key','r').read())
     
-    
     # fake initial session packet for session tracking
+    # session context autoupdates itself whenever a packet is inserted.
     sip,sport= s.getsockname()
     session.insert(IP(src=sip,dst=target[0])/TCP(sport=sport,dport=target[1]))
     
-    # create TLS Handhsake / Client Hello packet
+    # create TLS Handshake / Client Hello packet
+    print "* -> client hello"
     p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=None, 
                                                   cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA],
                                                   random_bytes='R'*28)
           
         
-    p.show()
-
-    sp =str(p)
-
-    session.insert(SSL(sp))
-    history.append(SSL(sp))
+    #p.show()
+    sp=str(p)
+    session.insert(SSL(sp))     # track in sessionctx
     r = sendrcv(s,sp)
-    SSL(r).show()
-    history.append(SSL(r))
-    session.insert(SSL(r))
-    
-    
-
-
+    #SSL(r).show()
+    session.insert(SSL(r))      # track response in sessionctx
+    print "* <- server hello"
     # send premaster secret
-    #p = TLSRecord()/TLSHandshake()/TLSClientKeyExchange()/TLSKexParamDH("haha")
     client_hello = p
     server_hello = SSL(r)  
 
@@ -74,91 +70,44 @@ if __name__=="__main__":
     secparams = ssl_tls_crypto.TLSSecurityParameters()
     # latest_version + 46rndbytes
     secparams.premaster_secret = '\03\01'+'a'*22+'b'*24
-    print "client_random:",repr(struct.pack("!I",client_hello[TLSClientHello].gmt_unix_time)+client_hello[TLSClientHello].random_bytes)
-    print "server_random:",repr(struct.pack("!I",server_hello[TLSServerHello].gmt_unix_time)+server_hello[TLSServerHello].random_bytes)
-    
-    
     secparams.generate(secparams.premaster_secret, 
                        struct.pack("!I",client_hello[TLSClientHello].gmt_unix_time)+client_hello[TLSClientHello].random_bytes,
                        struct.pack("!I",server_hello[TLSServerHello].gmt_unix_time)+server_hello[TLSServerHello].random_bytes)
     
-    print "master", repr(secparams.master_secret)    
-
+    print "* chose premaster_secret and generate master_secret + key material"
+    print "** chosen premaster_secret", repr(secparams.premaster_secret)
+    print "** generated master_secret", repr(secparams.master_secret)    
     # encrypt pms with server pubkey from first cert
     #extract server cert (first one counts)
+    print "* fetch servers RSA pubkey"
     cert = SSL(r)[TLSCertificateList].certificates[0].data
     pubkey = ssl_tls_crypto.x509_extract_pubkey_from_der(cert)
     
-    
-    
-    print repr(pubkey.exportKey(format="DER"))
-    #print pubkey
-    print pubkey.can_encrypt()
-    print pubkey.can_sign()
-    print pubkey.publickey()
-    print repr(secparams.premaster_secret)
-    
     # PKCS1 padd encrypt with pubkey
-    from Crypto.Cipher import PKCS1_OAEP,PKCS1_v1_5
     
+    print "* encrypt premaster_secret with servers RSA pubkey"
     pkcs1_pubkey = PKCS1_v1_5.new(pubkey)
     enc= pkcs1_pubkey.encrypt(secparams.premaster_secret)
-    print repr(enc)
-   
-   
-    print "---------------"
-    # manually check by decrypting the encrypted text with the privkey
-    with open('c:\\_tmp\\polarssl.key','r') as f:
-        key = RSA.importKey(f.read())
-        pkcs1_key = PKCS1_v1_5.new(key)
-    print "decrypted pms=",repr(pkcs1_key.decrypt(enc,None))
-    print "---------------"
     pms = ''.join(enc)
-    print "PMS(pkcs1)==",len(pms),repr(pms)
 
-    
+    print "* -> TLSClientKeyExchange with EncryptedPremasterSecret"
     p = TLSRecord()/TLSHandshake()/TLSClientKeyExchange()/TLSKexParamEncryptedPremasterSecret(data=pms)
     #p.show2()
     sp = str(p)
-    history.append(SSL(sp))
     session.insert(SSL(sp))
     r = sendrcv(s,sp)
     #SSL(r).show()
-    #history.append(SSL(r))
     # change cipherspec
+    print "* -> ChangeCipherSpec"
     p = TLSRecord()/TLSChangeCipherSpec()
     #p.show2()
     
     r = sendrcv(s,str(p))
     #SSL(r).show()
+    print "* FIXME: implement TLSFinished ..."
+    print "* SSL Session parameter and keys: "
     print repr(session)
-    exit() 
-
-    print secparams
-    # send encrypted finish with hash of previous msgs
-    from Crypto.Hash import MD5,SHA
-    
-    hs_msgs = ''
-    for  p in history:
-        for r in p.records:
-            print r[TLSHandshake].payload.show()
-            hs_msgs += str(r[TLSHandshake].payload)
-    
-    print "hs_mgs_hashed:",repr(MD5.new(hs_msgs).digest()+SHA.new(hs_msgs).digest())
-    msg_hash= secparams.prf.prf_numbytes(secparams.master_secret,
-                                         secparams.prf.TLS_MD_CLIENT_FINISH_CONST,
-                                         MD5.new(hs_msgs).digest()+SHA.new(hs_msgs).digest(),
-                                         numbytes=12)
-    
-    # TODO: incomplete
-    
-    print repr(msg_hash)
-    
-    p = TLSRecord()/TLSCiphertext().encrypt(TLSPlaintext().compress(str(TLSHandshake()/TLSFinished(data=msg_hash))))
-    #p = TLSRecord()/TLSHandshake()/TLSFinished(data=msg_hash)
-    r = sendrcv(s,str(p))
-    #SSL(r).show()
-    
+    print "* you should now be able to encrypt/decrypt any client/server communication for this session :)"
     s.close()
     
     

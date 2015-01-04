@@ -20,6 +20,9 @@ Features
 * TLS/SSL3 records
 * TLS handshake
 * DTLS records and handshake
+* TLS Session Tracking
+** Key Re-generation for RSA key_exchange based ciphers
+** TLS Decryption dueo to re-calculated keys
 
 Installation
 --------
@@ -245,6 +248,63 @@ socket stream SSLv2 dissection example
    |     cipher_suites= [131200, 393280, 65664, 262272, 458944, 524416, 327808]
    |     session_id= 'aaaaaaaaaaaaaaaa'
    |     challenge = 'aaaaaaaaaaaaaaaa'
+```
+
+TLS1.0 Session Context tracking and RSA_WITH_AES_128_CBC_SHA key decryption by providing servers privkey
+```python
+* connecting ...
+* init TLSSessionContext
+* load servers privatekey for auto master-key decryption (RSA key only)
+* -> client hello
+sending TLS payload
+timeout
+* <- server hello
+* chose premaster_secret and generate master_secret + key material
+** chosen premaster_secret '\x03\x01aaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb'
+** generated master_secret '\x9cR\xaa\xbb\xb6\x9c\x02^B`d\x1bf\x8au\x9f`\xa4\x99\xedm\x0b\xc8\xa9\t\xbd\xd2\xb5\x9fF\x97Y\xd0\xf4)\xef\xdc\x1e\xaaO\x94\xbaQ\xe7\ri\xed\xd4'
+* fetch servers RSA pubkey
+* encrypt premaster_secret with servers RSA pubkey
+* -> TLSClientKeyExchange with EncryptedPremasterSecret
+sending TLS payload
+timeout
+* -> ChangeCipherSpec
+sending TLS payload
+timeout
+* FIXME: implement TLSFinished ...
+* SSL Session parameter and keys: 
+<TLSSessionCtx: id=52076240
+	 src=('192.168.220.1', 59100)
+	 dst=('192.168.220.131', 4433)
+	 params.handshake.client=<TLSClientHello  version=TLS_1_0 gmt_unix_time=1420412557 random_bytes='RRRRRRRRRRRRRRRRRRRRRRRRRRRR' session_id_length=0x0 session_id='' cipher_suites_length=0x2 cipher_suites=[47] compression_methods_length=0x1 compression_methods=[0] extensions_length=0x0 |>
+	 params.handshake.server=<TLSServerHello  version=TLS_1_0 gmt_unix_time=1420412561 random_bytes='\xc6\xe2)\xd6\xbc\x01j\x1a^\x18\xe6\rL\\E\x10Kl6G\xb2Y/\x99\xe1\x96b#' session_id_length=0x20 session_id='\xc3\x92\xe4l\xd7\xa9=\x11g\xc3\xc5z\t(\xfe2{\xb2\xa0`O\x84&\x9f0H\x13\xdf\x88]`x' cipher_suite=RSA_WITH_AES_128_CBC_SHA compression_method=NULL |>
+	 params.negotiated.ciphersuite=47
+	 params.negotiated.key_exchange=['RSA']
+	 params.negotiated.encryption=['AES', '128', 'CBC']
+	 params.negotiated.mac=['SHA']
+	 params.negotiated.compression=0
+	 crypto.client.enc=<ssl_tls_crypto.PKCS7Wrapper object at 0x032506B0>
+	 crypto.client.dec=<ssl_tls_crypto.PKCS7Wrapper object at 0x032506F0>
+	 crypto.server.enc=<ssl_tls_crypto.PKCS7Wrapper object at 0x03250730>
+	 crypto.server.dec=<ssl_tls_crypto.PKCS7Wrapper object at 0x03250770>
+	 crypto.server.rsa.privkey=<Crypto.Cipher.PKCS1_v1_5.PKCS115_Cipher instance at 0x032368C8>
+	 crypto.server.rsa.pubkey=<Crypto.Cipher.PKCS1_v1_5.PKCS115_Cipher instance at 0x03246D00>
+	 crypto.session.encrypted_premaster_secret='K\x15N\xbb\xff\xf7\xf8\x86\xa6\x83\x0bH\x97\x0fCL\xe8\x0f\xf1^\xd9\xe9\xf7j\xea7\xb2\xf7B5\xaf\xe2\xd0\xf8\x88\x04`g\x19P\xec\x97\xf3\xbc\xea`\x98E\x98\xeaG\xd4\xa4\xacEQ8Z\xeaWl\x0e\xb9EZ\xe0\x14\x9a;Q\x04\x81@:\x12\x8f%{.\x00H\xad\x89\x86\xee\x85\xaa\xe9M\xf2S\xce\x87\xe9\\}A\x91O\xaa\x07"\x15\x95\x9d/,N\xee\xe6\xca\xc0T\xe8\xff`\xeb\x12\xaf`\xa6\xce\x99\xbf\xa0\xab \x06\x1f\x02\xdb|\xed(\xb9]\xf1\xdc\x93\xaa1\xea\x97\x87\x05\xc0Y\x94\xf4\x8fc\x1bDL\xc3$\xab\x05n\xe0\xe4\xacL\xa2\xa2CX\x1eI\x8c\\\x96\x86\x9a\xaf\x9b\xd8\xbe#\xd3\xd3m\x02\xfe\xa7l\xb1*n\x88Q\xa0\x84\xf3\xbf\xf8z\xd4\xf3\x9fg\xeeZ?\x1c\xf5j8\xa0\xe2\x06\xbd\xb8\x1e\x1c\x8f]\xca\xe6\x0f\xf9\xba,\x82\x82v,?\x83oCg\xa9\xc4H\xdd)i\xbdO\n\xfc\x1e\xca\x8f\x90S<C\xe0\xb8\xb0\x0f\xd1\x06\xf6'
+	 crypto.session.premaster_secret='\x03\x01aaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb'
+	 crypto.session.master_secret='\x9cR\xaa\xbb\xb6\x9c\x02^B`d\x1bf\x8au\x9f`\xa4\x99\xedm\x0b\xc8\xa9\t\xbd\xd2\xb5\x9fF\x97Y\xd0\xf4)\xef\xdc\x1e\xaaO\x94\xbaQ\xe7\ri\xed\xd4'
+	 crypto.session.randombytes.client='T\xa9\xc6\x8dRRRRRRRRRRRRRRRRRRRRRRRRRRRR'
+	 crypto.session.randombytes.server='T\xa9\xc6\x91\xc6\xe2)\xd6\xbc\x01j\x1a^\x18\xe6\rL\\E\x10Kl6G\xb2Y/\x99\xe1\x96b#'
+	 crypto.session.key.client.mac='?P\x1c\xc87\x9b\xd0\x81\xfc\xe9\x80\xda\xc6\x85\x10\xdb\xe4\x15\xd65'
+	 crypto.session.key.client.encryption='"\x07\xfe\xce\x00Gxz\xa3\x0e*\xd5\xfco\xc2\x01'
+	 crypto.session.key.cllient.iv='\x1b\xfc\x01c8fv\xdc1t\xef\xd4$\xe8\xf4\xd9'
+	 crypto.session.key.server.mac='I\x8f\xf3\xe39H\x89\xed\xaep\xd8\x01\xc9\x99]bL^\x0b6'
+	 crypto.session.key.server.encryption='l|1C`u\x81\xea.&\xd4t\xef\x1b\xb3\xd3'
+	 crypto.session.key.server.iv='V\x02\xc3sF\x9bWZ\x86"\x9e\x99\x1b\x04\x9b\xeb'
+	 crypto.session.key.length.mac=20
+	 crypto.session.key.length.encryption=16
+	 crypto.session.key.length.iv=16
+>
+* you should now be able to encrypt/decrypt any client/server communication for this session :)
+
 ```
 
 

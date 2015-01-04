@@ -273,6 +273,25 @@ class TLSRecord(Packet):
                    XShortEnumField("version", 0x0301, TLS_VERSIONS),
                    XLenField("length",None, fmt="!H"),]
     
+class TLSCiphertext(Packet):
+    name = "TLS Ciphertext Fragment"
+    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
+                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
+                   XLenField("length",None, fmt="!H"),]
+
+class TLSCompressed(Packet):
+    name = "TLS Compressed Fragment"
+    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
+                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
+                   XLenField("length",None, fmt="!H"),]
+    
+class TLSPlaintext(Packet):
+    name = "TLS Plaintext"
+    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
+                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
+                   XLenField("length",None, fmt="!H"),]
+
+    
 class TLSHandshake(Packet):
     name = "TLS Handshake"
     fields_desc = [ByteEnumField("type", 0xff, TLS_HANDSHAKE_TYPES),
@@ -395,7 +414,7 @@ class TLSFinished(Packet):
     fields_desc = [ #FieldLenField("length",None,length_of="data",fmt="H"),
                     StrLenField("data",None) ]
     
-    def build(self, master_secret, finished_label, hash_handshake_messages):
+    def xbuild(self, master_secret, finished_label, hash_handshake_messages):
         '''
         master_secret
         finished_label = ['client finished','server finished']
@@ -461,27 +480,28 @@ class TLSChangeCipherSpec(Packet):
 
 
 
-class TLSCiphertext(Packet):
+class xTLSCiphertext(Packet):
     name = "TLS Ciphertext"
     fields_desc = [ StrField("data",None, fmt="H"),
                     StrField("mac", None, fmt="H")]
     
 
     def encrypt(self, record):
-        t = record[TLSRecord]
+        #t = record[TLSRecord]
         
         # compute MAC
         # encrypt DATA+MAC
-        
+        self.data=str(record)
+        return self
         
     def decrypt(self):
         return TLSRecord()
     
-class TLSPlaintext(Packet):
+class xTLSPlaintext(Packet):
     name = "TLS Plaintext"
     fields_desc = [ StrField("data", None, fmt="H") ]
 
-    ptr_methods = {'default':                   {'encode': lambda x:x,
+    ptr_methods = {'default':                   {'encode': lambda x:x,          #NULL
                                                  'decode': lambda x:x},
                   TLSCompressionMethod.DEFLATE: {'encode': lambda x:x.encode('zlib'),
                                                  'decode': lambda x:x.decode('zlib')},
@@ -493,7 +513,7 @@ class TLSPlaintext(Packet):
         return TLSCompressed(self.ptr_methods.get(self.method, self.ptr_methods['default'])['encode'](data))
         
         
-class TLSCompressed(Packet):
+class xTLSCompressed(Packet):
     name = "TLS Compressed"
     fields_desc = [ StrField("data", None, fmt="H") ]
     
@@ -507,7 +527,7 @@ class TLSCompressed(Packet):
         self.method=method
         data = data or self.data
         
-        return TLSPlaintext(self.ptr_methods.get(self.method, self.ptr_methods['default'])['decode'](data))
+        return TLSRecord(self.ptr_methods.get(self.method, self.ptr_methods['default'])['decode'](data))
         
 
 
@@ -715,6 +735,7 @@ bind_layers(TLSHandshake,TLSFinished, {'type':0x20})
 # <---
 bind_layers(TLSServerKeyExchange,TLSKexParamEncryptedPremasterSecret)
 bind_layers(TLSClientKeyExchange,TLSKexParamEncryptedPremasterSecret)
+
 
 bind_layers(TLSServerKeyExchange,TLSKexParamDH)
 bind_layers(TLSClientKeyExchange,TLSKexParamDH)
