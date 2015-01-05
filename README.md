@@ -3,7 +3,7 @@ Scapy-SSL/TLS
 
 Support for parsing/building SSL/TLS and DTLS in Scapy (http://www.secdev.org/projects/scapy/).
 
-SSLv2,SSLv3(TLS),TLS,DTLS packet crafting, auto dissection, session tracking, key-regeneration and generic decryption .
+SSLv2,SSLv3(TLS),TLS,DTLS packet crafting, auto dissection, session tracking, key-sniffing and record decryption .
 
 !! work in progress !!   
 Please note that this code is highly experimental, you'll experience odd behavior so feel free to contribute:   
@@ -15,7 +15,7 @@ Please note that this code is highly experimental, you'll experience odd behavio
 Features
 ---------
 * TLS Session Tracking
- * Key Re-generation for RSA key_exchange based ciphers (*RSA_WITH_*)
+ * Key sniffing for RSA key_exchange based ciphers (*RSA_WITH_*)
  * TLS Session sniffing
  * generic session decryption (*RSA_WITH_*) for sniffed/recorded traffic
 * SSLv2 handshake
