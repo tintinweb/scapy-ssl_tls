@@ -95,10 +95,6 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     while True:
         sniff(filter="tcp port 443",prn=process_ssl,store=0,timeout=3)
 
-
-    print "* SSL Session parameter and keys: "
-    print repr(session)
-    print "* you should now be able to encrypt/decrypt any client/server communication for this session :)"
     s.close()
     
     
