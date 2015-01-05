@@ -14,7 +14,8 @@ from Crypto.Cipher import PKCS1_v1_5#,PKCS1_OAEP
 from scapy.layers.inet import TCP, UDP, IP
 from ssl_tls import TLSHandshake,TLSServerHello,TLSClientHello,TLSCertificateList, \
                     TLSClientKeyExchange,TLSKexParamEncryptedPremasterSecret, \
-                    TLS_CIPHER_SUITES
+                    TLS_CIPHER_SUITES, TLSRecord, TLSCiphertextDecrypted, \
+                    TLSCiphertextMAC
 import struct
 import pkcs7
 import array
@@ -99,7 +100,13 @@ def ciphersuite_factory(cipher_id, key, iv):
 
 class TLSSessionCtx(object):
     def __init__(self):
-        self.packets = []           # packet history
+        self.packets = namedtuple('packets',['history','client','server'])
+        self.packets.history=[]         #packet history
+        self.packets.client = namedtuple('client',['sequence'])
+        self.packets.client.sequence=0
+        self.packets.server = namedtuple('server',['sequence'])
+        self.packets.server.sequence=0
+        
         self.params = namedtuple('params', ['handshake',
                                             'negotiated',])
         self.params.handshake = namedtuple('handshake',['client','server'])
@@ -237,7 +244,7 @@ class TLSSessionCtx(object):
          '''
          add packet to context
          '''
-         self.packets.append(p)
+         self.packets.history.append(p)
          self.process(p)        # fill structs
          
     def process(self,p):
@@ -337,9 +344,21 @@ class TLSSessionCtx(object):
     def rsa_load_privkey(self, pem):
         self.crypto.server.rsa.privkey=self.rsa_load_key(pem)
         return
-                
     
+    def tlsciphertext_decrypt(self, p, cryptfunc):
+        ret = TLSRecord()
+        ret.content_type, ret.version, ret.length = p[TLSRecord].content_type, p[TLSRecord].version, p[TLSRecord].length
+        enc_data = p[TLSRecord].payload.load 
         
+        #if self.packets.client.sequence==0:
+        #    iv = self.crypto.session.key.client.iv
+        decrypted = cryptfunc.decrypt(enc_data)
+        
+        plaintext = decrypted[:-self.crypto.session.key.length.mac-1]
+        mac=decrypted[len(plaintext):]
+        
+        return ret/TLSCiphertextDecrypted(plaintext)/TLSCiphertextMAC(mac)
+            
 
 class TLSPRF(object):
     TLS_MD_CLIENT_FINISH_CONST = "client finished"

@@ -279,6 +279,13 @@ class TLSCiphertext(Packet):
                    XShortEnumField("version", 0x0301, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
 
+class TLSCiphertextDecrypted(Packet):
+    name = "TLS Ciphertext Decrypted"
+    fields_desc = [ StrField("data", None, fmt="H")]
+class TLSCiphertextMAC(Packet):
+    name = "TLS Ciphertext MAC"
+    fields_desc = [ StrField("mac", None, fmt="H")]
+    
 class TLSCompressed(Packet):
     name = "TLS Compressed Fragment"
     fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
