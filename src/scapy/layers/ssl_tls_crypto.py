@@ -10,9 +10,11 @@ from base64 import b64decode
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 import hashlib
-from Crypto.Cipher import PKCS1_OAEP,PKCS1_v1_5
+from Crypto.Cipher import PKCS1_v1_5#,PKCS1_OAEP
 from scapy.layers.inet import TCP, UDP, IP
-from ssl_tls import TLSHandshake,TLSServerHello,TLSClientHello,TLSCertificateList,TLSClientKeyExchange,TLSKexParamEncryptedPremasterSecret,TLS_CIPHER_SUITES
+from ssl_tls import TLSHandshake,TLSServerHello,TLSClientHello,TLSCertificateList, \
+                    TLSClientKeyExchange,TLSKexParamEncryptedPremasterSecret, \
+                    TLS_CIPHER_SUITES
 import struct
 import pkcs7
 import array
@@ -98,8 +100,6 @@ def ciphersuite_factory(cipher_id, key, iv):
 class TLSSessionCtx(object):
     def __init__(self):
         self.packets = []           # packet history
-        self.src = (None,None)      # session identification via src/dst
-        self.dst = (None,None)
         self.params = namedtuple('params', ['handshake',
                                             'negotiated',])
         self.params.handshake = namedtuple('handshake',['client','server'])
@@ -156,8 +156,6 @@ class TLSSessionCtx(object):
         
     def __repr__(self):
         params = {'id':id(self),
-                  'src':self.src,
-                  'dst':self.dst,
                   'params-handshake-client':repr(self.params.handshake.client),
                   'params-handshake-server':repr(self.params.handshake.server),
                   'params-negotiated-ciphersuite':self.params.negotiated.ciphersuite,
@@ -196,8 +194,6 @@ class TLSSessionCtx(object):
 
         
         str = "<TLSSessionCtx: id=%(id)s"
-        str +="\n\t src=%(src)s"
-        str +="\n\t dst=%(dst)s"
         
         str +="\n\t params.handshake.client=%(params-handshake-client)s"
         str +="\n\t params.handshake.server=%(params-handshake-server)s"
@@ -234,8 +230,6 @@ class TLSSessionCtx(object):
         str +="\n\t crypto.session.key.length.encryption=%(crypto-session-key-length-encryption)s"
         str +="\n\t crypto.session.key.length.iv=%(crypto-session-key-length-iv)s"
         
-
-        
         str += "\n>"
         return str%params
     
@@ -250,15 +244,6 @@ class TLSSessionCtx(object):
         '''
         fill context
         '''
-        # session identification
-        if not all( (all( self.src ), all( self.dst ))):           # any field blank?
-            if p.haslayer(TCP):
-                self.src=(p[IP].src,p[TCP].sport)
-                self.dst=(p[IP].dst,p[TCP].dport)
-            elif p.haslayer(UDP):
-                self.src=(p[IP].src,p[UDP].sport)
-                self.dst=(p[IP].dst,p[UDP].dport)
-                
         if p.haslayer(TLSHandshake):
             # requires handshake messages
             if p.haslayer(TLSClientHello):
@@ -282,12 +267,12 @@ class TLSSessionCtx(object):
                     self.params.negotiated.key_exchange=kex
                     self.params.negotiated.encryption=enc
                     self.params.negotiated.mac=mac
-                    
-                    if "RSA" in kex:
-                        # fetch server pubkey // PKCS1_v1_5
-                        cert = p[TLSCertificateList].certificates[0].data
-                        self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(cert))
-                        # check for client privkey
+            if p.haslayer(TLSCertificateList):
+                if self.params.negotiated.key_exchange and "RSA" in self.params.negotiated.key_exchange:
+                    # fetch server pubkey // PKCS1_v1_5
+                    cert = p[TLSCertificateList].certificates[0].data
+                    self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(cert))
+                    # check for client privkey
                     
             # calculate key material
             if p.haslayer(TLSClientKeyExchange) \
