@@ -23,8 +23,9 @@ if __name__=="__main__":
     #fetch interfaces
     for i in get_if_list():
         print i
-    '''
     conf.iface = "eth14"
+    '''
+    
     ssl_session_map = {}
     
     def process_ssl(p):
