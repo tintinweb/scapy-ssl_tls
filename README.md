@@ -3,9 +3,7 @@ Scapy-SSL/TLS
 
 Support for parsing/building SSL/TLS and DTLS in Scapy (http://www.secdev.org/projects/scapy/).
 
-SSLv2,SSLv3(TLS),TLS,DTLS packet crafting and auto dissection.
-
-
+SSLv2,SSLv3(TLS),TLS,DTLS packet crafting, auto dissection, session tracking, key-regeneration and generic decryption .
 
 !! work in progress !!   
 Please note that this code is highly experimental, you'll experience odd behavior so feel free to contribute:   
@@ -16,18 +14,33 @@ Please note that this code is highly experimental, you'll experience odd behavio
 
 Features
 ---------
-* SSLv2 handshake
-* TLS/SSL3 records
-* TLS handshake
-* DTLS records and handshake
 * TLS Session Tracking
  * Key Re-generation for RSA key_exchange based ciphers (*RSA_WITH_*)
  * TLS Session sniffing
+ * generic session decryption (*RSA_WITH_*) for sniffed/recorded traffic
+* SSLv2 handshake
+* SSL3/TLS records
+* TLS handshakes, extensions, alerts
+* DTLS records, handshakes
 
 
-Installation
+TODO
+-----
+
+* get rid of scapy/layers folder structure in sourcetree
+* package for pip
+* update/split documentation
+* get rid of path magic in examples
+* add support for TLSFinished
+* add support for TLS1_1
+
+
+Installation (optional)
 --------
-1) deploy ssl_tls.py to ./scapy/layers
+
+Note - it should *not* required to copy the layer files to scapy to run the examples.
+
+1) deploy all files in ./src/scapy/layers to ./scapy/layers
 
 2) modify ./scapy/config.py to autoload this new layer
 ```diff
