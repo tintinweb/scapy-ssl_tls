@@ -73,11 +73,6 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 """
     session.rsa_load_privkey(privkey)
     
-    # fake initial session packet for session tracking
-    # session context autoupdates itself whenever a packet is inserted.
-    sip,sport= s.getsockname()
-    session.insert(IP(src=sip,dst=target[0])/TCP(sport=sport,dport=target[1]))
-    
     # create TLS Handshake / Client Hello packet
     print "* -> client hello"
     p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=None, 
