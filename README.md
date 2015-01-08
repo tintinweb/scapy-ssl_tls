@@ -38,7 +38,7 @@ TODO
 Installation (optional)
 --------
 
-Note - it should *not* required to copy the layer files to scapy to run the examples.
+Note - it is *not* required to deploy files from the src/scapy/layers folder to your scapy_installation/layers directory in order to run the examples.
 
 1) deploy all files in ./src/scapy/layers to ./scapy/layers
 
