@@ -486,3 +486,8 @@ TLSCiphertextDecrypted
 
 ## Authors
 * tintinweb  ( http://oststrom.com  | http://github.com/tintinweb)
+
+## Contributions / 3rd party code
+* pkcs7.py - http://japrogbits.blogspot.co.at/2011/02/using-encrypted-data-between-python-and.html
+* polarssl - tls1_0 prf (because openssl code is such a ref-mess!)
+* tbd
