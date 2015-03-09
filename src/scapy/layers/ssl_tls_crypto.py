@@ -38,10 +38,21 @@ def prf(master_secret, label, data):
 def x509_extract_pubkey_from_der(der_certificate):
     # Extract subjectPublicKeyInfo field from X.509 certificate (see RFC3280)
     cert = DerSequence()
-    cert.decode(der_certificate)
+    cert.decode(der_certificate)                
+    
     tbsCertificate = DerSequence()
-    tbsCertificate.decode(cert[0])
-    subjectPublicKeyInfo = tbsCertificate[6]
+    tbsCertificate.decode(cert[0])       # first DER SEQUENCE
+    
+    # search for pubkey OID: rsaEncryption: "1.2.840.113549.1.1.1"
+    # hex: 06 09 2A 86 48 86 F7 0D 01 01 01 
+    subjectPublicKeyInfo=None
+    for seq in tbsCertificate:
+        if not isinstance(seq,basestring): continue     # skip numerics and non sequence stuff
+        if "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
+            subjectPublicKeyInfo=seq
+        
+    if not subjectPublicKeyInfo:
+        raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
 
     # Initialize RSA key
     return RSA.importKey(subjectPublicKeyInfo)
