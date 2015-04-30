@@ -273,32 +273,53 @@ class TLSRecord(Packet):
     fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
                    XShortEnumField("version", 0x0301, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
-    
+
+class TLSPacketBuildError(Exception):
+    pass
+
 class TLSCiphertext(Packet):
+
     name = "TLS Ciphertext Fragment"
     fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
                    XShortEnumField("version", 0x0301, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
 
-class TLSCiphertextDecrypted(Packet):
-    name = "TLS Ciphertext Decrypted"
-    fields_desc = [ StrField("data", None, fmt="H")]
-class TLSCiphertextMAC(Packet):
-    name = "TLS Ciphertext MAC"
-    fields_desc = [ StrField("mac", None, fmt="H")]
-    
+    def __init__(self, pkt, **fields):
+        if pkt is None or not pkt.haslayer(TLSCompressed):
+            raise TLSPacketBuildError("Valid TLSCompressed layer required to build packet")
+        self.pkt = pkt[TLSCompressed]
+        super(TLSCiphertext, self).__init__(**fields)
+
 class TLSCompressed(Packet):
     name = "TLS Compressed Fragment"
     fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
                    XShortEnumField("version", 0x0301, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
-    
+
+    def __init__(self, pkt, **fields):
+        if pkt is None or not pkt.haslayer(TLSPlaintext):
+            raise TLSPacketBuildError("Valid TLSPlaintext layer required to build packet")
+        self.pkt = pkt[TLSPlaintext]
+        super(TLSCompressed, self).__init__(**fields)
+
 class TLSPlaintext(Packet):
     name = "TLS Plaintext"
     fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
                    XShortEnumField("version", 0x0301, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
 
+    def __init__(self, data, tls_ctx, **fields):
+        self.data = data
+        self.tls_ctx = tls_ctx
+        super(TLSPlaintext, self).__init__(**fields)
+
+class TLSCiphertextDecrypted(Packet):
+    name = "TLS Ciphertext Decrypted"
+    fields_desc = [ StrField("data", None, fmt="H")]
+
+class TLSCiphertextMAC(Packet):
+    name = "TLS Ciphertext MAC"
+    fields_desc = [ StrField("mac", None, fmt="H")]
     
 class TLSHandshake(Packet):
     name = "TLS Handshake"
