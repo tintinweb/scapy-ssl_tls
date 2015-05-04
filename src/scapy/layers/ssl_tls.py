@@ -731,11 +731,13 @@ class SSL(Packet):
                     break
                 record = cls(s[pos:pos + layer_len])
                 pos += layer_len
-                # print pos,len(s)
+                # to make 'records' appear in 'fields' it must
+                # be assigned once before appending
+                if 'records' not in self.fields:
+                    self.records = []
                 self.records.append(record)
-        except Exception, e:
+        except TypeError, e:
             pass
-            # raise e
         return s[pos:]
 
 
