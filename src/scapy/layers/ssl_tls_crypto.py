@@ -2,20 +2,18 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 # http://www.secdev.org/projects/scapy/doc/build_dissect.html
+
+import hashlib
 import Crypto
+import ssl_tls as tls
 from Crypto.Hash import HMAC, MD5, SHA
 from Crypto.Util.asn1 import DerSequence
 from binascii import a2b_base64
 from base64 import b64decode
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
-import hashlib
 from Crypto.Cipher import PKCS1_v1_5#,PKCS1_OAEP
 from scapy.layers.inet import TCP, UDP, IP
-from ssl_tls import TLSHandshake,TLSServerHello,TLSClientHello,TLSCertificateList, \
-                    TLSClientKeyExchange,TLSKexParamEncryptedPremasterSecret, \
-                    TLS_CIPHER_SUITES, TLSRecord, TLSCiphertextDecrypted, \
-                    TLSCiphertextMAC
 import struct
 import pkcs7
 import array
@@ -69,7 +67,7 @@ def describe_ciphersuite(cipher_id):
     '''
     e.g  int 0x0033 => 'RSA_WITH_AES_128_CBC_SHA'
     '''
-    cipher_string = TLS_CIPHER_SUITES.get(cipher_id)
+    cipher_string = tls.TLS_CIPHER_SUITES.get(cipher_id)
     
     kex, encmac = cipher_string.split("_WITH_")
     kex = kex.split("_")
@@ -262,38 +260,38 @@ class TLSSessionCtx(object):
         '''
         fill context
         '''
-        if p.haslayer(TLSHandshake):
+        if p.haslayer(tls.TLSHandshake):
             # requires handshake messages
-            if p.haslayer(TLSClientHello):
+            if p.haslayer(tls.TLSClientHello):
                 if not self.params.handshake.client:
-                    self.params.handshake.client=p[TLSClientHello]
+                    self.params.handshake.client=p[tls.TLSClientHello]
                     
                     # fetch randombytes for crypto stuff
                     if not self.crypto.session.randombytes.client:
-                        self.crypto.session.randombytes.client=struct.pack("!I",p[TLSClientHello].gmt_unix_time)+p[TLSClientHello].random_bytes
-            if p.haslayer(TLSServerHello):
+                        self.crypto.session.randombytes.client=struct.pack("!I",p[tls.TLSClientHello].gmt_unix_time)+p[tls.TLSClientHello].random_bytes
+            if p.haslayer(tls.TLSServerHello):
                 if not self.params.handshake.server:
-                    self.params.handshake.server=p[TLSServerHello]
+                    self.params.handshake.server=p[tls.TLSServerHello]
                     #fetch randombytes
                     if not self.crypto.session.randombytes.server:
-                        self.crypto.session.randombytes.server=struct.pack("!I",p[TLSServerHello].gmt_unix_time)+p[TLSServerHello].random_bytes
+                        self.crypto.session.randombytes.server=struct.pack("!I",p[tls.TLSServerHello].gmt_unix_time)+p[tls.TLSServerHello].random_bytes
                 # negotiated params
                 if not self.params.negotiated.ciphersuite:
-                    self.params.negotiated.ciphersuite=p[TLSServerHello].cipher_suite
-                    self.params.negotiated.compression=p[TLSServerHello].compression_method
+                    self.params.negotiated.ciphersuite=p[tls.TLSServerHello].cipher_suite
+                    self.params.negotiated.compression=p[tls.TLSServerHello].compression_method
                     kex,enc,mac = describe_ciphersuite(self.params.negotiated.ciphersuite)
                     self.params.negotiated.key_exchange=kex
                     self.params.negotiated.encryption=enc
                     self.params.negotiated.mac=mac
-            if p.haslayer(TLSCertificateList):
+            if p.haslayer(tls.TLSCertificateList):
                 if self.params.negotiated.key_exchange and "RSA" in self.params.negotiated.key_exchange:
                     # fetch server pubkey // PKCS1_v1_5
-                    cert = p[TLSCertificateList].certificates[0].data
+                    cert = p[tls.TLSCertificateList].certificates[0].data
                     self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(cert))
                     # check for client privkey
                     
             # calculate key material
-            if p.haslayer(TLSClientKeyExchange) \
+            if p.haslayer(tls.TLSClientKeyExchange) \
                     and self.crypto.server.rsa.privkey:  
                 
                 # FIXME: RSA_AES128_SHA1
@@ -302,7 +300,7 @@ class TLSSessionCtx(object):
                 self.crypto.session.key.length.iv = 16
                 # calculate secrets and key material from encrypted key
                 # if private_key is set we're going to decrypt the PremasterSecret and re-calc key material
-                self.crypto.session.encrypted_premaster_secret = p[TLSClientKeyExchange].load
+                self.crypto.session.encrypted_premaster_secret = p[tls.TLSClientKeyExchange].load
                 # decrypt epms -> pms
                 self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret,None)
                 secparams = TLSSecurityParameters()
@@ -357,9 +355,9 @@ class TLSSessionCtx(object):
         return
     
     def tlsciphertext_decrypt(self, p, cryptfunc):
-        ret = TLSRecord()
-        ret.content_type, ret.version, ret.length = p[TLSRecord].content_type, p[TLSRecord].version, p[TLSRecord].length
-        enc_data = p[TLSRecord].payload.load 
+        ret = tls.TLSRecord()
+        ret.content_type, ret.version, ret.length = p[tls.TLSRecord].content_type, p[tls.TLSRecord].version, p[tls.TLSRecord].length
+        enc_data = p[tls.TLSRecord].payload.load 
         
         #if self.packets.client.sequence==0:
         #    iv = self.crypto.session.key.client.iv
@@ -368,7 +366,7 @@ class TLSSessionCtx(object):
         plaintext = decrypted[:-self.crypto.session.key.length.mac-1]
         mac=decrypted[len(plaintext):]
         
-        return ret/TLSCiphertextDecrypted(plaintext)/TLSCiphertextMAC(mac)
+        return ret/tls.TLSCiphertextDecrypted(plaintext)/tls.TLSCiphertextMAC(mac)
             
 
 class TLSPRF(object):
@@ -558,7 +556,7 @@ if __name__=="__main__":
     master_secret = p.prf_numbytes(pre_master_secret,TLSPRF.TLS_MD_MASTER_SECRET_CONST,client_random+server_random, numbytes=48)
     print repr(master_secret), len(master_secret)
     
-    secparams = TLSSecurityParameters()
+    secparams = tls.TLSSecurityParameters()
     key_block = p.prf_numbytes(master_secret,TLSPRF.TLS_MD_KEY_EXPANSION_CONST, server_random+client_random, numbytes=2*(secparams.mac_key_length+secparams.enc_key_length+secparams.fixed_iv_length) )
     print repr(key_block), len(key_block)
     print secparams.consume_bytes(key_block)
