@@ -6,7 +6,7 @@
 import hashlib
 import Crypto
 import ssl_tls as tls
-from Crypto.Hash import HMAC, MD5, SHA
+from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.Util.asn1 import DerSequence
 from binascii import a2b_base64
 from base64 import b64decode
@@ -482,7 +482,7 @@ class TLSSecurityParameters(object):
         
         self.premaster_secret = None
         
-        self.prf =TLSPRF(Crypto.Hash.SHA256)
+        self.prf =TLSPRF(SHA256)
         
     def __len__(self):
         return len(self.client_write_MAC_key
