@@ -722,22 +722,28 @@ class SSL(Packet):
         pos = 0
         cls = self.guessed_next_layer  # FIXME: detect DTLS
         cls_len = len(cls())
-        try:
-            while pos <= len(s):
-            # consume payloads and add them to records list
-                record = cls(s[pos:], _internal=1)  # FIXME: performance
-                layer_len = cls_len + record.length
-                if layer_len == None:
-                    break
-                record = cls(s[pos:pos + layer_len])
-                pos += layer_len
-                # to make 'records' appear in 'fields' it must
-                # be assigned once before appending
-                if 'records' not in self.fields:
-                    self.records = []
-                self.records.append(record)
-        except TypeError, e:
-            pass
+        
+        # do_dissect is responsible for initializing fields, see packet.py::do_dissect
+        # inspired by scapys original do_dissect we iterate over all fields in
+        # fields_desc even though we know that we only have on field call records
+        flist = self.fields_desc[:]
+        flist.reverse()
+        while s and flist:
+            f = flist.pop()
+            try:
+                while pos <= len(s):
+                # consume payloads and add them to records list
+                    record = cls(s[pos:], _internal=1)  # FIXME: performance
+                    layer_len = cls_len + record.length
+                    if layer_len == None:
+                        break
+                    record = cls(s[pos:pos + layer_len])
+                    pos += layer_len
+                    # to make 'records' appear in 'fields' it must
+                    # be assigned once before appending
+                    self.fields[f.name] = record
+            except TypeError, e:
+                pass
         return s[pos:]
 
 
