@@ -6,7 +6,7 @@
 import hashlib
 import Crypto
 import ssl_tls as tls
-from Crypto.Hash import HMAC, MD5, SHA
+from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.Util.asn1 import DerSequence
 from binascii import a2b_base64
 from base64 import b64decode
@@ -300,9 +300,9 @@ class TLSSessionCtx(object):
                 self.crypto.session.key.length.iv = 16
                 # calculate secrets and key material from encrypted key
                 # if private_key is set we're going to decrypt the PremasterSecret and re-calc key material
-                self.crypto.session.encrypted_premaster_secret = p[tls.TLSClientKeyExchange].load
+                self.crypto.session.encrypted_premaster_secret = str(p[tls.TLSClientKeyExchange].payload)
                 # decrypt epms -> pms
-                self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret,None)
+                self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
                 secparams = TLSSecurityParameters()
                 
                 secparams.mac_key_length=self.crypto.session.key.length.mac
@@ -348,11 +348,11 @@ class TLSSessionCtx(object):
         return PKCS1_v1_5.new(key)
 
     def rsa_load_from_file(self, pemfile):
-        return self.rsa_load_key(open(pemfile,'r').read())
+        with open(pemfile,'r') as f:
+          self.crypto.server.rsa.privkey = self.rsa_load_key(f.read())
     
     def rsa_load_privkey(self, pem):
-        self.crypto.server.rsa.privkey=self.rsa_load_key(pem)
-        return
+        self.crypto.server.rsa.privkey = self.rsa_load_key(pem)
     
     def tlsciphertext_decrypt(self, p, cryptfunc):
         ret = tls.TLSRecord()
@@ -482,7 +482,7 @@ class TLSSecurityParameters(object):
         
         self.premaster_secret = None
         
-        self.prf =TLSPRF(Crypto.Hash.SHA256)
+        self.prf =TLSPRF(SHA256)
         
     def __len__(self):
         return len(self.client_write_MAC_key
