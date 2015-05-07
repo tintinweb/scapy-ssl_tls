@@ -3,21 +3,20 @@
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 # http://www.secdev.org/projects/scapy/doc/build_dissect.html
 
-import hashlib
-import Crypto
-import ssl_tls as tls
-from Crypto.Hash import HMAC, MD5, SHA, SHA256
-from Crypto.Util.asn1 import DerSequence
-from binascii import a2b_base64
-from base64 import b64decode
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import AES
-from Crypto.Cipher import PKCS1_v1_5#,PKCS1_OAEP
-from scapy.layers.inet import TCP, UDP, IP
-import struct
-import pkcs7
 import array
+import binascii
+import copy
+import struct
+import ssl_tls as tls
+import zlib
+
 from collections import namedtuple
+from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
+from Crypto.Hash import HMAC, MD5, SHA, SHA256
+from Crypto.PublicKey import RSA
+from Crypto.Util.asn1 import DerSequence
+
+
 '''
 https://tools.ietf.org/html/rfc4346#section-6.3
     key_block = PRF(SecurityParameters.master_secret,
@@ -36,21 +35,10 @@ def prf(master_secret, label, data):
 def x509_extract_pubkey_from_der(der_certificate):
     # Extract subjectPublicKeyInfo field from X.509 certificate (see RFC3280)
     cert = DerSequence()
-    cert.decode(der_certificate)                
-    
+    cert.decode(der_certificate)
     tbsCertificate = DerSequence()
-    tbsCertificate.decode(cert[0])       # first DER SEQUENCE
-    
-    # search for pubkey OID: rsaEncryption: "1.2.840.113549.1.1.1"
-    # hex: 06 09 2A 86 48 86 F7 0D 01 01 01 
-    subjectPublicKeyInfo=None
-    for seq in tbsCertificate:
-        if not isinstance(seq,basestring): continue     # skip numerics and non sequence stuff
-        if "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
-            subjectPublicKeyInfo=seq
-        
-    if not subjectPublicKeyInfo:
-        raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
+    tbsCertificate.decode(cert[0])
+    subjectPublicKeyInfo = tbsCertificate[6]
 
     # Initialize RSA key
     return RSA.importKey(subjectPublicKeyInfo)
@@ -59,58 +47,16 @@ def x509_extract_pubkey_from_pem(public_key_string):
     #https://github.com/m4droid/U-Pasaporte/blob/7a00b344e97bb05265fd726f4125f0966dca6a5a/upasaporte/__init__.py
     # Convert from PEM to DER
     lines = public_key_string.replace(" ",'').split()
-    der = a2b_base64(''.join(lines[1:-1]))
+    der = binascii.a2b_base64(''.join(lines[1:-1]))
 
     return x509_extract_pubkey_from_der(der)
 
-def describe_ciphersuite(cipher_id):
-    '''
-    e.g  int 0x0033 => 'RSA_WITH_AES_128_CBC_SHA'
-    '''
-    cipher_string = tls.TLS_CIPHER_SUITES.get(cipher_id)
-    
-    kex, encmac = cipher_string.split("_WITH_")
-    kex = kex.split("_")
-    encmac =  encmac.split("_")
-    enc = encmac[:-1]
-    mac = encmac[-1:]
-    
-    return kex, enc, mac
-    
-
-class PKCS7Wrapper(object):
-    def __init__(self, cipher_object):
-        self.cipher_object=cipher_object
-        self.encoder = pkcs7.PKCS7Encoder(k=cipher_object.block_size)       # padd 16
-        
-    def encrypt(self, plaintext):
-        return self.cipher_object.encrypt(self.encoder.encode(plaintext))
-    
-    def decrypt(self, ciphertext):
-        return self.encoder.decode(self.cipher_object.decrypt(ciphertext))
-
-def ciphersuite_factory(cipher_id, key, iv):
-    kex, enc, mac = describe_ciphersuite(cipher_id)
-    #print kex,enc,mac
-    
-    if not "AES" in enc:
-        raise Exception("Encryption Cipher not supported: %s"%enc)
-    
-    
-    
-    if "CBC" in enc:
-        mode = AES.MODE_CBC
-    else:
-        raise Exception("Crypto Mode not supported: %s"%enc)
-    
-    encryptor = AES.new(key, mode=mode, IV=iv)
-    return PKCS7Wrapper(encryptor)
-
-
 class TLSSessionCtx(object):
+
     def __init__(self):
         self.packets = namedtuple('packets',['history','client','server'])
         self.packets.history=[]         #packet history
+        self.sec_params = None
         self.packets.client = namedtuple('client',['sequence'])
         self.packets.client.sequence=0
         self.packets.server = namedtuple('server',['sequence'])
@@ -126,19 +72,27 @@ class TLSSessionCtx(object):
                                                             'encryption',
                                                             'mac',
                                                             'compression',
+                                                            "compression_algo",
+                                                            "version"
                                             ])
         self.params.negotiated.ciphersuite=None
         self.params.negotiated.key_exchange=None
         self.params.negotiated.encryption=None
         self.params.negotiated.mac=None
         self.params.negotiated.compression=None
+        self.params.negotiated.compression_algo = None
+        self.params.negotiated.version = None
+        self.compression = namedtuple("compression", ["method"])
+        self.compression.method = None
         self.crypto = namedtuple('crypto', ['client','server'])
-        self.crypto.client = namedtuple('client', ['enc','dec'])
+        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac"])
         self.crypto.client.enc = None
         self.crypto.client.dec = None
-        self.crypto.server = namedtuple('server', ['enc','dec','rsa'])
+        self.crypto.client.hmac = None
+        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
+        self.crypto.server.hmac = None
         self.crypto.server.rsa = namedtuple('rsa', ['pubkey','privkey'])
         self.crypto.server.rsa.pubkey=None
         self.crypto.server.rsa.privkey=None
@@ -250,11 +204,11 @@ class TLSSessionCtx(object):
         return str%params
     
     def insert(self, p):
-         '''
-         add packet to context
-         '''
-         self.packets.history.append(p)
-         self.process(p)        # fill structs
+        '''
+        add packet to context
+        '''
+        self.packets.history.append(p)
+        self.process(p)        # fill structs
          
     def process(self,p):
         '''
@@ -264,84 +218,80 @@ class TLSSessionCtx(object):
             # requires handshake messages
             if p.haslayer(tls.TLSClientHello):
                 if not self.params.handshake.client:
-                    self.params.handshake.client=p[tls.TLSClientHello]
-                    
+
+                    self.params.handshake.client = p[tls.TLSClientHello]
+                    self.params.negotiated.version = p[tls.TLSClientHello].version
                     # fetch randombytes for crypto stuff
                     if not self.crypto.session.randombytes.client:
-                        self.crypto.session.randombytes.client=struct.pack("!I",p[tls.TLSClientHello].gmt_unix_time)+p[tls.TLSClientHello].random_bytes
+                        self.crypto.session.randombytes.client = struct.pack("!I", p[tls.TLSClientHello].gmt_unix_time) + p[tls.TLSClientHello].random_bytes
             if p.haslayer(tls.TLSServerHello):
                 if not self.params.handshake.server:
-                    self.params.handshake.server=p[tls.TLSServerHello]
+                    self.params.handshake.server = p[tls.TLSServerHello]
+                    self.params.negotiated.version = p[tls.TLSServerHello].version
                     #fetch randombytes
                     if not self.crypto.session.randombytes.server:
-                        self.crypto.session.randombytes.server=struct.pack("!I",p[tls.TLSServerHello].gmt_unix_time)+p[tls.TLSServerHello].random_bytes
+                        self.crypto.session.randombytes.server = struct.pack("!I", p[tls.TLSServerHello].gmt_unix_time) + p[tls.TLSServerHello].random_bytes
                 # negotiated params
                 if not self.params.negotiated.ciphersuite:
-                    self.params.negotiated.ciphersuite=p[tls.TLSServerHello].cipher_suite
-                    self.params.negotiated.compression=p[tls.TLSServerHello].compression_method
-                    kex,enc,mac = describe_ciphersuite(self.params.negotiated.ciphersuite)
-                    self.params.negotiated.key_exchange=kex
-                    self.params.negotiated.encryption=enc
-                    self.params.negotiated.mac=mac
+                    self.params.negotiated.ciphersuite = p[tls.TLSServerHello].cipher_suite
+                    self.params.negotiated.compression = p[tls.TLSServerHello].compression_method
+                    try:
+                        self.params.negotiated.compression_algo = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["name"]
+                        self.compression.method = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["type"]
+                    except KeyError:
+                        raise KeyError("Compression method 0x%02x not supported" % self.params.negotiated.compression)
+                    # Raises UnsupportedCipherError if we do not handle the cipher
+                    try:
+                        self.params.negotiated.key_exchange = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["key_exchange"]["name"]
+                        self.params.negotiated.encryption = (TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["name"],
+                                                         TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["key_len"],
+                                                         TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["mode_name"])
+                        self.params.negotiated.mac = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["hash"]["name"]
+                    except KeyError:
+                        raise UnsupportedCipherError("Cipher 0x%04x not supported" % self.params.negotiated.ciphersuite)
+
             if p.haslayer(tls.TLSCertificateList):
-                if self.params.negotiated.key_exchange and "RSA" in self.params.negotiated.key_exchange:
+                if self.params.negotiated.key_exchange and self.params.negotiated.key_exchange == "RSA":
                     # fetch server pubkey // PKCS1_v1_5
                     cert = p[tls.TLSCertificateList].certificates[0].data
                     self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(cert))
                     # check for client privkey
                     
             # calculate key material
-            if p.haslayer(tls.TLSClientKeyExchange) \
-                    and self.crypto.server.rsa.privkey:  
-                
-                # FIXME: RSA_AES128_SHA1
-                self.crypto.session.key.length.mac = 160/8
-                self.crypto.session.key.length.encryption = 128/8
-                self.crypto.session.key.length.iv = 16
-                # calculate secrets and key material from encrypted key
-                # if private_key is set we're going to decrypt the PremasterSecret and re-calc key material
+            if p.haslayer(tls.TLSClientKeyExchange):  
+
+                self.crypto.session.key.length.mac = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["hash"]["type"].digest_size
+                self.crypto.session.key.length.encryption = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["key_len"]
+                self.crypto.session.key.length.iv = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["type"].block_size
+
                 self.crypto.session.encrypted_premaster_secret = str(p[tls.TLSClientKeyExchange].payload)
-                # decrypt epms -> pms
-                self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
-                secparams = TLSSecurityParameters()
                 
-                secparams.mac_key_length=self.crypto.session.key.length.mac
-                secparams.enc_key_length=self.crypto.session.key.length.encryption
-                secparams.fixed_iv_length=self.crypto.session.key.length.iv
+                # If we have the private key, let's decrypt the pms for giggles
+                if self.crypto.server.rsa.privkey is not None:
+                    self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
+
+                self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
+                                                        self.crypto.session.premaster_secret, 
+                                                        self.crypto.session.randombytes.client,
+                                                        self.crypto.session.randombytes.server)
                 
-                
-                secparams.generate(self.crypto.session.premaster_secret, 
-                                   self.crypto.session.randombytes.client,
-                                   self.crypto.session.randombytes.server)
-                
-                self.crypto.session.master_secret = secparams.master_secret
-                self.crypto.session.key.server.mac = secparams.server_write_MAC_key
-                self.crypto.session.key.server.encryption = secparams.server_write_key
-                self.crypto.session.key.server.iv = secparams.server_write_IV
+                self.crypto.session.master_secret = self.sec_params.master_secret
+
+                self.crypto.session.key.server.mac = self.sec_params.server_write_MAC_key
+                self.crypto.session.key.server.encryption = self.sec_params.server_write_key
+                self.crypto.session.key.server.iv = self.sec_params.server_write_IV
         
-    
-                self.crypto.session.key.client.mac = secparams.client_write_MAC_key
-                self.crypto.session.key.client.encryption = secparams.client_write_key
-                self.crypto.session.key.client.iv = secparams.client_write_IV
-    
-                del secparams
-                
-                # create cypher objects
-                # one for encryption and one for decryption to not mess up internal states
-                self.crypto.client.enc = ciphersuite_factory(self.params.negotiated.ciphersuite,
-                                                             key=self.crypto.session.key.client.encryption,
-                                                             iv=self.crypto.session.key.client.iv)
-                self.crypto.client.dec = ciphersuite_factory(self.params.negotiated.ciphersuite,
-                                                             key=self.crypto.session.key.client.encryption,
-                                                             iv=self.crypto.session.key.client.iv)
-                self.crypto.server.enc = ciphersuite_factory(self.params.negotiated.ciphersuite,
-                                                             key=self.crypto.session.key.server.encryption,
-                                                             iv=self.crypto.session.key.server.iv)
-                self.crypto.server.dec = ciphersuite_factory(self.params.negotiated.ciphersuite,
-                                                             key=self.crypto.session.key.server.encryption,
-                                                             iv=self.crypto.session.key.server.iv)
-                
-            # check whether crypto was set up
+                self.crypto.session.key.client.mac = self.sec_params.client_write_MAC_key
+                self.crypto.session.key.client.encryption = self.sec_params.client_write_key
+                self.crypto.session.key.client.iv = self.sec_params.client_write_IV
+
+                # Retrieve ciphers used for client/server encryption and decryption
+                self.crypto.client.enc = self.sec_params.get_client_enc_cipher()
+                self.crypto.client.dec = self.sec_params.get_client_dec_cipher()
+                self.crypto.client.hmac = self.sec_params.get_client_hmac()
+                self.crypto.server.enc = self.sec_params.get_server_enc_cipher()
+                self.crypto.server.dec = self.sec_params.get_server_dec_cipher()
+                self.crypto.server.hmac = self.sec_params.get_server_hmac()
             
     def rsa_load_key(self, pem):
         key=RSA.importKey(pem)
@@ -465,116 +415,213 @@ class TLSPRF(object):
     
     def hash(self, msg):
         return self.algorithm.new(msg).digest()
-               
+
+class NullCipher(object):
+    """ Implements a pycrypto like interface for the Null Cipher
+    """
+    
+    block_size = 0
+    key_size = 0
+    
+    @classmethod
+    def new(cls, *args, **kwargs):
+        return cls()
+    
+    def encrypt(self, cleartext):
+        return cleartext
+    
+    def decrypt(self, ciphertext):
+        return ciphertext
+
+class NullHash(object):
+    """ Implements a pycrypto like interface for the Null Hash
+    """
+
+    blocksize = 0
+    digest_size = 0
+    
+    def __init__(self, *args, **kwargs):
+        pass
+    
+    @classmethod
+    def new(cls, *args, **kwargs):
+        return cls(*args, **kwargs)
+    
+    def update(self, data):
+        pass
+    
+    def digest(self):
+        return ""
+    
+    def hexdigest(self):
+        return ""
+    
+    def copy(self):
+        return copy.deepcopy(self)
+
+class UnsupportedCipherError(Exception):
+    pass
+ 
 class TLSSecurityParameters(object):
     
-    def __init__(self):
-        self.client_write_MAC_key = None
-        self.server_write_MAC_key= None
-        self.client_write_key = None
-        self.server_write_key = None
-        self.client_write_IV = None
-        self.server_write_IV = None
-        
-        self.mac_key_length = 160/8
-        self.enc_key_length = 128/8
-        self.fixed_iv_length = 16
-        
-        self.premaster_secret = None
-        
-        self.prf =TLSPRF(SHA256)
-        
-    def __len__(self):
-        return len(self.client_write_MAC_key
-                   +self.server_write_MAC_key
-                   +self.client_write_key
-                   +self.server_write_key
-                   +self.client_write_IV
-                   +self.server_write_IV)
-        
-    def consume_bytes(self, data):
-        i=0
-        self.client_write_MAC_key = data[i:i+self.mac_key_length]
-        i+=self.mac_key_length
-        
-        self.server_write_MAC_key= data[i:i+self.mac_key_length]
-        i+=self.mac_key_length
-        
-        self.client_write_key = data[i:i+self.enc_key_length]
-        i+=self.enc_key_length
-        
-        self.server_write_key = data[i:i+self.enc_key_length]
-        i+=self.enc_key_length
-        
-        self.client_write_IV = data[i:i+self.fixed_iv_length]
-        i+=self.fixed_iv_length
-        
-        self.server_write_IV = data[i:i+self.fixed_iv_length]
-        i+=self.fixed_iv_length
-        return i
+    crypto_params = {
+                    0x0000: {"name":"NULL_WITH_NULL_NULL", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":NullHash, "name":"Null"}}, 
+                    0x0001: {"name":"RSA_WITH_NULL_MD5", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0002: {"name":"RSA_WITH_NULL_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0003: {"name":"RSA_EXPORT_WITH_RC4_40_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":5, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0004: {"name":"RSA_WITH_RC4_128_MD5", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0005: {"name":"RSA_WITH_RC4_128_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0006: {"name":"RSA_EXPORT_WITH_RC2_CBC_40_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC2, "name":"RC2", "key_len":5, "mode":ARC2.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":MD5, "name":"MD5"}},
+                    # 0x0007: RSA_WITH_IDEA_CBC_SHA => IDEA support would require python openssl bindings
+                    0x0008: {"name":"RSA_EXPORT_WITH_DES40_CBC_SHA", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":5, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0009: {"name":"RSA_WITH_DES_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x000a: {"name":"RSA_WITH_3DES_EDE_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES3, "name":"DES3", "key_len":24, "mode":DES3.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x002f: {"name":"RSA_WITH_AES_128_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0035: {"name":"RSA_WITH_AES_256_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x003b: {"name":"RSA_WITH_NULL_SHA256", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA256, "name":"SHA256"}},
+                    0x0060: {"name":"RSA_EXPORT_WITH_RC4_56_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0061: {"name":"RSA_EXPORT1024_WITH_RC2_CBC_56_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC2, "name":"RC2", "key_len":8, "mode":ARC2.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0062: {"name":"RSA_EXPORT1024_WITH_DES_CBC_SHA", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0064: {"name":"RSA_EXPORT1024_WITH_RC4_56_SHA", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+                    # 0x0084: RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
+                    }
+# Unsupported for now, until DHE support implemented
+#         DHE_RSA_WITH_3DES_EDE_CBC_SHA = 0x0016    
+#         DHE_DSS_WITH_3DES_EDE_CBC_SHA = 0x0013
+#         DHE_RSA_WITH_AES_128_CBC_SHA = 0x0033
+#         DHE_DSS_WITH_AES_128_CBC_SHA = 0x0032
+#         DHE_DSS_WITH_RC4_128_SHA = 0x0066       
+#         DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA = 0x0063
+#         DHE_RSA_WITH_DES_CBC_SHA = 0x0015
+#         DHE_DSS_WITH_DES_CBC_SHA = 0x0012
+#         DHE_DSS_EXPORT1024_WITH_RC4_56_SHA = 0x0065
+#         DHE_RSA_EXPORT_WITH_DES40_CBC_SHA = 0x0014
+#         DHE_DSS_EXPORT_WITH_DES40_CBC_SHA = 0x0011
+#         DHE_DSS_WITH_AES_256_CBC_SHA = 0x0038    
+#         DHE_RSA_WITH_AES_256_CBC_SHA = 0x0039
+#         ECDHE_ECDSA_WITH_AES_256_CBC_SHA = 0xc00a
+#         ECDH_RSA_WITH_AES_256_CBC_SHA = 0xc00f    
+#         ECDHE_RSA_WITH_AES_256_CBC_SHA = 0xc014
+#         SRP_SHA_RSA_WITH_AES_256_CBC_SHA = 0xc021
+#         SRP_SHA_DSS_WITH_AES_256_CBC_SHA = 0xc022
+#         DHE_DSS_WITH_CAMELLIA_256_CBC_SHA = 0x0087
+#         DHE_RSA_WITH_CAMELLIA_256_CBC_SHA = 0x0088
+#         ECDH_ECDSA_WITH_AES_256_CBC_SHA = 0xc005
+#         TLS_FALLBACK_SCSV = 0x5600
+
+    def __init__(self, cipher_suite, pms, client_random, server_random):
+        """ /!\ This class is not thread safe
+        """
+        try:
+            self._crypto_param = self.crypto_params[cipher_suite]
+        except KeyError:
+            raise UnsupportedCipherError("Cipher 0x%04x not supported" % cipher_suite)
+        # Not validating lengths here, since sending a longuer PMS might be interesting
+        self.pms = pms
+        if len(client_random) != 32:
+            raise ValueError("Client random must be 32 bytes")
+        self.client_random = client_random
+        if len(server_random) != 32:
+            raise ValueError("Server random must be 32 bytes")
+        self.server_random = server_random
+        self.mac_key_length = self._crypto_param["hash"]["type"].digest_size
+        self.cipher_key_length = self._crypto_param["cipher"]["key_len"]
+        self.iv_length = self._crypto_param["cipher"]["type"].block_size
+        self.prf = TLSPRF(SHA256)
+        self.__init_crypto(pms, client_random, server_random)
     
+    def get_client_hmac(self):
+        if self.__client_hmac is None:
+            client_hmac = None
+        else:
+            client_hmac = self.__client_hmac.copy()
+        return client_hmac
+
+    def get_server_hmac(self):
+        if self.__server_hmac is None:
+            server_hmac = None
+        else:
+            server_hmac = self.__server_hmac.copy()
+        return server_hmac
+    
+    def get_server_enc_cipher(self):
+        return None if self.__server_enc_cipher is None else self.__server_enc_cipher
+    
+    def get_server_dec_cipher(self):
+        return None if self.__server_dec_cipher is None else self.__server_dec_cipher
+    
+    def get_client_enc_cipher(self):
+        return None if self.__client_enc_cipher is None else self.__client_enc_cipher
+    
+    def get_client_dec_cipher(self):
+        return None if self.__client_dec_cipher is None else self.__client_dec_cipher
+#         
+    def __init_key_material(self, data):
+        i = 0
+        self.client_write_MAC_key = data[i:i+self.mac_key_length]
+        i += self.mac_key_length
+        self.server_write_MAC_key = data[i:i+self.mac_key_length]
+        i += self.mac_key_length
+        self.client_write_key = data[i:i+self.cipher_key_length]
+        i += self.cipher_key_length
+        self.server_write_key = data[i:i+self.cipher_key_length]
+        i += self.cipher_key_length
+        self.client_write_IV = data[i:i+self.iv_length]
+        i += self.iv_length
+        self.server_write_IV = data[i:i+self.iv_length]
+        i += self.iv_length
+        
+    def __init_crypto(self, pms, client_random, server_random):
+        self.master_secret = self.prf.prf_numbytes(pms,
+                                                   TLSPRF.TLS_MD_MASTER_SECRET_CONST,
+                                                   client_random + server_random, 
+                                                   numbytes=48)
+        key_block = self.prf.prf_numbytes(self.master_secret,
+                                          TLSPRF.TLS_MD_KEY_EXPANSION_CONST, 
+                                          server_random + client_random, 
+                                          numbytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
+        self.__init_key_material(key_block)
+        cipher_mode = self._crypto_param["cipher"]["mode"]
+        cipher_type = self._crypto_param["cipher"]["type"]
+        hash_type = self._crypto_param["hash"]["type"]
+        # Block ciphers
+        if cipher_mode is not None:
+            self.__client_enc_cipher = cipher_type.new(self.client_write_key, mode=cipher_mode, IV=self.client_write_IV)
+            self.__client_dec_cipher = cipher_type.new(self.client_write_key, mode=cipher_mode, IV=self.client_write_IV)
+            self.__server_enc_cipher = cipher_type.new(self.server_write_key, mode=cipher_mode, IV=self.server_write_IV)
+            self.__server_dec_cipher = cipher_type.new(self.server_write_key, mode=cipher_mode, IV=self.server_write_IV)
+        # Stream ciphers
+        else:
+            self.__client_enc_cipher = cipher_type.new(self.client_write_key)
+            self.__client_dec_cipher = cipher_type.new(self.client_write_key)
+            self.__server_enc_cipher = cipher_type.new(self.server_write_key)
+            self.__server_dec_cipher = cipher_type.new(self.server_write_key)
+        self.__client_hmac = HMAC.new(self.client_write_MAC_key, digestmod=hash_type)
+        self.__server_hmac = HMAC.new(self.server_write_MAC_key, digestmod=hash_type)
+
     def __str__(self):
         s=[]
         for f in (f for f in dir(self) if "_write_" in f):
             s.append( "%20s | %s"%(f,repr(getattr(self,f))))
-            
-        
-        s.append("%20s| %s"%("premaster_secret",repr(self.premaster_secret)))
-        s.append("%20s| %s"%("master_secret",repr(self.master_secret)))
-        s.append("%20s| %s"%("master_secret [bytes]",repr([ "%0.2x"%ord(i) for i in self.master_secret])))
+        s.append("%20s| %s" % ("premaster_secret", repr(self.premaster_secret)))
+        s.append("%20s| %s" % ("master_secret", repr(self.master_secret)))
+        s.append("%20s| %s" % ("master_secret [bytes]", binascii.hexlify(self.master_secret)))
         return "\n".join(s)
-    
-    def generate(self, pre_master_secret, client_random, server_random):
-        
-        
-        self.master_secret = self.prf.prf_numbytes(pre_master_secret,
-                                                   TLSPRF.TLS_MD_MASTER_SECRET_CONST,
-                                                   client_random+server_random, 
-                                                   numbytes=48)
-        #print ">",repr(self.master_secret), len(self.master_secret)
-        
-        self.key_block = self.prf.prf_numbytes(self.master_secret,
-                                               TLSPRF.TLS_MD_KEY_EXPANSION_CONST, 
-                                               server_random+client_random, 
-                                               numbytes=2*(self.mac_key_length+self.enc_key_length+self.fixed_iv_length) )
-        
-        #print ">>",repr(self.key_block), len(self.key_block)
-        self.consume_bytes(self.key_block)
-        # self
 
+class NullCompression(object):
+    """ Implements a zlib like interface for null compression
+    """
+    @staticmethod
+    def compress(data):
+        return data
 
+    @staticmethod
+    def decompress(data):
+        return data
 
-  
-if __name__=="__main__":     
-    pre_master_secret = "\03\01aaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb"
-    client_random = 'a'*32
-    server_random = 'z'*32
-
-    '''
-    p = TLSPRF(Crypto.Hash.SHA256)
+class TLSCompressionParameters(object):
     
-    master_secret = p.prf_numbytes(pre_master_secret,TLSPRF.TLS_MD_MASTER_SECRET_CONST,client_random+server_random, numbytes=48)
-    print repr(master_secret), len(master_secret)
-    
-    secparams = tls.TLSSecurityParameters()
-    key_block = p.prf_numbytes(master_secret,TLSPRF.TLS_MD_KEY_EXPANSION_CONST, server_random+client_random, numbytes=2*(secparams.mac_key_length+secparams.enc_key_length+secparams.fixed_iv_length) )
-    print repr(key_block), len(key_block)
-    print secparams.consume_bytes(key_block)
-    print secparams
-    '''
-    secparams = TLSSecurityParameters()
-    secparams.generate(pre_master_secret, client_random, server_random)
-    
-    print repr(secparams.master_secret)
-    print [ "%.2x"%ord(i) for i in secparams.master_secret]
-    print '[x]  ',"Test: master_secret (tls1) .....",secparams.master_secret == 'C\'\x87\x12\xb1\xfe\xba6"\xc5t_y\x90\x8aw\xb6\xe8\x01#\x9f\xc1\x93\x90$\x0c\xc4Z\x17Q{b\x18\xdf\xcb?7\x0c\x97\xf1S)%\x1ez \xff\xb0'
-    
-    
-    print "-----------------"
-    # NOTE! - use different objects for enc/dec.
-    cf_e= ciphersuite_factory("RSA_WITH_AES_128_CBC_SHA",'a'*16,'i'*16)
-    cf_d= ciphersuite_factory("RSA_WITH_AES_128_CBC_SHA",'a'*16,'i'*16)
-    plaintext="a"*251
-    print '[x]  ',"Test: ciphersuite_factory .....", plaintext==cf_d.decrypt(cf_e.encrypt(plaintext))
-    exit()
-    
+    comp_params = {
+                  0x00: {"name":"Null", "type":NullCompression},
+                  0x01: {"name":"Deflate", "type":zlib}
+                  }
