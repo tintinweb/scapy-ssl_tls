@@ -6,6 +6,7 @@
 import array
 import binascii
 import copy
+import os
 import struct
 import ssl_tls as tls
 import zlib
@@ -212,16 +213,16 @@ class TLSSessionCtx(object):
         str +="\n\t crypto.session.key.length.iv=%(crypto-session-key-length-iv)s"
         
         str += "\n>"
-        return str%params
+        return str % params
     
     def insert(self, p):
         '''
         add packet to context
         '''
         self.packets.history.append(p)
-        self.process(p)        # fill structs
+        self._process(p)        # fill structs
          
-    def process(self,p):
+    def _process(self,p):
         '''
         fill context
         '''
@@ -235,6 +236,9 @@ class TLSSessionCtx(object):
                     # fetch randombytes for crypto stuff
                     if not self.crypto.session.randombytes.client:
                         self.crypto.session.randombytes.client = struct.pack("!I", p[tls.TLSClientHello].gmt_unix_time) + p[tls.TLSClientHello].random_bytes
+                    # Generate a random PMS. Overriden at decryption time if private key is provided
+                    self.crypto.session.premaster_secret = self._generate_random_pms(self.params.negotiated.version)
+
             if p.haslayer(tls.TLSServerHello):
                 if not self.params.handshake.server:
                     self.params.handshake.server = p[tls.TLSServerHello]
@@ -262,12 +266,13 @@ class TLSSessionCtx(object):
                         raise UnsupportedCipherError("Cipher 0x%04x not supported" % self.params.negotiated.ciphersuite)
 
             if p.haslayer(tls.TLSCertificateList):
+                # TODO: Probably don't want to do that if rsa_load_priv*() is called 
                 if self.params.negotiated.key_exchange and self.params.negotiated.key_exchange == "RSA":
                     # fetch server pubkey // PKCS1_v1_5
                     cert = p[tls.TLSCertificateList].certificates[0].data
                     self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(cert))
                     # check for client privkey
-                    
+
             # calculate key material
             if p.haslayer(tls.TLSClientKeyExchange):  
 
@@ -277,7 +282,7 @@ class TLSSessionCtx(object):
 
                 self.crypto.session.encrypted_premaster_secret = str(p[tls.TLSClientKeyExchange].payload)
                 
-                # If we have the private key, let's decrypt the pms for giggles
+                # If we have the private key, let's decrypt the PMS
                 if self.crypto.server.rsa.privkey is not None:
                     self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
 
@@ -304,32 +309,29 @@ class TLSSessionCtx(object):
                 self.crypto.server.dec = self.sec_params.get_server_dec_cipher()
                 self.crypto.server.hmac = self.sec_params.get_server_hmac()
             
-    def rsa_load_key(self, pem):
-        key=RSA.importKey(pem)
-        return PKCS1_v1_5.new(key)
+    def _rsa_load_keys(self, priv_key):
+        priv_key = RSA.importKey(priv_key)
+        pub_key = priv_key.publickey()
+        return (PKCS1_v1_5.new(priv_key), PKCS1_v1_5.new(pub_key))
 
-    def rsa_load_from_file(self, pemfile):
-        with open(pemfile,'r') as f:
-          self.crypto.server.rsa.privkey = self.rsa_load_key(f.read())
+    def rsa_load_keys_from_file(self, priv_key_file):
+        with open(priv_key_file,'r') as f:
+          self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(f.read())
     
-    def rsa_load_privkey(self, pem):
-        self.crypto.server.rsa.privkey = self.rsa_load_key(pem)
-    
-    def tlsciphertext_decrypt(self, p, cryptfunc):
-        ret = tls.TLSRecord()
-        ret.content_type, ret.version, ret.length = p[tls.TLSRecord].content_type, p[tls.TLSRecord].version, p[tls.TLSRecord].length
-        enc_data = p[tls.TLSRecord].payload.load 
-        
-        #if self.packets.client.sequence==0:
-        #    iv = self.crypto.session.key.client.iv
-        decrypted = cryptfunc.decrypt(enc_data)
-        
-        plaintext = decrypted[:-self.crypto.session.key.length.mac-1]
-        mac=decrypted[len(plaintext):]
-        
-        return ret/tls.TLSCiphertextDecrypted(plaintext)/tls.TLSCiphertextMAC(mac)
-            
+    def rsa_load_keys(self, priv_key):
+        self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(priv_key)
 
+    def _generate_random_pms(self, version):
+        return "%s%s" % (struct.pack("!H", version), os.urandom(46))
+
+    def get_encrypted_pms(self, pms=None):
+        cleartext = pms or self.crypto.session.premaster_secret
+        if self.crypto.server.rsa.pubkey is not None:
+            self.crypto.session.encrypted_premaster_secret = self.crypto.server.rsa.pubkey.encrypt(cleartext)
+        else:
+            raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
+        return self.crypto.session.encrypted_premaster_secret
+        
 class TLSPRF(object):
     TLS_MD_CLIENT_FINISH_CONST = "client finished"
     TLS_MD_SERVER_FINISH_CONST = "server finished"
