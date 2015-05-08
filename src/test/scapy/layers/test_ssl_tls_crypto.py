@@ -1,3 +1,5 @@
+#! -*- coding: utf-8 -*-
+
 import binascii
 import unittest
 import ssl_tls as tls
@@ -227,3 +229,90 @@ class TestTLSCompressionParameters(unittest.TestCase):
         comp_method = tlsc.TLSCompressionParameters.comp_params[compression_method]["type"]
         input_ = "some other text"
         self.assertEqual(comp_method.decompress(comp_method.compress(input_)), input_)
+
+class TestCryptoContainer(unittest.TestCase):
+
+    def setUp(self):
+        self.pem_priv_key = """-----BEGIN PRIVATE KEY-----
+MIIEwAIBADANBgkqhkiG9w0BAQEFAASCBKowggSmAgEAAoIBAQDDLrmt4lKRpm6P
+2blptwJsa1EBuxuuAayLjwNqKGvm5c1CAUEa/NtEpUMM8WYKRDwxzakUIGI/BdP3
+NOEMphcs5+OekgJLhzoSdtAIrXPy8JIidENZE6FzCJ2b6fHU5O4hoNvv1Bx5yoZr
+HVaWJIZMRRocJJ0Nf9oMaU8IE6m6OdBzQHEwcnL2/a8Q3VxstHufzjILmaZD9WL+
+6AESlQMKZPNQ+Xd7d4nvnVkY4ZV46tA+KvADGuotgovQwG+uiyQoGRrQUms21vHF
+zIvd3G9OCiyCTCHSyfsE3g7tks33NZ8O8gF8xa9OmU9TQPwwAyUr6JQXz0CW77o7
+Cr9LpHuNAgMBAAECggEBAJRbMbtfqc8XqDYjEfGur2Lld19Pb0yl7RbvD3NjYhDR
+X2DqPyhaRfg5fWubGSp4jyBz6C5qJwMsVN80DFNm83qoj7T52lC6aoOaV6og3V8t
+SIZzxLUyXKdpRxM5kR13HSHmeQYkPbi9HcrRM/1PqdzTMXNuyQl3wq9oZDAJchsf
+fmoh080htkaxhEb1bMXa2Lj7j2OIkHOsQeIu6BdbxIKRPIT+zrcklE6ocW8fTWAS
+Qi3IZ1FYLL+fs6TTxjx0VkC8QLaxWxY0pqTiwS7ndZiZKc3l3ARuvRk8buP+X3Jg
+BD86FQ18OXZC9boMbDbzv2cOLtdkq5pS3lJE4F9gjYECgYEA69ukU2pNWot2OPwK
+PuPwAXWNrvnvFzQgIc0qOiCmgKJU6wqunlop4Bx5XmetHExVyJVBEhaHoDr0F3Rs
+gt8IclKDsWGXoVcgfu3llMimiZ05hOf/XtcGTCZwZenMQ30cFh4ZRuUu7WCZ9tqO
+28P8jCXB3IcaRpRnNvVvmCr5NXECgYEA09nUzRW993SlohceRW2C9fT9HZ4BaPWO
+5wVlnoo5mlUfAyzl+AGT/WlKmrn/1gAHIznQJ8ZIABQvPaBXhvkANXZP5Ie0lObw
+jA7qFuKt7yV4GGlDnU1MOLh+acABMQBGSx8BJDaomH7glTiPEPTZjoP6wfAsd1uv
+Knjt7jH2ad0CgYEAx9ghknRd+rx0fbBBVix4riPW20324ihOmZVnlD0aF6B0Z3tz
+ncUz+irmQ7GBIpsjjIO60QK6BHAvZrhFQVaNp6B26ZORkSlr5WDZyImDYtMPa6fP
+36I+OcPQNOo3I3Acnjj+ne2PJ59Ula92oIudr3pGmv72qpsQIacw2TSAWGECgYEA
+sdNAN+HPMn68ZaGoLDjvW8uIB6tQnay5hhvWn8yA65YV0RGH+7Q/Z9BQ6i3EnPor
+A5uMqUZbu4011jHYJpiuXzHvf/GVWAO92KLQReOCgqHd/Aen1MtEdrwOiG+90Ebd
+ukLNL3ud61tc4oS2OlJ8p48LFm2mtY3FLA6UEYPoxhUCgYEAtsfWIGnBh7XC+HwI
+2higSgN92VpJHSPOyOi0aG/u5AEQ+fsCUIi3KakxzvmiGMAEvWItkKyz2Gu8smtn
+2HVsGxI5UW7aLw9s3qe8kyMSfUk6pGamVhJUQmDr77+5zEzykPBxwGwDwdeR43CR
+xVgf/Neb/avXgIgi6drj8dp1fWA=
+-----END PRIVATE KEY-----
+        """
+        rsa_priv_key = RSA.importKey(self.pem_priv_key)
+        self.priv_key = PKCS1_v1_5.new(rsa_priv_key)
+        self.pub_key = PKCS1_v1_5.new(rsa_priv_key.publickey())
+
+        self.tls_ctx = tlsc.TLSSessionCtx()
+        self.tls_ctx.rsa_load_keys(self.pem_priv_key)
+        # SSLv2
+        self.record_version = 0x0002
+        # TLSv1.0
+        self.hello_version = 0x0301
+        # RSA_WITH_AES_128_SHA
+        self.cipher_suite = 0x2f
+        # DEFLATE
+        self.comp_method = 0x1
+        self.client_hello = tls.TLSRecord(version=self.record_version)/tls.TLSHandshake()/tls.TLSClientHello(version=self.hello_version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])
+        self.tls_ctx.insert(self.client_hello)
+        self.server_hello = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSServerHello(version=self.hello_version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
+        self.tls_ctx.insert(self.server_hello)
+        # Build method to generate EPMS automatically in TLSSessionCtx
+        self.client_kex = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSClientKeyExchange()/self.tls_ctx.get_encrypted_pms()
+        self.tls_ctx.insert(self.client_kex)
+        unittest.TestCase.setUp(self)
+
+    def test_crypto_container_increments_sequence_number(self):
+        client_seq_num = self.tls_ctx.crypto.session.key.client.seq_num
+        server_seq_num = self.tls_ctx.crypto.session.key.server.seq_num
+        tlsc.CryptoContainer(self.tls_ctx)
+        client_seq_num += 1
+        self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
+        self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num)
+        tlsc.CryptoContainer(self.tls_ctx, to_server=False)
+        self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
+        self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num + 1)
+
+    def test_crypto_container_str_returns_cipher_payload(self):
+        data = b"abcde"
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        padding = crypto_container.pad()
+        self.assertEqual("%s%s%s%s" % (data, crypto_container.hmac(), padding, chr(len(padding))), str(crypto_container))
+
+    def test_cipher_payload_is_block_size_aligned(self):
+        data = b"A"*1025
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        self.assertTrue(len(crypto_container) % AES.block_size == 0)
+
+    def test_crypto_container_returns_ciphertext(self):
+        data = b"C"*102
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data, to_server=False)
+        cleartext = str(crypto_container)
+        ciphertext = crypto_container.encrypt()
+        self.assertEqual(cleartext, self.tls_ctx.crypto.server.dec.decrypt(ciphertext))
+
+if __name__ == "__main__":
+    unittest.main()

@@ -8,14 +8,16 @@ import binascii
 import copy
 import os
 import struct
-import ssl_tls as tls
 import zlib
+import pkcs7
+import ssl_tls as tls
 
 from collections import namedtuple
 from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
 from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Util.asn1 import DerSequence
+
 
 
 '''
@@ -119,23 +121,23 @@ class TLSSessionCtx(object):
         self.crypto.session.randombytes.server=None
         
         self.crypto.session.key = namedtuple('key',['client','server'])
-        self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv'])
+        self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv', "seq"])
         self.crypto.session.key.server.mac = None
         self.crypto.session.key.server.encryption = None
         self.crypto.session.key.server.iv = None
+        self.crypto.session.key.server.seq_num = 0
 
-        self.crypto.session.key.client = namedtuple('client',['mac','encryption','iv'])
+        self.crypto.session.key.client = namedtuple('client',['mac','encryption','iv', "seq"])
         self.crypto.session.key.client.mac = None
         self.crypto.session.key.client.encryption = None
         self.crypto.session.key.client.iv = None
+        self.crypto.session.key.client.seq_num = 0
         
         self.crypto.session.key.length = namedtuple('length',['mac','encryption','iv'])
         self.crypto.session.key.length.mac = None
         self.crypto.session.key.length.encryption = None
         self.crypto.session.key.length.iv = None
 
-        
-        
     def __repr__(self):
         params = {'id':id(self),
                   'params-handshake-client':repr(self.params.handshake.client),
@@ -429,6 +431,56 @@ class TLSPRF(object):
     def hash(self, msg):
         return self.algorithm.new(msg).digest()
 
+class CryptoContainer(object):
+    
+    def __init__(self, tls_ctx, data="", content_type=0x17, to_server=True):
+        if tls_ctx is None:
+            raise ValueError("Valid TLS session context required")
+        self.tls_ctx = tls_ctx
+        self.data = data
+        self.version = tls_ctx.params.negotiated.version
+        self.content_type = content_type
+        self.pkcs7 = pkcs7.PKCS7Encoder()
+        if to_server:
+            # TODO: Needs concurrent safety if this ever goes concurrent
+            self.hmac_handler = tls_ctx.crypto.client.hmac
+            self.enc_cipher = tls_ctx.crypto.client.enc
+            self.seq_number = tls_ctx.packets.client.sequence
+            tls_ctx.crypto.session.key.client.seq_num += 1
+        else:
+            self.hmac_handler = tls_ctx.crypto.server.hmac
+            self.enc_cipher = tls_ctx.crypto.server.enc
+            self.seq_number = tls_ctx.packets.server.sequence
+            tls_ctx.crypto.session.key.server.seq_num += 1
+
+    def hmac(self, seq=None, version=None, data_len=None):
+        # Grab a copy of the initialized HMAC handler
+        hmac = self.hmac_handler.copy()
+        seq_ = struct.pack("!Q", seq or self.seq_number)
+        content_type_ = struct.pack("!B", self.content_type)
+        version_ = struct.pack("!H", version or self.version)
+        len_ = struct.pack("!H", data_len or len(self.data))
+        hmac.update("%s%s%s%s%s" % (seq_, content_type_, version_, len_, self.data))
+        return hmac.digest()
+
+    def pad(self):
+        # "\xff" is a dummy trailing byte, to increase the length of imput
+        # data byt one byte. Any byte could do. This is to account for the
+        # trailing padding_length byte in the RFC
+        return self.pkcs7.get_padding("%s%s\xff" %(self.data, self.hmac()))
+
+    def __str__(self):
+        padding = self.pad()
+        return "%s%s%s%s" % (self.data, self.hmac(), padding, chr(len(padding)))
+
+    def __len__(self):
+        return len(str(self))
+
+    def encrypt(self, data=None):
+        """ If data is passed in, caller is responsible for block alignment
+        """
+        return self.enc_cipher.encrypt(data or str(self))
+
 class NullCipher(object):
     """ Implements a pycrypto like interface for the Null Cipher
     """
@@ -544,30 +596,22 @@ class TLSSecurityParameters(object):
         self.__init_crypto(pms, client_random, server_random)
     
     def get_client_hmac(self):
-        if self.__client_hmac is None:
-            client_hmac = None
-        else:
-            client_hmac = self.__client_hmac.copy()
-        return client_hmac
+        return self.__client_hmac
 
     def get_server_hmac(self):
-        if self.__server_hmac is None:
-            server_hmac = None
-        else:
-            server_hmac = self.__server_hmac.copy()
-        return server_hmac
+        return self.__server_hmac
     
     def get_server_enc_cipher(self):
-        return None if self.__server_enc_cipher is None else self.__server_enc_cipher
+        return self.__server_enc_cipher
     
     def get_server_dec_cipher(self):
-        return None if self.__server_dec_cipher is None else self.__server_dec_cipher
+        return self.__server_dec_cipher
     
     def get_client_enc_cipher(self):
-        return None if self.__client_enc_cipher is None else self.__client_enc_cipher
+        return self.__client_enc_cipher
     
     def get_client_dec_cipher(self):
-        return None if self.__client_dec_cipher is None else self.__client_dec_cipher
+        return self.__client_dec_cipher
 #         
     def __init_key_material(self, data):
         i = 0
