@@ -135,8 +135,23 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello()
         tls_ctx.insert(pkt)
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/epms
+        tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.crypto.session.encrypted_premaster_secret, epms)
         self.assertEqual(tls_ctx.crypto.session.premaster_secret, self.priv_key.decrypt(epms, None))
+
+    def test_fixed_crypto_data_matches_verify_data(self):
+        verify_data = "d948eac6ecac3a73d8b3c8a5"
+        tls_ctx = tlsc.TLSSessionCtx()
+        #tls_ctx.rsa_load_keys(self.pem_priv_key)
+        client_hello = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientHello(gmt_unix_time=1234, random_bytes="A"*28)
+        tls_ctx.insert(client_hello)
+        tls_ctx.crypto.session.premaster_secret = "B"*48
+        epms = "C"*256
+        server_hello = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=1234, random_bytes="A"*28)
+        tls_ctx.insert(server_hello)
+        client_kex = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/epms
+        tls_ctx.insert(client_kex)
+        self.assertEqual(binascii.hexlify(tls_ctx.get_verify_data()), verify_data)
 
 class TestTLSSecurityParameters(unittest.TestCase):
 
@@ -313,6 +328,13 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         cleartext = str(crypto_container)
         ciphertext = crypto_container.encrypt()
         self.assertEqual(cleartext, self.tls_ctx.crypto.server.dec.decrypt(ciphertext))
+
+    def test_generated_mac_can_be_overiden(self):
+        data = b"C"*102
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data, to_server=False)
+        initial_mac = crypto_container.mac
+        crypto_container.hmac(data_len=1024)
+        self.assertNotEqual(initial_mac, crypto_container.mac)
 
 if __name__ == "__main__":
     unittest.main()

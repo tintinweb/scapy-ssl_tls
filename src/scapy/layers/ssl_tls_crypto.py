@@ -110,12 +110,15 @@ class TLSSessionCtx(object):
         self.crypto.server.rsa = namedtuple('rsa', ['pubkey','privkey'])
         self.crypto.server.rsa.pubkey=None
         self.crypto.server.rsa.privkey=None
-        self.crypto.session = namedtuple('session', ['premaster_secret',
-                                                     'master_secret'])
+        self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
+                                                     'premaster_secret',
+                                                     'master_secret',
+                                                     "prf"])
         
         self.crypto.session.encrypted_premaster_secret=None
         self.crypto.session.premaster_secret=None
         self.crypto.session.master_secret=None
+        self.crypto.session.prf = TLSPRF(SHA256)
         self.crypto.session.randombytes = namedtuple('randombytes',['client','server'])
         self.crypto.session.randombytes.client=None
         self.crypto.session.randombytes.server=None
@@ -177,45 +180,45 @@ class TLSSessionCtx(object):
                   }
 
         
-        str = "<TLSSessionCtx: id=%(id)s"
+        str_ = "<TLSSessionCtx: id=%(id)s"
         
-        str +="\n\t params.handshake.client=%(params-handshake-client)s"
-        str +="\n\t params.handshake.server=%(params-handshake-server)s"
-        str +="\n\t params.negotiated.ciphersuite=%(params-negotiated-ciphersuite)s"
-        str +="\n\t params.negotiated.key_exchange=%(params-negotiated-key_exchange)s"
-        str +="\n\t params.negotiated.encryption=%(params-negotiated-encryption)s"
-        str +="\n\t params.negotiated.mac=%(params-negotiated-mac)s"
-        str +="\n\t params.negotiated.compression=%(params-negotiated-compression)s"
+        str_ +="\n\t params.handshake.client=%(params-handshake-client)s"
+        str_ +="\n\t params.handshake.server=%(params-handshake-server)s"
+        str_ +="\n\t params.negotiated.ciphersuite=%(params-negotiated-ciphersuite)s"
+        str_ +="\n\t params.negotiated.key_exchange=%(params-negotiated-key_exchange)s"
+        str_ +="\n\t params.negotiated.encryption=%(params-negotiated-encryption)s"
+        str_ +="\n\t params.negotiated.mac=%(params-negotiated-mac)s"
+        str_ +="\n\t params.negotiated.compression=%(params-negotiated-compression)s"
         
-        str +="\n\t crypto.client.enc=%(crypto-client-enc)s"
-        str +="\n\t crypto.client.dec=%(crypto-client-dec)s"
-        str +="\n\t crypto.server.enc=%(crypto-server-enc)s"
-        str +="\n\t crypto.server.dec=%(crypto-server-dec)s"
+        str_ +="\n\t crypto.client.enc=%(crypto-client-enc)s"
+        str_ +="\n\t crypto.client.dec=%(crypto-client-dec)s"
+        str_ +="\n\t crypto.server.enc=%(crypto-server-enc)s"
+        str_ +="\n\t crypto.server.dec=%(crypto-server-dec)s"
         
-        str +="\n\t crypto.server.rsa.privkey=%(crypto-server-rsa-privkey)s"
-        str +="\n\t crypto.server.rsa.pubkey=%(crypto-server-rsa-pubkey)s"
+        str_ +="\n\t crypto.server.rsa.privkey=%(crypto-server-rsa-privkey)s"
+        str_ +="\n\t crypto.server.rsa.pubkey=%(crypto-server-rsa-pubkey)s"
         
-        str +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
-        str +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
-        str +="\n\t crypto.session.master_secret=%(crypto-session-master_secret)s"
+        str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
+        str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
+        str_ +="\n\t crypto.session.master_secret=%(crypto-session-master_secret)s"
         
-        str +="\n\t crypto.session.randombytes.client=%(crypto-session-randombytes-client)s"
-        str +="\n\t crypto.session.randombytes.server=%(crypto-session-randombytes-server)s"
+        str_ +="\n\t crypto.session.randombytes.client=%(crypto-session-randombytes-client)s"
+        str_ +="\n\t crypto.session.randombytes.server=%(crypto-session-randombytes-server)s"
 
-        str +="\n\t crypto.session.key.client.mac=%(crypto-session-key-client-mac)s"
-        str +="\n\t crypto.session.key.client.encryption=%(crypto-session-key-client-encryption)s"
-        str +="\n\t crypto.session.key.cllient.iv=%(crypto-session-key-client-iv)s"
+        str_ +="\n\t crypto.session.key.client.mac=%(crypto-session-key-client-mac)s"
+        str_ +="\n\t crypto.session.key.client.encryption=%(crypto-session-key-client-encryption)s"
+        str_ +="\n\t crypto.session.key.cllient.iv=%(crypto-session-key-client-iv)s"
 
-        str +="\n\t crypto.session.key.server.mac=%(crypto-session-key-server-mac)s"
-        str +="\n\t crypto.session.key.server.encryption=%(crypto-session-key-server-encryption)s"
-        str +="\n\t crypto.session.key.server.iv=%(crypto-session-key-server-iv)s"
+        str_ +="\n\t crypto.session.key.server.mac=%(crypto-session-key-server-mac)s"
+        str_ +="\n\t crypto.session.key.server.encryption=%(crypto-session-key-server-encryption)s"
+        str_ +="\n\t crypto.session.key.server.iv=%(crypto-session-key-server-iv)s"
         
-        str +="\n\t crypto.session.key.length.mac=%(crypto-session-key-length-mac)s"
-        str +="\n\t crypto.session.key.length.encryption=%(crypto-session-key-length-encryption)s"
-        str +="\n\t crypto.session.key.length.iv=%(crypto-session-key-length-iv)s"
+        str_ +="\n\t crypto.session.key.length.mac=%(crypto-session-key-length-mac)s"
+        str_ +="\n\t crypto.session.key.length.encryption=%(crypto-session-key-length-encryption)s"
+        str_ +="\n\t crypto.session.key.length.iv=%(crypto-session-key-length-iv)s"
         
-        str += "\n>"
-        return str % params
+        str_ += "\n>"
+        return str_ % params
     
     def insert(self, p):
         '''
@@ -318,7 +321,7 @@ class TLSSessionCtx(object):
 
     def rsa_load_keys_from_file(self, priv_key_file):
         with open(priv_key_file,'r') as f:
-          self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(f.read())
+            self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(f.read())
     
     def rsa_load_keys(self, priv_key):
         self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(priv_key)
@@ -333,6 +336,23 @@ class TLSSessionCtx(object):
         else:
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.crypto.session.encrypted_premaster_secret
+
+    def get_verify_data(self, client=True, data=None):
+        if client:
+            label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
+        else:
+            label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
+        verify_data = []
+        for pkt in self.packets.history:
+            # Assume one record per packet for now, we're missing logic to handle these cases
+            if pkt.haslayer(tls.TLSHandshake) and not pkt.haslayer(tls.TLSFinished):
+                verify_data.append(str(pkt[tls.TLSHandshake]))
+
+        prf_verify_data = self.crypto.session.prf.prf_numbytes(self.crypto.session.master_secret,
+                                                               label,
+                                                               "%s%s" % (MD5.new("".join(verify_data)).digest(), SHA.new("".join(verify_data)).digest()),
+                                                               numbytes=12)
+        return prf_verify_data
         
 class TLSPRF(object):
     TLS_MD_CLIENT_FINISH_CONST = "client finished"
@@ -452,6 +472,8 @@ class CryptoContainer(object):
             self.enc_cipher = tls_ctx.crypto.server.enc
             self.seq_number = tls_ctx.packets.server.sequence
             tls_ctx.crypto.session.key.server.seq_num += 1
+        self.hmac()
+        self.pad()
 
     def hmac(self, seq=None, version=None, data_len=None):
         # Grab a copy of the initialized HMAC handler
@@ -461,17 +483,18 @@ class CryptoContainer(object):
         version_ = struct.pack("!H", version or self.version)
         len_ = struct.pack("!H", data_len or len(self.data))
         hmac.update("%s%s%s%s%s" % (seq_, content_type_, version_, len_, self.data))
-        return hmac.digest()
+        self.mac = hmac.digest()
+        return self.mac
 
     def pad(self):
         # "\xff" is a dummy trailing byte, to increase the length of imput
-        # data byt one byte. Any byte could do. This is to account for the
+        # data by one byte. Any byte could do. This is to account for the
         # trailing padding_length byte in the RFC
-        return self.pkcs7.get_padding("%s%s\xff" %(self.data, self.hmac()))
+        self.padding = self.pkcs7.get_padding("%s%s\xff" %(self.data, self.mac))
+        return self.padding
 
     def __str__(self):
-        padding = self.pad()
-        return "%s%s%s%s" % (self.data, self.hmac(), padding, chr(len(padding)))
+        return "%s%s%s%s" % (self.data, self.mac, self.padding, chr(len(self.padding)))
 
     def __len__(self):
         return len(str(self))

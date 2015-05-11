@@ -2,10 +2,13 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 # http://www.secdev.org/projects/scapy/doc/build_dissect.html
+
+import os
+import time
+
 from scapy.packet import Packet, bind_layers
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
-import os, time
 
 
 class BLenField(LenField):
@@ -43,9 +46,9 @@ class BLenField(LenField):
     def i2m(self, pkt, x):
         if x is None:
             if not (self.length_of or self.count_of):
-                 x = len(pkt.payload)
-                 x = self.adjust_i2m(pkt, x)
-                 return x
+                x = len(pkt.payload)
+                x = self.adjust_i2m(pkt, x)
+                return x
              
             if self.length_of is not None:
                 fld, fval = pkt.getfield_and_val(self.length_of)
@@ -268,33 +271,7 @@ class TLSRecord(Packet):
     fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
                    XShortEnumField("version", 0x0301, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
-    
-class TLSCiphertext(Packet):
-    name = "TLS Ciphertext Fragment"
-    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
-                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
-                   XLenField("length", None, fmt="!H"), ]
 
-class TLSCiphertextDecrypted(Packet):
-    name = "TLS Ciphertext Decrypted"
-    fields_desc = [ StrField("data", None, fmt="H")]
-class TLSCiphertextMAC(Packet):
-    name = "TLS Ciphertext MAC"
-    fields_desc = [ StrField("mac", None, fmt="H")]
-    
-class TLSCompressed(Packet):
-    name = "TLS Compressed Fragment"
-    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
-                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
-                   XLenField("length", None, fmt="!H"), ]
-    
-class TLSPlaintext(Packet):
-    name = "TLS Plaintext"
-    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
-                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
-                   XLenField("length", None, fmt="!H"), ]
-
-    
 class TLSHandshake(Packet):
     name = "TLS Handshake"
     fields_desc = [ByteEnumField("type", 0xff, TLS_HANDSHAKE_TYPES),
@@ -507,58 +484,14 @@ class TLSChangeCipherSpec(Packet):
     name = "TLS ChangeCipherSpec"
     fields_desc = [ StrField("message", '\x01', fmt="H")]
 
-
-
-class xTLSCiphertext(Packet):
+class TLSCiphertext(Packet):
     name = "TLS Ciphertext"
     fields_desc = [ StrField("data", None, fmt="H"),
                     StrField("mac", None, fmt="H")]
-    
 
-    def encrypt(self, record):
-        # t = record[TLSRecord]
-        
-        # compute MAC
-        # encrypt DATA+MAC
-        self.data = str(record)
-        return self
-        
-    def decrypt(self):
-        return TLSRecord()
-    
-class xTLSPlaintext(Packet):
+class TLSPlaintext(Packet):
     name = "TLS Plaintext"
     fields_desc = [ StrField("data", None, fmt="H") ]
-
-    ptr_methods = {'default':                   {'encode': lambda x:x,  # NULL
-                                                 'decode': lambda x:x},
-                  TLSCompressionMethod.DEFLATE: {'encode': lambda x:x.encode('zlib'),
-                                                 'decode': lambda x:x.decode('zlib')},
-                   }
-    
-    def compress(self, method, data=None):
-        self.method = method
-        data = data or self.data
-        return TLSCompressed(self.ptr_methods.get(self.method, self.ptr_methods['default'])['encode'](data))
-        
-        
-class xTLSCompressed(Packet):
-    name = "TLS Compressed"
-    fields_desc = [ StrField("data", None, fmt="H") ]
-    
-    ptr_methods = {'default':                   {'encode': lambda x:x,
-                                                 'decode': lambda x:x},
-                  TLSCompressionMethod.DEFLATE: {'encode': lambda x:x.encode('zlib'),
-                                                 'decode': lambda x:x.decode('zlib')},
-                   }
-    
-    def decompress(self, method, data=None):
-        self.method = method
-        data = data or self.data
-        
-        return TLSRecord(self.ptr_methods.get(self.method, self.ptr_methods['default'])['decode'](data))
-        
-
 
 class DTLSRecord(Packet):
     name = "DTLS Record"
@@ -729,7 +662,7 @@ class SSL(Packet):
                     # to make 'records' appear in 'fields' it must
                     # be assigned once before appending
                     self.fields[f.name] = record
-            except TypeError, e:
+            except TypeError:
                 pass
         return s[pos:]
 
@@ -749,7 +682,52 @@ class SSL(Packet):
     
     def compress(self): pass
     def decompress(self): pass
- 
+
+def tls_handshake_handler(pkt, tls_ctx, client):
+    if pkt.haslayer(TLSFinished):
+        return (0x16, tls_ctx.get_verify_data())
+
+cleartext_handler = { TLSPlaintext: lambda pkt, tls_ctx, client: (0x17, pkt.data),
+                      TLSHandshake: tls_handshake_handler,
+                      TLSChangeCipherSpec: lambda pkt, tls_ctx, client: (0x14, str(pkt)),
+                      TLSAlert: lambda pkt, tls_ctx, client: (0x15, str(pkt)) }
+
+def to_raw(pkt, tls_ctx, client=True, include_record=False, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
+    import ssl_tls_crypto as tlsc
+
+    if tls_ctx is None:
+        raise ValueError("A valid TLS session context must be provided")
+    comp_method = tls_ctx.compression.method
+
+    content_type, data = None, None
+    for tls_proto, handler in cleartext_handler.iteritems():
+        if pkt.haslayer(tls_proto):
+            content_type, data = handler(pkt[tls_proto], tls_ctx, client)
+    if content_type is None and data is None:
+        raise KeyError("Unhandled TLS protocol")
+
+    crypto_container = tlsc.CryptoContainer(tls_ctx, data, content_type, client)
+
+    if compress_hook is not None:
+        post_compress_data = compress_hook(comp_method, data)
+    else:
+        post_compress_data = comp_method.compress(data)
+    if pre_encrypt_hook is not None:
+        cleartext, mac, padding = pre_encrypt_hook(post_compress_data)
+    else:
+        cleartext = post_compress_data
+        mac = crypto_container.hmac()
+        padding = crypto_container.pad()
+    if encrypt_hook is not None:
+        ciphertext = encrypt_hook(cleartext, mac, padding)
+    else:
+        ciphertext = crypto_container.encrypt(b"%s%s%s%s" % (cleartext, mac, padding, chr(len(padding))))
+    if include_record:
+        tls_ciphertext = TLSRecord(version=tls_ctx.params.negotiated.version, content_type=content_type)/ciphertext
+    else:
+        tls_ciphertext = ciphertext
+    return tls_ciphertext
+
 # bind magic
 bind_layers(TCP, SSL, dport=443)
 bind_layers(TCP, SSL, sport=443)
