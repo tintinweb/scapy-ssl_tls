@@ -7,11 +7,6 @@ from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 import os, time
 
-try:
-    import ssl_tls_crypto
-except ImportError, ie:
-    print "Import Error - most likely due to missing pycrypto libraries - disabling crypto functionality"
-    print repr(ie)
 
 class BLenField(LenField):
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
@@ -473,14 +468,6 @@ class TLSFinished(Packet):
     name = "TLS Handshake Finished"
     fields_desc = [  # FieldLenField("length",None,length_of="data",fmt="H"),
                     StrLenField("data", None) ]
-    
-    def xbuild(self, master_secret, finished_label, hash_handshake_messages):
-        '''
-        master_secret
-        finished_label = ['client finished','server finished']
-        hash_handshake_messages 
-        '''
-        self.data = ssl_tls_crypto.prf(master_secret, finished_label, hash_handshake_messages)
 
 class TLSDHServerParams(Packet):
     name = "TLS Diffie-Hellman Server Params"
