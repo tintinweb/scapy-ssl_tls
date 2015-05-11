@@ -35,10 +35,21 @@ def prf(master_secret, label, data):
 def x509_extract_pubkey_from_der(der_certificate):
     # Extract subjectPublicKeyInfo field from X.509 certificate (see RFC3280)
     cert = DerSequence()
-    cert.decode(der_certificate)
+    cert.decode(der_certificate)                
+    
     tbsCertificate = DerSequence()
-    tbsCertificate.decode(cert[0])
-    subjectPublicKeyInfo = tbsCertificate[6]
+    tbsCertificate.decode(cert[0])       # first DER SEQUENCE
+    
+    # search for pubkey OID: rsaEncryption: "1.2.840.113549.1.1.1"
+    # hex: 06 09 2A 86 48 86 F7 0D 01 01 01 
+    subjectPublicKeyInfo=None
+    for seq in tbsCertificate:
+        if not isinstance(seq,basestring): continue     # skip numerics and non sequence stuff
+        if "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
+            subjectPublicKeyInfo=seq
+        
+    if not subjectPublicKeyInfo:
+        raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
 
     # Initialize RSA key
     return RSA.importKey(subjectPublicKeyInfo)
@@ -465,24 +476,24 @@ class UnsupportedCipherError(Exception):
 class TLSSecurityParameters(object):
     
     crypto_params = {
-                    0x0000: {"name":"NULL_WITH_NULL_NULL", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":NullHash, "name":"Null"}}, 
-                    0x0001: {"name":"RSA_WITH_NULL_MD5", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":MD5, "name":"MD5"}},
-                    0x0002: {"name":"RSA_WITH_NULL_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x0003: {"name":"RSA_EXPORT_WITH_RC4_40_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":5, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
-                    0x0004: {"name":"RSA_WITH_RC4_128_MD5", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
-                    0x0005: {"name":"RSA_WITH_RC4_128_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x0006: {"name":"RSA_EXPORT_WITH_RC2_CBC_40_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC2, "name":"RC2", "key_len":5, "mode":ARC2.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0000: {"name":tls.TLS_CIPHER_SUITES[0x0000], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":NullHash, "name":"Null"}}, 
+                    0x0001: {"name":tls.TLS_CIPHER_SUITES[0x0001], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0002: {"name":tls.TLS_CIPHER_SUITES[0x0002], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0003: {"name":tls.TLS_CIPHER_SUITES[0x0003], "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":5, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0004: {"name":tls.TLS_CIPHER_SUITES[0x0004], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0005: {"name":tls.TLS_CIPHER_SUITES[0x0005], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0006: {"name":tls.TLS_CIPHER_SUITES[0x0006], "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC2, "name":"RC2", "key_len":5, "mode":ARC2.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":MD5, "name":"MD5"}},
                     # 0x0007: RSA_WITH_IDEA_CBC_SHA => IDEA support would require python openssl bindings
-                    0x0008: {"name":"RSA_EXPORT_WITH_DES40_CBC_SHA", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":5, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x0009: {"name":"RSA_WITH_DES_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x000a: {"name":"RSA_WITH_3DES_EDE_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES3, "name":"DES3", "key_len":24, "mode":DES3.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x002f: {"name":"RSA_WITH_AES_128_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x0035: {"name":"RSA_WITH_AES_256_CBC_SHA", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x003b: {"name":"RSA_WITH_NULL_SHA256", "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA256, "name":"SHA256"}},
-                    0x0060: {"name":"RSA_EXPORT_WITH_RC4_56_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
-                    0x0061: {"name":"RSA_EXPORT1024_WITH_RC2_CBC_56_MD5", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC2, "name":"RC2", "key_len":8, "mode":ARC2.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":MD5, "name":"MD5"}},
-                    0x0062: {"name":"RSA_EXPORT1024_WITH_DES_CBC_SHA", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
-                    0x0064: {"name":"RSA_EXPORT1024_WITH_RC4_56_SHA", "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0008: {"name":tls.TLS_CIPHER_SUITES[0x0008], "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":5, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0009: {"name":tls.TLS_CIPHER_SUITES[0x0009], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x000a: {"name":tls.TLS_CIPHER_SUITES[0x000a], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES3, "name":"DES3", "key_len":24, "mode":DES3.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x002f: {"name":tls.TLS_CIPHER_SUITES[0x002f], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0035: {"name":tls.TLS_CIPHER_SUITES[0x0035], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x003b: {"name":tls.TLS_CIPHER_SUITES[0x003b], "export":False, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA256, "name":"SHA256"}},
+                    0x0060: {"name":tls.TLS_CIPHER_SUITES[0x0060], "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0061: {"name":tls.TLS_CIPHER_SUITES[0x0061], "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC2, "name":"RC2", "key_len":8, "mode":ARC2.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":MD5, "name":"MD5"}},
+                    0x0062: {"name":tls.TLS_CIPHER_SUITES[0x0062], "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+                    0x0064: {"name":tls.TLS_CIPHER_SUITES[0x0064], "export":True, "key_exchange":{"type":RSA, "name":"RSA"}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
                     # 0x0084: RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
                     }
 # Unsupported for now, until DHE support implemented
@@ -622,6 +633,6 @@ class NullCompression(object):
 class TLSCompressionParameters(object):
     
     comp_params = {
-                  0x00: {"name":"Null", "type":NullCompression},
-                  0x01: {"name":"Deflate", "type":zlib}
+                  0x00: {"name":tls.TLS_COMPRESSION_METHODS[0x00], "type":NullCompression},
+                  0x01: {"name":tls.TLS_COMPRESSION_METHODS[0x01], "type":zlib}
                   }
