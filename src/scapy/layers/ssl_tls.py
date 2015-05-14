@@ -12,6 +12,7 @@ from scapy.layers.inet import TCP, UDP
 
 
 class BLenField(LenField):
+
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
         self.name = name
         self.adjust_i2m = adjust_i2m
@@ -35,6 +36,7 @@ class BLenField(LenField):
         if self.numbytes:
             pack = pack[len(pack) - self.numbytes:]
         return s + pack
+
     def getfield(self, pkt, s):
         """Extract an internal value from a string"""
         upack_data = s[:self.sz]
@@ -58,22 +60,67 @@ class BLenField(LenField):
                 f = fld.i2count(pkt, fval)
             x = self.adjust_i2m(pkt, f)
         return x
+
     def m2i(self, pkt, x):
         return self.adjust_m2i(pkt, x)
 
 class XBLenField(BLenField):
+
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))
     
 class XLenField(LenField):
+
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))
-    
+
+class XRecordLenField(LenField):
+
+    def i2m(self, pkt, x):
+        if x is None:
+            num_records = num_type_layers(pkt)
+            # TODO: Handle zero case
+            # Optimize most frequent case
+            if num_records == 1:
+                x = len(pkt.payload)
+            # Stacked records case
+            else:
+                records = get_all_tls_layers(pkt)
+                # Calculate the length of all records above us
+                remaining_length = sum(map(len, list(records)[1:]))
+                # Substract the length of the records above us from our total payload size
+                x = len(pkt.payload) - remaining_length
+        return x
+
+    def i2repr(self, pkt, x):
+        return lhex(self.i2h(pkt, x))
+
+class XHandshakeBLenField(BLenField):
+
+    def i2m(self, pkt, x):
+        if x is None:
+            num_handshakes = num_type_layers(pkt, TLSHandshake)
+            # Optimize most frequent case
+            if num_handshakes == 1:
+                x = len(pkt.payload)
+            # Stacked records case
+            else:
+                # Needs to return 
+                handshakes = get_all_tls_handshakes(pkt)
+                # Substract the length of the TLSHandshake (0x4)
+                x = len(list(handshakes)[0]) - 0x4
+        return x
+
+    def i2repr(self, pkt, x):
+        return lhex(self.i2h(pkt, x))
+  
 class XFieldLenField(FieldLenField):
+
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))   
-    
+
 class BEnumField(EnumField):
+
     def __init__(self, name, default, enum, fmt="!I", numbytes=None):
         EnumField.__init__(self, name, default, enum, fmt)
         self.numbytes = numbytes
@@ -266,15 +313,11 @@ class TLSCompressionMethod:
     
 TLS_COMPRESSION_METHODS = dict((v, k) for k, v in TLSCompressionMethod.__dict__.items() if not k.startswith("__"))
 
-class TLSRecord(Packet):
-    name = "TLS Record"
-    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
-                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
-                   XLenField("length", None, fmt="!H"), ]
+class TLSPacket(Packet):
 
     # Can't use __next__, since scapy overloads it
     def upper(self):
-        record_iter = get_all_layers(self)
+        record_iter = get_all_layers(self, self.__class__)
         try:
             # Skip over the current record, and move to the next one
             record_iter.next()
@@ -285,14 +328,27 @@ class TLSRecord(Packet):
         return upper_record
     
     def rstrip(self):
-        records = list(get_all_tls_records(self))
+        raise NotImplementedError("Must be implemented by child class")
+
+class TLSRecord(TLSPacket):
+    name = "TLS Record"
+    fields_desc = [ByteEnumField("content_type", 0xff, TLS_CONTENT_TYPES),
+                   XShortEnumField("version", 0x0301, TLS_VERSIONS),
+                   XRecordLenField("length", None, fmt="!H"), ]
+
+    def rstrip(self):
+        records = list(get_all_tls_layers(self))
         return records[0]
 
-class TLSHandshake(Packet):
+class TLSHandshake(TLSPacket):
+
     name = "TLS Handshake"
     fields_desc = [ByteEnumField("type", 0xff, TLS_HANDSHAKE_TYPES),
-                   XBLenField("length", None, fmt="!I", numbytes=3), ]
+                   XHandshakeBLenField("length", None, fmt="!I", numbytes=3), ]
 
+    def rstrip(self):
+        records = list(get_all_tls_handshakes(self))
+        return records[0]
 
 class TLSServerName(Packet):
     name = "TLS Servername"
@@ -777,23 +833,38 @@ def get_individual_layers(pkt):
         yield pkt_copy
     yield pkt
 
-def get_all_tls_records(pkt):
-    """ Returns all TLSRecords within a packet, stripping the upper layers
-    TLSRecord()/TLSHandshake()/TLSRecord()/TLSAlert() will become
-    [TLSRecord/TLSHandshake, TLSRecord/TLSAlert]
+def get_all_tls_layers(pkt, layer_type=TLSRecord, appender=lambda x: x):
+    """ Returns all TLS layers (not scapy layers!) within a packet, 
+    stripping the upper layers TLSRecord()/TLSHandshake()/TLSRecord()/TLSAlert()
+    will become [TLSRecord/TLSHandshake, TLSRecord/TLSAlert]
+    By default, this will return all TLSRecords
     """
     record = None
     for layer in get_individual_layers(pkt):
-        if layer.name == TLSRecord.name:
+        if layer.name == layer_type.name:
             if record is not None:
                 yield record
             record = layer
         else:
             if record is not None:
-                record /= layer
+                layer = appender(layer)
+                if layer is not None:
+                    record /= layer
     # Yield the last calculated record if there is one
     if record is not None:
         yield record
+
+# Alias function for consistancy
+def get_all_tls_records(pkt):
+    # yield from not in python 2.7
+    # yield from get_all_tls_layers(pkt)
+    for record in get_all_tls_layers(pkt):
+        yield record
+ 
+def get_all_tls_handshakes(pkt):
+    # yield from get_all_tls_layers(pkt, TLSHandshake, lambda x: x if x.name != TLSRecord.name else None)
+    for handshake in get_all_tls_layers(pkt, TLSHandshake, lambda x: x if x.name != TLSRecord.name else None):
+        yield handshake
 
 def get_all_layers(pkt, layer_type=TLSRecord):
     """ Returns all layer types within a packet, without stripping
