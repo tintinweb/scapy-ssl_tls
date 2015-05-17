@@ -465,6 +465,7 @@ class TLSServerHelloDone(Packet):
     name = "TLS Server Hello Done"
     fields_desc = [ XBLenField("length", None, fmt="!I", numbytes=3),
                     StrLenField("data", "", length_from=lambda x:x.length), ]
+    
 class TLSCertificate(Packet):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
@@ -749,6 +750,7 @@ bind_layers(TLSHandshake, TLSHelloRequest, {'type':0x00})
 bind_layers(TLSHandshake, TLSClientHello, {'type':0x01})
 bind_layers(TLSHandshake, TLSServerHello, {'type':0x02})
 bind_layers(TLSHandshake, TLSCertificateList, {'type':0x0b})
+bind_layers(TLSHandshake, TLSServerHelloDone, {'type':0x0e})
 bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':0x10})
 bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':0x0c})
 bind_layers(TLSHandshake, TLSFinished, {'type':0x20})
