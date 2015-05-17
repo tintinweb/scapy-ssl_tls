@@ -104,7 +104,6 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(record.content_type, 0x17)
         self.assertEqual(record.version, self.tls_ctx.params.negotiated.version)
 
-
 class TestTLSCertificate(unittest.TestCase):
     
     def setUp(self):
@@ -198,7 +197,6 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         pubkey_extract_from_tls_certificate = tlsc.x509_extract_pubkey_from_der(pkt[tls.TLSCertificate].data)
         
         self.assertEqual(pubkey_extract_from_der, pubkey_extract_from_tls_certificate)
-              
 
 if __name__ == "__main__":
     unittest.main()
