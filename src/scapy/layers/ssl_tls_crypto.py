@@ -345,7 +345,7 @@ class TLSSessionCtx(object):
         verify_data = []
         for pkt in self.packets.history:
             # Assume one record per packet for now, we're missing logic to handle these cases
-            if pkt.haslayer(tls.TLSHandshake) and not pkt.haslayer(tls.TLSFinished):
+            if pkt.haslayer(tls.TLSHandshake) and not pkt.haslayer(tls.TLSFinished) and not pkt.haslayer(tls.TLSHelloRequest):
                 verify_data.append(str(pkt[tls.TLSHandshake]))
 
         prf_verify_data = self.crypto.session.prf.prf_numbytes(self.crypto.session.master_secret,

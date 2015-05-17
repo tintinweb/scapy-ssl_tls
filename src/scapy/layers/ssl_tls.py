@@ -372,7 +372,11 @@ class TLSExtHeartbeat(Packet):
                   ]
     def extract_padding(self, s):
         return '', s
-    
+
+class TLSHelloRequest(Packet):
+    name = "TLS Hello Request"
+    fields_desc = []
+
 class TLSClientHello(Packet):
     name = "TLS Client Hello"
     fields_desc = [XShortEnumField("version", 0x0301, TLS_VERSIONS),
@@ -741,6 +745,7 @@ bind_layers(TLSRecord, TLSAlert, {'content_type':0x15})
 
 bind_layers(TLSRecord, TLSHandshake, {'content_type':0x16})
 # --> handshake proto
+bind_layers(TLSHandshake, TLSHelloRequest, {'type':0x00})
 bind_layers(TLSHandshake, TLSClientHello, {'type':0x01})
 bind_layers(TLSHandshake, TLSServerHello, {'type':0x02})
 bind_layers(TLSHandshake, TLSCertificateList, {'type':0x0b})
