@@ -17,6 +17,7 @@ from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
 from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Util.asn1 import DerSequence
+from scapy.asn1.asn1 import ASN1_SEQUENCE
 
 
 
@@ -44,9 +45,19 @@ def x509_extract_pubkey_from_der(der_certificate):
         # received completely, in that case, we'll try to extract it anyway
         # using the old method. 
         # TODO: get rid of the old method and always expect X509Cert obj ?
-        subjectPublicKeyInfo = der_certificate.pubkey
-        return RSA.importKey(subjectPublicKeyInfo)
-    
+        '''
+        Rebuild ASN1 SubjectPublicKeyInfo since X509Cert does not provide the full struct
+        
+        ASN1F_SEQUENCE(
+                ASN1F_SEQUENCE(ASN1F_OID("pubkey_algo","1.2.840.113549.1.1.1"),
+                               ASN1F_field("pk_value",ASN1_NULL(0))),
+                ASN1F_BIT_STRING("pubkey","")
+                ),
+        '''
+        subjectPublicKeyInfo = ASN1_SEQUENCE([ ASN1_SEQUENCE([der_certificate.pubkey_algo,
+                                                              der_certificate.pk_value]),
+                                                der_certificate.pubkey,])
+        return RSA.importKey(str(subjectPublicKeyInfo))
     except AttributeError:
         pass
     
@@ -67,7 +78,6 @@ def x509_extract_pubkey_from_der(der_certificate):
         
     if not subjectPublicKeyInfo:
         raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
-
     # Initialize RSA key
     return RSA.importKey(subjectPublicKeyInfo)
 
