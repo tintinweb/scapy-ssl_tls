@@ -124,13 +124,13 @@ class TLSSessionCtx(object):
         self.crypto.session.randombytes.server=None
         
         self.crypto.session.key = namedtuple('key',['client','server'])
-        self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv', "seq"])
+        self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv', "seq_num"])
         self.crypto.session.key.server.mac = None
         self.crypto.session.key.server.encryption = None
         self.crypto.session.key.server.iv = None
         self.crypto.session.key.server.seq_num = 0
 
-        self.crypto.session.key.client = namedtuple('client',['mac','encryption','iv', "seq"])
+        self.crypto.session.key.client = namedtuple('client',['mac','encryption','iv', "seq_num"])
         self.crypto.session.key.client.mac = None
         self.crypto.session.key.client.encryption = None
         self.crypto.session.key.client.iv = None
