@@ -38,13 +38,16 @@ def prf(master_secret, label, data):
 def x509_extract_pubkey_from_der(der_certificate):
     # Extract subjectPublicKeyInfo field from X.509 certificate (see RFC3280)
     try:
-        # try to extract it from scapy.layers.x509 X509Cert type data in case
-        # the object is present (may not be the case if the received certificate
-        # was incomplete due to TLS fragmenting.
+        # try to extract pubkey from scapy.layers.x509 X509Cert type in case
+        # der_certificate is of type X509Cert
+        # Note: der_certificate may not be of type X509Cert if it wasn't 
+        # received completely, in that case, we'll try to extract it anyway
+        # using the old method. 
+        # TODO: get rid of the old method and always expect X509Cert obj ?
         subjectPublicKeyInfo = der_certificate.pubkey
         return RSA.importKey(subjectPublicKeyInfo)
     
-    except AttributeError, ae:
+    except AttributeError:
         pass
     
     # Fallback method, may pot. allow to extract pubkey from incomplete der streams
