@@ -78,7 +78,7 @@ def x509_extract_pubkey_from_der(der_certificate):
         
     if not subjectPublicKeyInfo:
         raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
-    
+
     # Initialize RSA key
     return RSA.importKey(subjectPublicKeyInfo)
 
