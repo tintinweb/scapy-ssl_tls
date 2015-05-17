@@ -9,6 +9,7 @@ import time
 from scapy.packet import Packet, bind_layers
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
+from scapy.layers import x509
 
 
 class BLenField(LenField):
@@ -461,10 +462,11 @@ class TLSServerHelloDone(Packet):
     name = "TLS Server Hello Done"
     fields_desc = [ XBLenField("length", None, fmt="!I", numbytes=3),
                     StrLenField("data", "", length_from=lambda x:x.length), ]
+    
 class TLSCertificate(Packet):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
-                    StrLenField("data", "", length_from=lambda x:x.length), ]  # BERcodec_Object.dec(data,context=ASN1_Class_X509)
+                    PacketLenField("data", None, x509.X509Cert, length_from=lambda x:x.length),]
     
     def extract_padding(self,s):
         return s[self.length:],s[:self.length]
