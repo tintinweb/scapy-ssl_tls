@@ -6,7 +6,7 @@
 import os
 import time
 
-from scapy.packet import Packet, NoPayload, bind_layers
+from scapy.packet import bind_layers, NoPayload, Packet, Raw
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 
@@ -365,9 +365,8 @@ class TLSServerNameIndication(Packet):
 #https://tools.ietf.org/html/rfc7301
 class TLSALPNProtocol(Packet):
     name = "TLS ALPN Protocol"
-    fields_desc = [
-                  XFieldLenField("length", None, length_of="data", fmt="B"),
-                  StrLenField("data", "", length_from=lambda x:x.length),
+    fields_desc = [XFieldLenField("length", None, length_of="data", fmt="B"),
+                   StrLenField("data", "", length_from=lambda x:x.length),
                   ]
     
 class TLSALPN(Packet):
@@ -381,9 +380,6 @@ class TLSExtension(Packet):
     fields_desc = [XShortEnumField("type", 0x0000, TLS_EXTENSION_TYPES),
                    XLenField("length", None, fmt="!H"),
                   ]
-
-    def extract_padding(self, s):
-        return s[:self.length],s[self.length:]
 
 # https://www.ietf.org/rfc/rfc3546.txt
 class TLSExtMaxFragmentLength(Packet):
@@ -462,12 +458,11 @@ class TLSClientHello(Packet):
                    
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
-                   
-                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
-                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
-                   ] 
 
-    
+                    XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
+                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)
+                  ] 
+
 class TLSServerHello(Packet):
     name = "TLS Server Hello"
     fields_desc = [XShortEnumField("version", 0x0301, TLS_VERSIONS),
@@ -479,9 +474,9 @@ class TLSServerHello(Packet):
                    XShortEnumField("cipher_suite", 0x0000, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", 0x00, TLS_COMPRESSION_METHODS),
 
-                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
-                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
-                   ]
+                    XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
+                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)
+                  ]
 
 
 class TLSAlert(Packet):
@@ -489,7 +484,6 @@ class TLSAlert(Packet):
     fields_desc = [ByteEnumField("level", 0xff, TLS_ALERT_LEVELS),
                   ByteEnumField("description", 0xff, TLS_ALERT_DESCRIPTIONS),
                   ]
-
 
 class TLSHeartBeat(Packet):
     name = "TLS Extension HeartBeat"
@@ -519,8 +513,7 @@ class TLSKexParamDH(Packet):
 
 class TLSFinished(Packet):
     name = "TLS Handshake Finished"
-    fields_desc = [  # FieldLenField("length",None,length_of="data",fmt="H"),
-                    StrLenField("data", None) ]
+    fields_desc = [StrLenField("data", None)]
 
 class TLSDHServerParams(Packet):
     name = "TLS Diffie-Hellman Server Params"
@@ -542,20 +535,13 @@ class TLSCertificate(Packet):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
                     StrLenField("data", "", length_from=lambda x:x.length), ]  # BERcodec_Object.dec(data,context=ASN1_Class_X509)
-    
-    def extract_padding(self,s):
-        return s[self.length:],s[:self.length]
 
-    
 class TLSCertificateList(Packet):
     name = "TLS Certificate List"
     fields_desc = [
                    XBLenField("length", None, length_of="certificates", fmt="!I", numbytes=3),
                    PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length),
                   ]   
-
-    def extract_padding(self,s):
-        return s[self.length:],s[:self.length]    
 
 class TLSChangeCipherSpec(Packet):
     name = "TLS ChangeCipherSpec"
@@ -692,6 +678,42 @@ class SSLv2ClientMasterKey(Packet):
                    StrLenField("key_argument", '', length_from=lambda x:x.key_argument_length),
                    ]
 
+def get_client_hello_len(pkt):
+    # Calculate the expected length of the TLSClientHello
+    hello_size = pkt.fields_desc[0].sz
+    hello_size += pkt.fields_desc[1].sz
+    hello_size += len(pkt.random_bytes)
+    hello_size += pkt.fields_desc[3].sz
+    hello_size += len(pkt.session_id)
+    hello_size += pkt.fields_desc[5].sz
+    hello_size += pkt.fields_desc[6].sz * len(pkt.cipher_suites)
+    hello_size += pkt.fields_desc[7].sz
+    hello_size += pkt.fields_desc[8].sz * len(pkt.compression_methods)
+    return hello_size
+
+def get_server_hello_len(pkt):
+    # Calculate the expected length of the TLSServerHello
+    hello_size = pkt.fields_desc[0].sz
+    hello_size += pkt.fields_desc[1].sz
+    hello_size += len(pkt.random_bytes)
+    hello_size += pkt.fields_desc[3].sz
+    hello_size += len(pkt.session_id)
+    hello_size += pkt.fields_desc[5].sz
+    hello_size += pkt.fields_desc[6].sz
+    return hello_size
+
+def hello_has_extensions(pkt, payload_len_cb):
+    underlayer = pkt.underlayer
+    if underlayer is not None and underlayer.name == TLSHandshake.name:
+        if underlayer.length == payload_len_cb(pkt):
+            return False
+        elif underlayer.length > payload_len_cb(pkt):
+            return True
+        else:
+            raise ValueError("Cannot compute length, or length field too small")
+    else:
+        raise ValueError("TLSHello without underlying TLSHandshake. Cannot determine extension state")
+
 # entry class
 class SSL(Packet):
     '''
@@ -722,39 +744,59 @@ class SSL(Packet):
         # We will incorrectly parse it
         while pos < len(raw_bytes):
             payload = record(raw_bytes[pos:])
+            # Remove payload from our record. Otherwise upper records are seen as Raw payloads to this packet
+            layers = [layer for layer in list(get_individual_layers(payload)) if layer.name != Raw.name]
+            # Deal with extensions properly. Remove them if they are not present
+            self._remove_hello_extensions(layers)
+            # Delete any trailing payload
+            layers[-1].payload = NoPayload()
             # Populate our list of found records
-            records.append(payload)
+            records.append(to_packet(layers))
             # Move to the next record
             pos += (record_header_len + payload.length)
         self.fields["records"] = records
         # This will always be empty (equivalent to returning "")
         return raw_bytes[pos:]
 
-    def to_packet(self):
-        pkt = None
-        try:
-            pkt = self.records[0]
-            for record in self.records[1:]:
-                pkt /= record
-        except KeyError:
-            pass
-        return pkt
+    def _remove_hello_extensions(self, layers):
+        # TODO: Not very clean solution, we are modifying the list in place
+        for layer in layers:
+            if layer.name == TLSClientHello.name:
+                if not hello_has_extensions(layer, get_client_hello_len):
+                    # The extension fields will show as None, but not be added to the string
+                    # Representation
+                    try:
+                        del(layer.fields["extensions_length"])
+                        del(layer.fields["extensions"])
+                    # Extensions are already removed
+                    except KeyError:
+                        pass
+            if layer.name == TLSServerHello.name:
+                if not hello_has_extensions(layer, get_server_hello_len):
+                    try:
+                        del(layer.fields["extensions_length"])
+                        del(layer.fields["extensions"])
+                    # Extensions are already removed
+                    except KeyError:
+                        pass
 
-    def encrypt(self, master_secret):
+    def to_packet(self):
+        if (self.records == []):
+            raise ValueError("Empty packet. Nothing to rebuild")
+        return to_packet(self.records)
+
+# Alias the class to TLS also for consistency
+TLS = SSL
+
+def to_packet(layers):
+    pkt = None
+    try:
+        pkt = layers[0]
+        for layer in layers[1:]:
+            pkt /= layer
+    except IndexError:
         pass
-    
-    def encrypt_stream(self):
-        '''
-              HMAC_hash(MAC_write_secret, seq_num + TLSCompressed.type +
-                     TLSCompressed.version + TLSCompressed.length +
-                     TLSCompressed.fragment));
-        '''
-        pass
-    
-    def decrypt(self, master_secret): pass
-    
-    def compress(self): pass
-    def decompress(self): pass
+    return pkt
 
 def tls_handshake_handler(pkt, tls_ctx, client):
     if pkt.haslayer(TLSFinished):
@@ -804,10 +846,7 @@ def to_raw(pkt, tls_ctx, client=True, include_record=False, compress_hook=None, 
         tls_ciphertext = TLSRecord(version=tls_ctx.params.negotiated.version, content_type=content_type)/ciphertext
     else:
         tls_ciphertext = ciphertext
-    return tls_ciphertext
-
-# Alias the class to TLS also for consistency
-TLS = SSL
+    return tls_ciphertext
 
 def num_type_layers(pkt, layer_type=TLSRecord):
     """ Returns how many layers of a type "layer_type" there

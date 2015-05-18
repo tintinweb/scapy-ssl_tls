@@ -7,7 +7,7 @@ import ssl_tls_crypto as tlsc
 
 from Crypto.Cipher import PKCS1_v1_5
 from Crypto.PublicKey import RSA
-from scapy.layers.inet import IP, TCP
+from scapy.layers.inet import IP, NoPayload, Raw, TCP
 
 
 class TestTLSRecord(unittest.TestCase):
@@ -79,13 +79,28 @@ class TestTLSDissector(unittest.TestCase):
         self.assertEqual(pkt[tls.TLSServerHello].session_id, binascii.unhexlify("2de1c20c707ba9b083282d2eba3d95bdfb5847eb9241f252173a04c9f990d508"))
         self.assertEqual(pkt[tls.TLSServerHello].cipher_suite, tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA)
         self.assertEqual(pkt[tls.TLSServerHello].compression_method, tls.TLSCompressionMethod.NULL)
+        self.assertFalse(pkt[tls.TLSServerHello].payload.name == Raw.name)
         next_record = pkt[tls.TLSRecord].upper()
         self.assertEqual(next_record.length, 0x408)
         self.assertEqual(next_record[tls.TLSHandshake].length, 0x404)
         self.assertEqual(next_record[tls.TLSCertificateList].length, 0x401)
+        self.assertFalse(next_record[tls.TLSCertificateList].payload.name == Raw.name)
         next_record = next_record.upper().rstrip()
         self.assertEqual(next_record[tls.TLSRecord].length, 0x4)
         self.assertEqual(next_record[tls.TLSHandshake].type, 0x0e)
+        self.assertEqual(next_record[tls.TLSHandshake].payload, NoPayload())
+
+    def test_extensions_are_removed_when_non_specified(self):
+        pkt = tls.TLS(self.payload).to_packet()
+        self.assertListEqual(pkt[tls.TLSServerHello].extensions, [])
+        self.assertIsNone(pkt[tls.TLSServerHello].extensions_length)
+
+    def test_extensions_are_preserved_when_specified(self):
+        # This test will fail. Extensions are not currently properly dissected
+        # Leaving to remind me to fix this issue
+        pkt = tls.TLS(str(tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientHello(extensions=[tls.TLSHeartBeat(), tls.TLSHeartBeat()])/tls.TLSRecord()))
+        self.assertIsInstance(pkt[tls.TLSClientHello].extensions[0], tls.TLSHeartBeat)
+        self.assertIsInstance(pkt[tls.TLSClientHello].extensions[1], tls.TLSHeartBeat)
 
 class TestTopLevelFunctions(unittest.TestCase):
 
