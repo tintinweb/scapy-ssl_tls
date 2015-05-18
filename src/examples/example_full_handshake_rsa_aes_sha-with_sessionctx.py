@@ -75,7 +75,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     
     # create TLS Handshake / Client Hello packet
     print "* -> client hello"
-    p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=None, 
+    p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=[TLSCompressionMethod.NULL], 
                                                   cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA],
                                                   random_bytes='R'*28)
           
@@ -126,6 +126,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     print "* -> ChangeCipherSpec"
     p = TLSRecord()/TLSChangeCipherSpec()
     #p.show2()
+    session.insert(SSL(str(p)))
     
     r = sendrcv(s,str(p))
     #SSL(r).show()
