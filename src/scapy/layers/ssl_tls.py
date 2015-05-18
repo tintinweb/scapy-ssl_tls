@@ -139,9 +139,9 @@ TLS_HANDSHAKE_TYPES = {0x00:"hello_request",
                         0x0e:"server_hello_done",
                         0x0f:"certificate_verify",
                         0x10:"client_key_exchange",
-                        0x20:"finished",
-                        0x21:"certificate_url",
-                        0x22:"certificate_stats",
+                        0x14:"finished",
+                        0x15:"certificate_url",
+                        0x16:"certificate_stats",
                         0xff:"unknown"}
 
 TLS_EXTENSION_TYPES = {
@@ -750,10 +750,10 @@ bind_layers(TLSHandshake, TLSHelloRequest, {'type':0x00})
 bind_layers(TLSHandshake, TLSClientHello, {'type':0x01})
 bind_layers(TLSHandshake, TLSServerHello, {'type':0x02})
 bind_layers(TLSHandshake, TLSCertificateList, {'type':0x0b})
+bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':0x0c})
 bind_layers(TLSHandshake, TLSServerHelloDone, {'type':0x0e})
 bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':0x10})
-bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':0x0c})
-bind_layers(TLSHandshake, TLSFinished, {'type':0x20})
+bind_layers(TLSHandshake, TLSFinished, {'type':0x14})
 # <---
 bind_layers(TLSServerKeyExchange, TLSKexParamEncryptedPremasterSecret)
 bind_layers(TLSClientKeyExchange, TLSKexParamEncryptedPremasterSecret)
