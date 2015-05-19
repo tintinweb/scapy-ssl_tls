@@ -184,7 +184,7 @@ TLS_ALERT_DESCRIPTIONS = {
                     49:"ACCESS_DENIED",
                     50:"DECODE_ERROR",
                     51:"DECRYPT_ERROR",
-                    60:"EXPORT_RESTRICTION"
+                    60:"EXPORT_RESTRICTION",
                     70:"PROTOCOL_VERSION",
                     71:"INSUFFICIENT_SECURITY",
                     80:"INTERNAL_ERROR",
