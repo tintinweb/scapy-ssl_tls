@@ -711,22 +711,25 @@ def to_raw(pkt, tls_ctx, client=True, include_record=False, compress_hook=None, 
     if content_type is None and data is None:
         raise KeyError("Unhandled TLS protocol")
 
-    crypto_container = tlsc.CryptoContainer(tls_ctx, data, content_type, client)
-
     if compress_hook is not None:
         post_compress_data = compress_hook(comp_method, data)
     else:
         post_compress_data = comp_method.compress(data)
+
     if pre_encrypt_hook is not None:
         cleartext, mac, padding = pre_encrypt_hook(post_compress_data)
+        crypto_container = tlsc.CryptoContainer(tls_ctx, data, content_type, client)
+        crypto_container.mac = mac
+        crypto_container.padding = padding
     else:
         cleartext = post_compress_data
-        mac = crypto_container.hmac()
-        padding = crypto_container.pad()
+        crypto_container = tlsc.CryptoContainer(tls_ctx, data, content_type, client)
+
     if encrypt_hook is not None:
         ciphertext = encrypt_hook(cleartext, mac, padding)
     else:
-        ciphertext = crypto_container.encrypt(b"%s%s%s%s" % (cleartext, mac, padding, chr(len(padding))))
+        ciphertext = crypto_container.encrypt()
+
     if include_record:
         tls_ciphertext = TLSRecord(version=tls_ctx.params.negotiated.version, content_type=content_type)/ciphertext
     else:
