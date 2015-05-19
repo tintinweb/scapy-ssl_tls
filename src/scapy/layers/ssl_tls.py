@@ -167,14 +167,14 @@ TLS_ALERT_LEVELS = { 0x01: "warning",
 
 TLS_ALERT_DESCRIPTIONS = {    
                     0:"CLOSE_NOTIFY",
-                    10:"UNEXPECTE_MESSAGE",
+                    10:"UNEXPECTED_MESSAGE",
                     20:"BAD_RECORD_MAC",
-                    21:"DESCRIPTION_FAILED_RESERVED",
+                    21:"DECRYPTION_FAILED",
                     22:"RECORD_OVERFLOW",
                     30:"DECOMPRESSION_FAILURE",
                     40:"HANDSHAKE_FAILURE",
                     41:"NO_CERTIFICATE_RESERVED",
-                    43:"BAD_CERTIFICATE",
+                    42:"BAD_CERTIFICATE",
                     43:"UNSUPPORTED_CERTIFICATE",
                     44:"CERTIFICATE_REVOKED",
                     45:"CERTIFICATE_EXPIRED",
@@ -184,19 +184,19 @@ TLS_ALERT_DESCRIPTIONS = {
                     49:"ACCESS_DENIED",
                     50:"DECODE_ERROR",
                     51:"DECRYPT_ERROR",
-                    60:"EXPORT_RESTRICTION_RESERVED",
+                    60:"EXPORT_RESTRICTION"
                     70:"PROTOCOL_VERSION",
                     71:"INSUFFICIENT_SECURITY",
-                    86:"INAPPROPRIATE_FALLBACK",
                     80:"INTERNAL_ERROR",
+                    86:"INAPPROPRIATE_FALLBACK",
                     90:"USER_CANCELED",
                     100:"NO_RENEGOTIATION",
                     110:"UNSUPPORTED_EXTENSION",
                     111:"CERTIFICATE_UNOBTAINABLE",
                     112:"UNRECOGNIZED_NAME",
-                    113:"BAD_CERTIFICATE_STATUS_RESPNSE",
+                    113:"BAD_CERTIFICATE_STATUS_RESPONSE",
                     114:"BAD_CERTIFICATE_HASH_VALUE",
-                    255:"UNKNOWN_255", }
+                    255:"UNKNOWN" }
 
 TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM = {
                                     0x01: 2 ** 9,
