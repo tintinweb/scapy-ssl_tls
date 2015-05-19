@@ -6,6 +6,7 @@ import ssl_tls as tls
 import ssl_tls_crypto as tlsc
 
 from Crypto.Cipher import PKCS1_v1_5
+from Crypto.Hash import SHA
 from Crypto.PublicKey import RSA
 from scapy.layers.inet import IP, NoPayload, Raw, TCP
 
@@ -177,7 +178,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         # RSA_WITH_RC4_128_SHA
         self.cipher_suite = 0x5
         # DEFLATE
-        self.comp_method = 0x1
+        self.comp_method = 0x0
         self.client_hello = tls.TLSRecord(version=self.record_version)/tls.TLSHandshake()/tls.TLSClientHello(version=self.hello_version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])
         self.tls_ctx.insert(self.client_hello)
         self.server_hello = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSServerHello(version=self.hello_version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
@@ -226,6 +227,18 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertTrue(record.haslayer(tls.TLSRecord))
         self.assertEqual(record.content_type, 0x17)
         self.assertEqual(record.version, self.tls_ctx.params.negotiated.version)
+
+    def test_encryption_of_tls_finished_layer(self):
+        def encrypt(cleartext, mac, padding):       
+            self.assertEqual(cleartext, "\x14\x00\x00\x0c%s" % self.tls_ctx.get_verify_data()) 
+            self.assertEqual(len(mac), SHA.digest_size)
+            self.assertEqual(len(padding), 11)   
+            self.assertTrue(all(map(lambda x: True if x == chr(11) else False, padding)))
+            return "A"*48
+        client_finished = tls.TLSRecord(content_type=0x16)/tls.to_raw(tls.TLSFinished(), self.tls_ctx, encrypt_hook=encrypt)
+        pkt = tls.TLS(str(client_finished)).to_packet()
+        # 4 bytes of TLSHandshake header, 12 bytes of verify_data, 20 bytes of HMAC SHA1, 11 bytes of padding, 1 padding length byte
+        self.assertEqual(pkt[tls.TLSRecord].length, len(tls.TLSHandshake()) + 12 + SHA.digest_size + 11 + 1)
 
 if __name__ == "__main__":
     unittest.main()

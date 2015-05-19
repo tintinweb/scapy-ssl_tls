@@ -796,14 +796,9 @@ def to_packet(layers):
             pkt /= layer
     except IndexError:
         pass
-    return pkt
-
-def tls_handshake_handler(pkt, tls_ctx, client):
-    if pkt.haslayer(TLSFinished):
-        return (0x16, tls_ctx.get_verify_data())
-
+    return pkt
 cleartext_handler = { TLSPlaintext: lambda pkt, tls_ctx, client: (0x17, pkt.data),
-                      TLSHandshake: tls_handshake_handler,
+                      TLSFinished: lambda pkt, tls_ctx, client: (0x16, str(TLSHandshake(type=0x14)/tls_ctx.get_verify_data())),
                       TLSChangeCipherSpec: lambda pkt, tls_ctx, client: (0x14, str(pkt)),
                       TLSAlert: lambda pkt, tls_ctx, client: (0x15, str(pkt)) }
 
