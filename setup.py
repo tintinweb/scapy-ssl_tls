@@ -55,9 +55,11 @@ def get_layer_files_dst(sites, path="scapy_ssl_tls"):
     scapy_locations = get_scapy_locations(sites)
     layer_files = []
     for layer_file in os.listdir(path):
-        layer_file_path = os.path.join(path, layer_file)
-        if os.path.isfile(layer_file_path):
-            layer_files.append(layer_file_path)
+        # Copy only python files, and exclude module file from copy to scapy
+        if layer_file != "__init__.py" and layer_file.endswith(".py"):
+            layer_file_path = os.path.join(path, layer_file)
+            if os.path.isfile(layer_file_path):
+                layer_files.append(layer_file_path)
     for scapy_location in scapy_locations:
         data_files.append(
             (os.path.join(scapy_location, "layers"), layer_files))
@@ -106,13 +108,15 @@ def read(fname):
 setup(
     name="scapy-ssl_tls",
     version="0.1",
+    package=["src"],
     author="tintinweb",
     author_email="tintinweb@oststrom.com",
     description=(
-        "An SSL/TLS layer for scapy the interactive packet manipulation program"),
+        "An SSL/TLS layer for scapy the interactive packet manipulation tool"),
     license="GPLv2",
-    keywords="scapy ssl tls",
+    keywords=["scapy", "ssl", "tls", "network", "dissect", "packets", "decrypt"],
     url="https://github.com/tintinweb/scapy-ssl_tls/",
+    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v0.1",
     long_description=read("README.md"),
     install_requires=["scapy", "pycrypto"],
     test_suite="nose.collector",
