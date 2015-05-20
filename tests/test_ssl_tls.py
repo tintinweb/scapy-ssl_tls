@@ -1,8 +1,8 @@
 #! -*- coding: utf-8 -*-
 
 import unittest
-import ssl_tls as tls
-import ssl_tls_crypto as tlsc
+import scapy_ssl_tls.ssl_tls as tls
+import scapy_ssl_tls.ssl_tls_crypto as tlsc
 
 import re
 from scapy.all import conf

@@ -50,7 +50,7 @@ def get_scapy_locations(sites):
     return scapy_locations
 
 
-def get_layer_files_dst(sites, path="src/scapy/layers/"):
+def get_layer_files_dst(sites, path="scapy_ssl_tls"):
     data_files = []
     scapy_locations = get_scapy_locations(sites)
     layer_files = []
@@ -113,8 +113,10 @@ setup(
     license="GPLv2",
     keywords="scapy ssl tls",
     url="https://github.com/tintinweb/scapy-ssl_tls/",
-    long_description=read('README.md'),
+    long_description=read("README.md"),
     install_requires=["scapy", "pycrypto"],
+    test_suite="nose.collector",
+    tests_require=["nose", "scapy", "pycrypto"],
     # Change once virtualenv bug is fixed
     # data_files = get_layer_files_dst(sites=site.getsitepackages())
     data_files=get_layer_files_dst(get_site_packages()),
