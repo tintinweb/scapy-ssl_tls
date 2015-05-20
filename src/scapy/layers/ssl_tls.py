@@ -656,9 +656,10 @@ class SSL(Packet):
         flist.reverse()
         while s and flist:
             f = flist.pop()
+            records = []
             try:
                 while pos <= len(s):
-                # consume payloads and add them to records list
+                    # consume payloads and add them to records list
                     record = cls(s[pos:], _internal=1)  # FIXME: performance
                     layer_len = cls_len + record.length
                     if layer_len == None:
@@ -667,9 +668,10 @@ class SSL(Packet):
                     pos += layer_len
                     # to make 'records' appear in 'fields' it must
                     # be assigned once before appending
-                    self.fields[f.name] = record
+                    records.append(record)
             except TypeError:
                 pass
+            self.fields[f.name] = records
         return s[pos:]
 
 
