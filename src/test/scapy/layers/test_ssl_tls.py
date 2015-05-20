@@ -4,6 +4,8 @@ import unittest
 import ssl_tls as tls
 import ssl_tls_crypto as tlsc
 
+import re
+from scapy.all import conf
 from scapy.layers import x509
 
 from Crypto.Cipher import PKCS1_v1_5
