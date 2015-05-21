@@ -1,7 +1,7 @@
 #! -*- coding: utf-8 -*-
 
 import unittest
-import pkcs7
+import scapy_ssl_tls.pkcs7 as pkcs7
 
 class TestPKCS7Encoder(unittest.TestCase):
     

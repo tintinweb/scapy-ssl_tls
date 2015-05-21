@@ -2,8 +2,8 @@
 
 import binascii
 import unittest
-import ssl_tls as tls
-import ssl_tls_crypto as tlsc
+import scapy_ssl_tls.ssl_tls as tls
+import scapy_ssl_tls.ssl_tls_crypto as tlsc
 from Crypto.Hash import HMAC, MD5, SHA
 from Crypto.Cipher import AES, DES3, PKCS1_v1_5
 from Crypto.PublicKey import RSA

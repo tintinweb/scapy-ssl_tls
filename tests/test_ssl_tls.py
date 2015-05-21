@@ -1,15 +1,14 @@
 #! -*- coding: utf-8 -*-
 
-import unittest
-import ssl_tls as tls
-import ssl_tls_crypto as tlsc
-
 import re
-from scapy.all import conf
-from scapy.layers import x509
+import unittest
+import scapy_ssl_tls.ssl_tls as tls
+import scapy_ssl_tls.ssl_tls_crypto as tlsc
 
 from Crypto.Cipher import PKCS1_v1_5
 from Crypto.PublicKey import RSA
+from scapy.all import conf
+from scapy.layers import x509
 
 class TestToRaw(unittest.TestCase):
 
@@ -114,7 +113,7 @@ class TestTLSCertificate(unittest.TestCase):
         subject= C = UK, O = OpenSSL Group, OU = FOR TESTING PURPOSES ONLY, CN = Test Server Cert
         issuer= C = UK, O = OpenSSL Group, OU = FOR TESTING PURPOSES ONLY, CN = OpenSSL Test Intermediate CA
         '''
-        rex_pem = re.compile(r'\-+BEGIN[^\-]+\-+(.*?)\-+END[^\-]+\-+',re.DOTALL)
+        rex_pem = re.compile(r'\-+BEGIN[^\-]+\-+(.*?)\-+END[^\-]+\-+', re.DOTALL)
         self.pem_cert = """-----BEGIN CERTIFICATE-----
 MIID5zCCAs+gAwIBAgIJALnu1NlVpZ6zMA0GCSqGSIb3DQEBBQUAMHAxCzAJBgNV
 BAYTAlVLMRYwFAYDVQQKDA1PcGVuU1NMIEdyb3VwMSIwIAYDVQQLDBlGT1IgVEVT
