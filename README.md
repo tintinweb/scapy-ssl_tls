@@ -1,15 +1,16 @@
+[![Build Status](https://buildhive.cloudbees.com/job/tintinweb/job/scapy-ssl_tls/badge/icon)](https://buildhive.cloudbees.com/job/tintinweb/job/scapy-ssl_tls/)
+
 Scapy-SSL/TLS
 =============
 
-Support for parsing/building SSL/TLS and DTLS in Scapy (http://www.secdev.org/projects/scapy/).
+Support for parsing/building SSL/TLS and DTLS in [Scapy](http://www.secdev.org/projects/scapy/).
 
-SSLv2,SSLv3(TLS),TLS,DTLS packet crafting, auto dissection, session tracking, key-sniffing and record decryption .
+SSLv2, SSLv3(TLS), TLS, DTLS packet crafting, dissection, session tracking, key-sniffing and decryption.
 
-!! work in progress !!   
 Please note that this code is highly experimental, you'll experience odd behavior so feel free to contribute:   
 * bugfixes   
-* new stuff   
-* tests   
+* unittests
+* new layers/features   
 
 
 Features
@@ -27,22 +28,33 @@ Features
 TODO
 -----
 
-* get rid of scapy/layers folder structure in sourcetree
-* package for pip
+* ~~get rid of scapy/layers folder structure in sourcetree~~
+* ~~package for pip~~
 * update/split documentation
 * get rid of path magic in examples
 * add support for TLSFinished
 * add support for TLS1_1
 
 
-Installation (optional)
---------
+Installation
+------------
+
+##### Option 1: pip
+
+	pip install scapy-ssl_tls
+	pip install -r requirements.txt
+	
+##### Option 2: from source
+
+	python setup.py install
+	
+##### Option 3: manual installation
 
 Note - it is *not* required to deploy files from the src/scapy/layers folder to your scapy_installation/layers directory in order to run the examples.
 
-1) deploy all files in ./src/scapy/layers to ./scapy/layers
+1) deploy all files in ./scapy_ssl_tls to <scapy_installation>/scapy/layers
 
-2) modify ./scapy/config.py to autoload this new layer
+2) modify <scapy_installation>/scapy/config.py to autoload SSL/TLS
 ```diff
 	config.py::Conf::load_layers 
 	375,376c375
@@ -51,7 +63,13 @@ Note - it is *not* required to deploy files from the src/scapy/layers folder to 
 	---
 	>                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp"]
  ```
-3) try it
+
+##### Resolve dependencies
+ 
+check requirements.txt for a list of dependencies.
+Try ```pip install -r requirements.txt``` to resolve dependencies
+
+##### verify installation:
 ```python
 #> scapy
 	   
@@ -484,10 +502,10 @@ processing.. <TLSRecord  content_type=application_data version=TLS_1_0 length=0x
 TLSCiphertextDecrypted 
 
 
-## Authors
-* tintinweb  ( http://oststrom.com  | http://github.com/tintinweb)
+## Authors / Contributors
+* tintinweb  ( http://oststrom.com  | https://github.com/tintinweb)
+* alexmgr ( https://github.com/alexmgr )
 
 ## Contributions / 3rd party code
 * pkcs7.py - http://japrogbits.blogspot.co.at/2011/02/using-encrypted-data-between-python-and.html
-* polarssl - tls1_0 prf (because openssl code is such a ref-mess!)
-* tbd
+* polarssl - tls1_0 prf inspiration
