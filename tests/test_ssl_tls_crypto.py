@@ -140,7 +140,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(tls_ctx.crypto.session.premaster_secret, self.priv_key.decrypt(epms, None))
 
     def test_fixed_crypto_data_matches_verify_data(self):
-        verify_data = "d948eac6ecac3a73d8b3c8a5"
+        verify_data = "12003ac89553b7a233da64b9"
         tls_ctx = tlsc.TLSSessionCtx()
         #tls_ctx.rsa_load_keys(self.pem_priv_key)
         client_hello = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientHello(gmt_unix_time=1234, random_bytes="A"*28)
