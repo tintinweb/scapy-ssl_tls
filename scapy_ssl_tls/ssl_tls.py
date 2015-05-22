@@ -6,7 +6,7 @@
 import os
 import time
 
-from scapy.packet import Packet, bind_layers
+from scapy.packet import bind_layers, NoPayload, Packet
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
@@ -676,12 +676,8 @@ def to_packet(layers):
         pass
     return pkt
 
-def tls_handshake_handler(pkt, tls_ctx, client):
-    if pkt.haslayer(TLSFinished):
-        return (0x16, tls_ctx.get_verify_data())
-
 cleartext_handler = { TLSPlaintext: lambda pkt, tls_ctx, client: (0x17, pkt.data),
-                      TLSHandshake: tls_handshake_handler,
+                      TLSFinished: lambda pkt, tls_ctx, client: (0x16, str(TLSHandshake(type=0x14)/tls_ctx.get_verify_data())),
                       TLSChangeCipherSpec: lambda pkt, tls_ctx, client: (0x14, str(pkt)),
                       TLSAlert: lambda pkt, tls_ctx, client: (0x15, str(pkt)) }
 
@@ -725,6 +721,65 @@ def to_raw(pkt, tls_ctx, client=True, include_record=False, compress_hook=None, 
     else:
         tls_ciphertext = ciphertext
     return tls_ciphertext
+
+def get_individual_layers(pkt):
+    """ Returns all individual layers
+    TLSRecord()/TLSHandshake()/TLSClientHello() will become [TLSRecord, TLSHandshake, TLSClientHello]
+    """
+    pkt = copy.deepcopy(pkt)
+    while pkt.payload:
+        current_layer = copy.deepcopy(pkt)
+        current_layer.payload = NoPayload()
+        yield current_layer
+        pkt = pkt.payload
+    yield pkt
+
+def get_all_tls_layers(pkt, layer_type=TLSRecord, appender=lambda x: x):
+    """ Returns all TLS layers (not scapy layers!) within a packet, 
+    stripping the upper layers TLSRecord()/TLSHandshake()/TLSRecord()/TLSAlert()
+    will become [TLSRecord/TLSHandshake, TLSRecord/TLSAlert]
+    By default, this will return all TLSRecords
+    """
+    record = None
+    for layer in get_individual_layers(pkt):
+        if layer.name == layer_type.name:
+            if record is not None:
+                yield record
+            record = layer
+        else:
+            if record is not None:
+                layer = appender(layer)
+                if layer is not None:
+                    record /= layer
+    # Yield the last calculated record if there is one
+    if record is not None:
+        yield record
+
+# Alias function for consistancy
+def get_all_tls_records(pkt):
+    # yield from not in python 2.7
+    # yield from get_all_tls_layers(pkt)
+    for record in get_all_tls_layers(pkt):
+        yield record
+ 
+def get_all_tls_handshakes(pkt):
+    # yield from get_all_tls_layers(pkt, TLSHandshake, lambda x: x if x.name != TLSRecord.name else None)
+    for handshake in get_all_tls_layers(pkt, TLSHandshake, lambda x: x if x.name != TLSRecord.name else None):
+        yield handshake
+
+def get_all_layers(pkt, layer_type=TLSRecord):
+    """ Returns all layer types within a packet, without stripping
+    the upper layers. For example TLSRecord()/TLSHandshake()/TLSRecord()/TLSAlert() will become
+    [TLSRecord/TLSHandshake/TLSRecord/TLSAlert, TLSRecord/TLSAlert]
+    """
+    i = 1
+    while True:
+        layer = pkt.getlayer(layer_type, nb=i)
+        if layer is not None:
+            yield layer
+            i += 1
+        else:
+            break
 
 # bind magic
 bind_layers(TCP, SSL, dport=443)
