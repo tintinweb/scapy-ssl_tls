@@ -470,7 +470,7 @@ class TLSServerHelloDone(Packet):
 class TLSCertificate(Packet):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
-                    StrLenField("data", "", length_from=lambda x:x.length), ]  # BERcodec_Object.dec(data,context=ASN1_Class_X509)
+                    PacketLenField("data", None, x509.X509Cert, length_from=lambda x:x.length),]
 
 class TLSCertificateList(Packet):
     name = "TLS Certificate List"
