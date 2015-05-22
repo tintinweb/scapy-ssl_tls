@@ -300,7 +300,7 @@ class TLSSessionCtx(object):
                 if self.params.negotiated.key_exchange and self.params.negotiated.key_exchange == "RSA":
                     # fetch server pubkey // PKCS1_v1_5
                     cert = p[tls.TLSCertificateList].certificates[0].data
-                    self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(cert))
+                    self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(str(cert)))
                     # check for client privkey
 
             # calculate key material
