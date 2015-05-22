@@ -439,13 +439,11 @@ class TLSServerKeyExchange(Packet):
     
 class TLSKexParamEncryptedPremasterSecret(Packet):
     name = "TLS Kex encrypted PreMasterSecret"
-    fields_desc = [  # FieldLenField("length",None,length_of="data",fmt="H"),
-                    StrLenField("data", None) ]
+    fields_desc = [ StrLenField("data", None) ]
 
 class TLSKexParamDH(Packet):
     name = "TLS Kex DH Params"
-    fields_desc = [  # FieldLenField("length",None,length_of="data",fmt="H"),
-                    StrLenField("data", None) ]
+    fields_desc = [ StrLenField("data", None) ]
 
 class TLSFinished(Packet):
     name = "TLS Handshake Finished"
@@ -659,22 +657,7 @@ class SSL(Packet):
         # This will always be empty (equivalent to returning "")
         return raw_bytes[pos:]
 
-    def to_packet(self):
-        if (self.records == []):
-            raise ValueError("Empty packet. Nothing to rebuild")
-        return to_packet(self.records)
-
 TLS = SSL
-
-def to_packet(layers):
-    pkt = None
-    try:
-        pkt = layers[0]
-        for layer in layers[1:]:
-            pkt /= layer
-    except IndexError:
-        pass
-    return pkt
 
 cleartext_handler = { TLSPlaintext: lambda pkt, tls_ctx, client: (0x17, pkt.data),
                       TLSFinished: lambda pkt, tls_ctx, client: (0x16, str(TLSHandshake(type=0x14)/tls_ctx.get_verify_data())),
@@ -727,12 +710,19 @@ def get_individual_layers(pkt):
     TLSRecord()/TLSHandshake()/TLSClientHello() will become [TLSRecord, TLSHandshake, TLSClientHello]
     """
     pkt = copy.deepcopy(pkt)
-    while pkt.payload:
-        current_layer = copy.deepcopy(pkt)
-        current_layer.payload = NoPayload()
-        yield current_layer
-        pkt = pkt.payload
-    yield pkt
+    # If we have a PacketListField, access it's records
+    try:
+        layers = pkt.records
+    # Otherwise handle normally
+    except AttributeError:
+        layers = [pkt]
+    for layer in layers:
+        while layer.payload:
+            current_layer = copy.deepcopy(layer)
+            current_layer.payload = NoPayload()
+            yield current_layer
+            layer = layer.payload
+        yield layer
 
 def get_all_tls_layers(pkt, layer_type=TLSRecord, appender=lambda x: x):
     """ Returns all TLS layers (not scapy layers!) within a packet, 
