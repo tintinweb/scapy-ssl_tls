@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+ERR=0
 echo "* checking for virtualenv..."
 if [ -d ".env" ]; then  
   echo "**> virtualenv exists"
@@ -13,5 +14,7 @@ pip install -r requirements.txt
 pip install nosexcover
 echo "* running unittests"
 python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --xcoverage-file=cover/cobertura.xml
+ERR=$?
 echo "**> exiting virtualenv"
 deactivate
+exit $ERR
