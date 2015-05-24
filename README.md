@@ -52,9 +52,9 @@ Installation
 
 1) install requirements from requirements.txt
 
-1) copy scapy_ssl_tls/* to <scapy_installation>/scapy/layers
+1) copy scapy_ssl_tls/* to *scapy_installation*/scapy/layers
 
-2) modify <scapy_installation>/scapy/config.py to autoload SSL/TLS
+2) modify *scapy_installation*/scapy/config.py to autoload SSL/TLS
 ```diff
 @@ -373,3 +373,3 @@
      load_layers = ["l2", "inet", "dhcp", "dns", "dot11", "gprs", "hsrp", "inet6", "ir", "isakmp", "l2tp",
