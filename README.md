@@ -31,7 +31,7 @@ TODO
 * ~~get rid of scapy/layers folder structure in sourcetree~~
 * ~~package for pip~~
 * update/split documentation
-* get rid of path magic in examples
+* ~~get rid of path magic in examples~~
 * add support for TLSFinished
 * add support for TLS1_1
 
@@ -39,29 +39,29 @@ TODO
 Installation
 ------------
 
-##### Option 1: pip
+##### Option 1: pip - download latest release from the python package index
 
 	pip install scapy-ssl_tls
-	pip install -r requirements.txt
 	
 ##### Option 2: from source
-
+	
+	pip install -r requirements.txt
 	python setup.py install
 	
 ##### Option 3: manual installation
 
-Note - it is *not* required to deploy files from the src/scapy/layers folder to your scapy_installation/layers directory in order to run the examples.
+1) install requirements from requirements.txt
 
-1) deploy all files in ./scapy_ssl_tls to <scapy_installation>/scapy/layers
+1) copy scapy_ssl_tls/* to <scapy_installation>/scapy/layers
 
 2) modify <scapy_installation>/scapy/config.py to autoload SSL/TLS
 ```diff
-	config.py::Conf::load_layers 
-	375,376c375
-	<                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp",
-	<                    "ssl_tls", ]
-	---
-	>                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp"]
+@@ -373,3 +373,3 @@
+     load_layers = ["l2", "inet", "dhcp", "dns", "dot11", "gprs", "hsrp", "inet6", "ir", "isakmp", "l2tp",
+-                   "mgcp", "mobileip", "netbios", "netflow", "ntp", "ppp", "radius", "rip", "rtp",
++                   "mgcp", "mobileip", "netbios", "netflow", "ntp", "ppp", "radius", "rip", "rtp","ssl_tls",
+                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp" ]
+
  ```
 
 ##### Resolve dependencies
