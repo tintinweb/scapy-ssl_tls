@@ -108,7 +108,7 @@ def read(fname):
 setup(
     name="scapy-ssl_tls",
     version="1.0",
-    package=["scapy_ssl_tls"],
+    packages=["scapy_ssl_tls"],
     author="tintinweb",
     author_email="tintinweb@oststrom.com",
     description=(
