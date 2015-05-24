@@ -1,6 +1,25 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
+
+try:
+    import scapy.all as scapy
+except ImportError:
+    import scapy
+
+try:
+    # This import works from the project directory
+    import sys, os
+    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
+    sys.path.append(basedir)
+    from scapy_ssl_tls.ssl_tls import *
+    import scapy_ssl_tls.ssl_tls_crypto as ssl_tls_crypto
+except ImportError:
+    # If you installed this package via pip, you just need to execute this
+    from scapy.layers.ssl_tls import *
+    import scapy.layers.ssl_tls_crypto as ssl_tls_crypto
+    
+import socket
 
 def sendrcv(sock, p, bufflen=1024):
     sock.settimeout(5)
@@ -15,22 +34,13 @@ def sendrcv(sock, p, bufflen=1024):
             resp += t
     except:
         print "timeout"
-        
-        
     #print "received, %d --  %s"%(len(resp),repr(resp))
     return resp
 
 if __name__=="__main__":
-    import scapy
-    from scapy.all import *    
-    import socket
-    #<----- for local testing only
-    sys.path.append("../scapy/layers")
-    from ssl_tls import *
-    import ssl_tls_crypto
     from Crypto.Cipher import PKCS1_v1_5
     #------>
-    target = ('192.168.220.131',4433)            # MAKE SURE TO CHANGE THIS
+    target = ('www.remote.host',4433)            # MAKE SURE TO CHANGE THIS
     
     # create tcp socket
     print "* connecting ..."
@@ -135,5 +145,3 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     print repr(session)
     print "* you should now be able to encrypt/decrypt any client/server communication for this session :)"
     s.close()
-    
-    

@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 '''
@@ -10,15 +10,26 @@ client:
 
 '''
 
-if __name__=="__main__":
+try:
+    import scapy.all as scapy
+except ImportError:
     import scapy
-    from scapy.all import *    
-    import socket
-    #<----- for local testing only
-    sys.path.append("../scapy/layers")
-    from ssl_tls import *
-    import ssl_tls_crypto
-    #------>
+
+try:
+    # This import works from the project directory
+    import sys, os
+    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
+    sys.path.append(basedir)
+    from scapy_ssl_tls.ssl_tls import *
+    import scapy_ssl_tls.ssl_tls_crypto as ssl_tls_crypto
+except ImportError:
+    # If you installed this package via pip, you just need to execute this
+    from scapy.layers.ssl_tls import *
+    import scapy.layers.ssl_tls_crypto as ssl_tls_crypto
+    
+import socket
+
+if __name__=="__main__":
     '''
     #fetch interfaces
     for i in get_if_list():
@@ -96,5 +107,3 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         sniff(filter="tcp port 443",prn=process_ssl,store=0,timeout=3)
 
     s.close()
-    
-    

@@ -1,7 +1,25 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
+try:
+    import scapy.all as scapy
+except ImportError:
+    import scapy
+
+try:
+    # This import works from the project directory
+    import sys, os
+    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
+    sys.path.append(basedir)
+    from scapy_ssl_tls.ssl_tls import *
+    import scapy_ssl_tls.ssl_tls_crypto as ssl_tls_crypto
+except ImportError:
+    # If you installed this package via pip, you just need to execute this
+    from scapy.layers.ssl_tls import *
+    import scapy.layers.ssl_tls_crypto as ssl_tls_crypto
+    
+import socket
 
 def sendrcv(sock, p, bufflen=1024):
     sock.settimeout(5)
@@ -23,15 +41,7 @@ def sendrcv(sock, p, bufflen=1024):
 
 if __name__=="__main__":
     history = []
-    import scapy
-    from scapy.all import *    
-    import socket
-    #<----- for local testing only
-    sys.path.append("../scapy/layers")
-    from ssl_tls import *
-    import ssl_tls_crypto
-    #------>
-    target = ('192.168.220.131',4433)            # MAKE SURE TO CHANGE THIS
+    target = ('www.remote.host',443)            # MAKE SURE TO CHANGE THIS
     
     # create tcp socket
     s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -52,7 +62,6 @@ if __name__=="__main__":
           
         
     p.show()
-
     sp =str(p)
 
     session.insert(SSL(sp))
@@ -62,9 +71,6 @@ if __name__=="__main__":
     history.append(SSL(r))
     session.insert(SSL(r))
     
-    
-
-
     # send premaster secret
     #p = TLSRecord()/TLSHandshake()/TLSClientKeyExchange()/TLSKexParamDH("haha")
     client_hello = p
@@ -160,5 +166,3 @@ if __name__=="__main__":
     #SSL(r).show()
     
     s.close()
-    
-    
