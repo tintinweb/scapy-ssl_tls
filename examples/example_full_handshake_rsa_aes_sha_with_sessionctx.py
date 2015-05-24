@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
+import sys, os
 try:
     import scapy.all as scapy
 except ImportError:
@@ -9,7 +10,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    import sys, os
     basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
     sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
@@ -40,7 +40,11 @@ def sendrcv(sock, p, bufflen=1024):
 if __name__=="__main__":
     from Crypto.Cipher import PKCS1_v1_5
     #------>
-    target = ('www.remote.host',4433)            # MAKE SURE TO CHANGE THIS
+    if len(sys.argv)<=2:
+        print "USAGE: <host> <port>"
+        exit(1)
+        
+    target = (sys.argv[1],int(sys.argv[2]))
     
     # create tcp socket
     print "* connecting ..."

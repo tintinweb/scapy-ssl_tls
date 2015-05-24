@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
+import sys, os
 try:
     import scapy.all as scapy
 except ImportError:
@@ -9,7 +10,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    import sys, os
     basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
     sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
@@ -22,6 +22,11 @@ import itertools
 
 # https://tools.ietf.org/html/draft-ietf-tls-downgrade-scsv-00
 if __name__=="__main__":
+    if len(sys.argv)<=2:
+        print "USAGE: <host> <port>"
+        exit(1)
+        
+    target = (sys.argv[1],int(sys.argv[2]))
     PROTOS = ("TLS_1_2","TLS_1_1","TLS_1_0","SSL_3_0")
     TESTS = itertools.product(PROTOS,repeat=2)
     RESULTS = []
@@ -30,7 +35,6 @@ if __name__=="__main__":
     TLS_FALLBACK_SCSV_OK = True
     SSLV3_ENABLED = True
     
-    target = ('www.remote.host',443)            # MAKE SURE TO CHANGE THIS
             
     for t in TESTS:
         print "----------------"

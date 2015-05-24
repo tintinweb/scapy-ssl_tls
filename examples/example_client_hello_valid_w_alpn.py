@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
+import sys, os
 try:
     import scapy.all as scapy
 except ImportError:
@@ -9,7 +10,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    import sys, os
     basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
     sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
@@ -20,7 +20,11 @@ except ImportError:
 import socket
 
 if __name__=="__main__":
-    target = ('www.remote.host',443)            # MAKE SURE TO CHANGE THIS
+    if len(sys.argv)<=2:
+        print "USAGE: <host> <port>"
+        exit(1)
+        
+    target = (sys.argv[1],int(sys.argv[2]))
     
     # create tcp socket
     s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)

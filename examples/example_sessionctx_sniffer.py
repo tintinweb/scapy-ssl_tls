@@ -10,6 +10,7 @@ client:
 
 '''
 
+import sys, os
 try:
     import scapy.all as scapy
 except ImportError:
@@ -17,7 +18,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    import sys, os
     basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
     sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
