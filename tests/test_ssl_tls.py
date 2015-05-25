@@ -80,11 +80,11 @@ class TestTLSClientHello(unittest.TestCase):
                     tls.TLSExtension()/ \
                             tls.TLSExtCertificateURL(certificate_urls=[tls.TLSURLAndOptionalHash(url="http://www.github.com/tintinweb")]),
                     tls.TLSExtension()/ \
-                            tls.TLSExtECPointsFormat(ec_point_formats=[tls.TLSExtEcPointFormat.ANSIX962_COMPRESSED_CHAR2]),
+                            tls.TLSExtECPointsFormat(ec_point_formats=[tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2]),
                     tls.TLSExtension()/ \
-                            tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSExtEllipticCurve.SECT571R1,]),
+                            tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSEllipticCurve.SECT571R1,]),
                     tls.TLSExtension()/ \
-                            tls.TLSExtHeartbeat(mode=0x02),
+                            tls.TLSExtHeartbeat(mode=tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND),
                     tls.TLSExtension()/ \
                             tls.TLSExtSessionTicketTLS(data="myticket"),
                     tls.TLSExtension()/ \
@@ -127,11 +127,11 @@ class TestTLSClientHello(unittest.TestCase):
         p.show()
         record = p.records[0]
         extensions = record[tls.TLSClientHello].extensions
-        self.assertEquals(extensions.pop()[tls.TLSExtRenegotiationInfo].mode, "myreneginfo") 
-        self.assertEquals(extensions.pop()[tls.TLSExtSessionTicketTLS].mode, "myticket") 
-        self.assertEquals(extensions.pop()[tls.TLSExtEllipticCurves].elliptic_curves[0], tls.TLSExtEllipticCurve.SECT571R1)
-        self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_points_formats[0], tls.TLSExtEcPointFormat.ANSIX962_COMPRESSED_CHAR2) 
-        self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_points_formats[0], tls.TLSExtEcPointFormat.ANSIX962_COMPRESSED_CHAR2) 
+        self.assertEquals(extensions.pop()[tls.TLSExtRenegotiationInfo].data, "myreneginfo") 
+        self.assertEquals(extensions.pop()[tls.TLSExtSessionTicketTLS].data, "myticket") 
+        self.assertEquals(extensions.pop()[tls.TLSExtHeartbeat].mode, tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND) 
+        self.assertEquals(extensions.pop()[tls.TLSExtEllipticCurves].elliptic_curves[0], tls.TLSEllipticCurve.SECT571R1)
+        self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_points_formats[0], tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2) 
         self.assertEquals(extensions.pop()[tls.TLSExtCertificateURL].certificate_urls[0].url,"http://www.github.com/tintinweb") 
         self.assertEquals(extensions.pop()[tls.TLSExtMaxFragmentLength].fragment_length,0x03)  
         self.assertEquals(extensions.pop()[tls.TLSExtALPN][1].protocol_name_list[0].data,"http/2.0")  
