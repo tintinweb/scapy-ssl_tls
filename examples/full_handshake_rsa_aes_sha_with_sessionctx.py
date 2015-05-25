@@ -91,10 +91,12 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     print "* -> client hello"
     p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=[TLSCompressionMethod.NULL], 
                                                   cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA],
-                                                  random_bytes='R'*28)
+                                                  random_bytes='R'*28,
+                                                  #extensions=[TLSExtension()/TLSExtServerNameIndication(server_names=[])]
+                                                  )
           
         
-    #p.show()
+    p.show()
     sp=str(p)
     session.insert(SSL(sp))     # track in sessionctx
     r = sendrcv(s,sp)
