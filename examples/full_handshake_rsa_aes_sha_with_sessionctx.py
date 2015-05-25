@@ -129,7 +129,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     pms = ''.join(enc)
 
     print "* -> TLSClientKeyExchange with EncryptedPremasterSecret"
-    p = TLSRecord()/TLSHandshake()/TLSClientKeyExchange()/TLSKexParamEncryptedPremasterSecret(data=pms)
+    p = TLSRecord()/TLSHandshake()/TLSClientKeyExchange()/pms
     #p.show2()
     sp = str(p)
     session.insert(SSL(sp))
