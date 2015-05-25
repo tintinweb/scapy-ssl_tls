@@ -31,7 +31,7 @@ if __name__=="__main__":
     s.connect(target)
     
     # create SSLv2 Handhsake / Client Hello packet
-    p = SSLv2Record()/SSLv2ClientHello(cipher_suites=SSL2_CIPHER_SUITES.keys(),challenge='a'*16,session_id='a'*16)           
+    p = SSLv2Record()/SSLv2ClientHello(cipher_suites=SSLv2_CIPHER_SUITES.keys(),challenge='a'*16,session_id='a'*16)           
     p.show()
 
     SSL(str(p)).show()
