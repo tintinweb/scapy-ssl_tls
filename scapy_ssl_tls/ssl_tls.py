@@ -588,8 +588,8 @@ class SSLv2ClientHello(Packet):
 class SSLv2ServerHello(Packet):
     name = "SSLv2 Server Hello"
     fields_desc = [
-                   ByteEnumField("session_id_hit", TLS_TYPE_BOOLEAN.FALSE, TLS_TYPE_BOOLEAN),
-                   ByteEnumField("certificate_type", SSLv2CertificateType.x509, SSLv2_CERTIFICATE_TYPES),
+                   ByteEnumField("session_id_hit", TLSTypeBoolean.FALSE, TLS_TYPE_BOOLEAN),
+                   ByteEnumField("certificate_type", SSLv2CertificateType.X509, SSLv2_CERTIFICATE_TYPES),
                    XShortEnumField("version", TLSVersion.SSL_2_0, TLS_VERSIONS),
 
                    XFieldLenField("certificate_length", None, length_of="certificates", fmt="H"),
