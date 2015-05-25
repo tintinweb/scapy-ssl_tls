@@ -12,9 +12,9 @@ client:
 
 import sys, os
 try:
-    import scapy.all as scapy
+    from scapy.all import *
 except ImportError:
-    import scapy
+    from scapy import *
 
 try:
     # This import works from the project directory
@@ -30,12 +30,18 @@ except ImportError:
 import socket
 
 if __name__=="__main__":
-    '''
-    #fetch interfaces
-    for i in get_if_list():
-        print i
-    conf.iface = "eth14"
-    '''
+    if len(sys.argv)<=3:
+        print "USAGE: <host> <port> <inteface>"
+        print "\navailable interfaces:"
+        for i in get_if_list():
+            print "   * %s"%i
+        print "* default"
+        exit(1)
+    
+    if len(sys.argv)>3:
+        conf.iface = sys.argv[3]
+        
+    target = (sys.argv[1],int(sys.argv[2]))
     
     ssl_session_map = {}
     
@@ -55,14 +61,20 @@ if __name__=="__main__":
                 #reset the session and print it next time
 
             for p in p[SSL].records:
-                print "processing..",repr(p[TLSRecord])
+                if p.haslayer(SSLv2Record):
+                    print "not supported - skipping..",repr(p)
+                    continue
+                print "processing..",repr(p)
+                
                 session.insert(p)            
                 if session.crypto.session.master_secret and session.printed==False:
                     print repr(session)
                     session.printed = True
                 
                 if p[TLSRecord].content_type==0x17:
-                    pp = session.tlsciphertext_decrypt(p,session.crypto.client.dec)
+                    # TODO: FIXME - add decryption code
+                    pp = to_raw(TLSPlaintext(),session)
+                    #pp = session.tlsciphertext_decrypt(p,session.crypto.client.dec)
                     pp.show()
 
 
@@ -98,12 +110,13 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 -----END RSA PRIVATE KEY-----
 """
     session = ssl_tls_crypto.TLSSessionCtx()
-    session.rsa_load_privkey(privkey)
+    session.rsa_load_keys(privkey)
     session.printed=False
     
-    ssl_session_map[('192.168.220.131',443)]=session
+    ssl_session_map[target]=session
     
+    print "* ready!"
     while True:
-        sniff(filter="tcp port 443",prn=process_ssl,store=0,timeout=3)
+        sniff(filter="tcp port %d"%target[1],prn=process_ssl,store=0,timeout=3)
 
     s.close()

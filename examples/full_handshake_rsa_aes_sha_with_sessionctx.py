@@ -85,7 +85,7 @@ xT0ToMPJUzWAn8pZv0snA0um6SIgvkCuxO84OkANCVbttzXImIsL7pFzfcwV/ERK
 UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 -----END RSA PRIVATE KEY-----
 """
-    session.rsa_load_privkey(privkey)
+    session.rsa_load_keys(privkey)
     
     # create TLS Handshake / Client Hello packet
     print "* -> client hello"
@@ -106,15 +106,14 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     server_hello = SSL(r)  
 
     #generate random premaster secret
-    secparams = ssl_tls_crypto.TLSSecurityParameters()
+    pms = '\03\01'+'a'*22+'b'*24
+    cli_random = struct.pack("!I",client_hello[TLSClientHello].gmt_unix_time)+client_hello[TLSClientHello].random_bytes
+    srv_random = struct.pack("!I",server_hello[TLSServerHello].gmt_unix_time)+server_hello[TLSServerHello].random_bytes
+    secparams = ssl_tls_crypto.TLSSecurityParameters(TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA,pms, cli_random,srv_random)
     # latest_version + 46rndbytes
-    secparams.premaster_secret = '\03\01'+'a'*22+'b'*24
-    secparams.generate(secparams.premaster_secret, 
-                       struct.pack("!I",client_hello[TLSClientHello].gmt_unix_time)+client_hello[TLSClientHello].random_bytes,
-                       struct.pack("!I",server_hello[TLSServerHello].gmt_unix_time)+server_hello[TLSServerHello].random_bytes)
     
     print "* chose premaster_secret and generate master_secret + key material"
-    print "** chosen premaster_secret", repr(secparams.premaster_secret)
+    print "** chosen premaster_secret", repr(secparams.pms)
     print "** generated master_secret", repr(secparams.master_secret)    
     # encrypt pms with server pubkey from first cert
     #extract server cert (first one counts)
@@ -126,7 +125,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     
     print "* encrypt premaster_secret with servers RSA pubkey"
     pkcs1_pubkey = PKCS1_v1_5.new(pubkey)
-    enc= pkcs1_pubkey.encrypt(secparams.premaster_secret)
+    enc= pkcs1_pubkey.encrypt(secparams.pms)
     pms = ''.join(enc)
 
     print "* -> TLSClientKeyExchange with EncryptedPremasterSecret"
@@ -144,8 +143,18 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     
     r = sendrcv(s,str(p))
     #SSL(r).show()
-    print "* FIXME: implement TLSFinished ..."
+    p = TLSRecord(content_type="handshake")/to_raw(TLSFinished(), session)
+    
+    r = sendrcv(s,str(p))
+    print repr(SSL(r))
     print "* SSL Session parameter and keys: "
     print repr(session)
     print "* you should now be able to encrypt/decrypt any client/server communication for this session :)"
+    
+    # TODO: FIXME - does not work atm.
+    p = TLSRecord(content_type="application_data")/to_raw(TLSPlaintext(data=""), session)
+    p.show()
+    r = sendrcv(s,str(p))
+    SSL(r).show()
+    
     s.close()

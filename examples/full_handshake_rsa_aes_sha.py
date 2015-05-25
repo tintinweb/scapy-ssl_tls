@@ -51,12 +51,8 @@ if __name__=="__main__":
     s.connect(target)
     
     session = ssl_tls_crypto.TLSSessionCtx()
-    session.rsa_load_privkey(open('c:\\_tmp\\polarssl.key','r').read())
-    
-    
-    # fake initial session packet for session tracking
-    sip,sport= s.getsockname()
-    session.insert(IP(src=sip,dst=target[0])/TCP(sport=sport,dport=target[1]))
+    session.rsa_load_keys_from_file("c:\\_tmp\\polarssl.key")
+    #session.rsa_load_privkey(open('c:\\_tmp\\polarssl.key','r').read())
     
     # create TLS Handhsake / Client Hello packet
     p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=None, 
