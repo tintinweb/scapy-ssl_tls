@@ -110,6 +110,13 @@ class BEnumField(EnumField):
 class XBEnumField(BEnumField):
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))   
+
+class PacketNoPadding(Packet):
+    '''
+    This type of packet does not contain padding or Raw data at the end
+    '''
+    def extract_padding(self, s):
+        return '', s
     
 class EnumStruct(object):
     def __init__(self, entries):
@@ -283,8 +290,8 @@ TLS_EXT_EC_POINT_FORMATS = {0x00:'uncompressed',
                             0x02:'ansiX962_compressed_char2'}
 TLSExtEcPointFormat = EnumStruct(TLS_EXT_EC_POINT_FORMATS)
     
-TLS_EXT_ELLIPTIC_CURVES = {0x000e:'sect571r1',}
-TLSExtEllipticCurve = EnumStruct(TLS_EXT_ELLIPTIC_CURVES)
+TLS_ELLIPTIC_CURVES = {0x000e:'sect571r1',}
+TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
 class TLSRecord(Packet):
     name = "TLS Record"
@@ -315,34 +322,29 @@ class TLSHandshake(Packet):
     fields_desc = [ByteEnumField("type", TLSHandshakeType.UNKNOWN, TLS_HANDSHAKE_TYPES),
                    XBLenField("length", None, fmt="!I", numbytes=3), ]
 
-class TLSServerName(Packet):
+class TLSServerName(PacketNoPadding):
     name = "TLS Servername"
     fields_desc = [ByteEnumField("type", 0x00, {0x00:"host"}),
                   XFieldLenField("length", None, length_of="data", fmt="H"),
                   StrLenField("data", "", length_from=lambda x:x.length),
                   ]
     
-    def extract_padding(self, s):
-        return '', s
-    
-class TLSServerNameIndication(Packet):
+class TLSExtServerNameIndication(PacketNoPadding):
     name = "TLS Extension Servername Indication"
     fields_desc = [XFieldLenField("length", None, length_of="server_names", fmt="H"),
                    PacketListField("server_names", None, TLSServerName, length_from=lambda x:x.length),
                   ]
+    
 #https://tools.ietf.org/html/rfc7301
-class TLSALPNProtocol(Packet):
+class TLSALPNProtocol(PacketNoPadding):
     name = "TLS ALPN Protocol"
     fields_desc = [
                   XFieldLenField("length", None, length_of="data", fmt="B"),
                   StrLenField("data", "", length_from=lambda x:x.length),
                   ]
     
-    def extract_padding(self, s):
-        return '', s
-    
-class TLSALPN(Packet):
-    name = "TLS Application-Layer Protocol Negotiation"
+class TLSExtALPN(PacketNoPadding):
+    name = "TLS Extension Application-Layer Protocol Negotiation"
     fields_desc = [XFieldLenField("length", None, length_of="protocol_name_list", fmt="H"),
                    PacketListField("protocol_name_list", None, TLSALPNProtocol, length_from=lambda x:x.length),
                   ]
@@ -354,9 +356,9 @@ class TLSExtension(Packet):
                   ]
 
 # https://www.ietf.org/rfc/rfc3546.txt
-class TLSExtMaxFragmentLength(Packet):
+class TLSExtMaxFragmentLength(PacketNoPadding):
     name = "TLS Extension Max Fragment Length"
-    fields_desc = [ByteEnumField("max_fragment_length", 0xff, TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM)]
+    fields_desc = [ByteEnumField("fragment_length", 0xff, TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM)]
 
 class TLSURLAndOptionalHash(Packet):
     name = "TLS Extension Certificate URL/Hash"
@@ -366,56 +368,40 @@ class TLSURLAndOptionalHash(Packet):
                   StrLenField("sha1hash", "", length_from=lambda x:20 if x.hash_present else 0),  # opaque SHA1Hash[20];
                   ]
     
-class TLSExtCertificateURL(Packet):
+class TLSExtCertificateURL(PacketNoPadding):
     name = "TLS Extension Certificate URL"
     fields_desc = [ByteEnumField("type", TLSCertChainType.INDIVIDUAL_CERTS, CERT_CHAIN_TYPE),
                    XFieldLenField("length", None, length_of="certificate_urls", fmt="H"),
                    PacketListField("certificate_urls", None, TLSURLAndOptionalHash, length_from=lambda x:x.length)
                    ]
-    def extract_padding(self, s):
-        return '', s
-
-
-
-class TLSExtECPointsFormat(Packet):
+    
+class TLSExtECPointsFormat(PacketNoPadding):
     name = "TLS Extension EC Points Format"
     fields_desc = [
                    XFieldLenField("length", None, length_of="ec_point_formats", fmt="B"),
                    FieldListField("ec_point_formats", None, ByteEnumField("ec_point_format", None, TLS_EXT_EC_POINT_FORMATS), length_from=lambda x:x.length),
                   ]
-    def extract_padding(self, s):
-        return '', s
 
-class TLSExtEllipticCurves(Packet):
+class TLSExtEllipticCurves(PacketNoPadding):
     name = "TLS Extension Elliptic Curves"
     fields_desc = [
                    XFieldLenField("length", None, length_of="elliptic_curves", fmt="H"),
-                   FieldListField("elliptic_curves", None, ShortEnumField("elliptic_curve", None, TLS_EXT_ELLIPTIC_CURVES), length_from=lambda x:x.length),
+                   FieldListField("elliptic_curves", None, ShortEnumField("elliptic_curve", None, TLS_ELLIPTIC_CURVES), length_from=lambda x:x.length),
                   ]
-    def extract_padding(self, s):
-        return '', s
     
-class TLSExtHeartbeat(Packet):
+class TLSExtHeartbeat(PacketNoPadding):
     name = "TLS Extension HeartBeat"
     fields_desc = [StrFixedLenField("mode", 0x01, 0x01)
                   ]
-    def extract_padding(self, s):
-        return '', s
 
-class TLSExtSessionTicketTLS(Packet):
+class TLSExtSessionTicketTLS(PacketNoPadding):
     name = "TLS Extension SessionTicket TLS"
     fields_desc = [StrLenField("data", '', length_from=lambda x:x.underlayer.length),] 
-
-    def extract_padding(self, s):
-        return '', s
     
-class TLSExtRenegotiationInfo(TLSExtSessionTicketTLS):
+class TLSExtRenegotiationInfo(PacketNoPadding):
     name = "TLS Extension Renegotiation Info"
     fields_desc = [XFieldLenField("length", None, length_of="data", fmt="B"),
                    StrLenField("data", '', length_from=lambda x:x.length),] 
-
-    def extract_padding(self, s):
-        return '', s
 
 class TLSHelloRequest(Packet):
     name = "TLS Hello Request"
@@ -838,12 +824,12 @@ bind_layers(TLSServerKeyExchange, TLSKexParamDH)
 bind_layers(TLSClientKeyExchange, TLSKexParamDH)
 
 # --> extensions
-bind_layers(TLSExtension, TLSServerNameIndication, {'type': TLSExtensionType.SERVER_NAME})
+bind_layers(TLSExtension, TLSExtServerNameIndication, {'type': TLSExtensionType.SERVER_NAME})
 bind_layers(TLSExtension, TLSExtMaxFragmentLength, {'type': TLSExtensionType.MAX_FRAGMENT_LENGTH})
 bind_layers(TLSExtension, TLSExtCertificateURL, {'type': TLSExtensionType.CLIENT_CERTIFICATE_URL})
 bind_layers(TLSExtension, TLSExtECPointsFormat, {'type': TLSExtensionType.EC_POINT_FORMATS})
 bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.ELLIPTIC_CURVES})
-bind_layers(TLSExtension, TLSALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
+bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
 # bind_layers(TLSExtension,Raw,{'type': 0x0023})
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
 bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSION_TICKET_TLS})
