@@ -139,10 +139,8 @@ class TestTLSClientHello(unittest.TestCase):
         self.assertEquals(ext[tls.TLSExtALPN].protocol_name_list[1].data,"http/1.0") 
         self.assertEquals(ext[tls.TLSExtALPN].protocol_name_list[0].data,"http/1.1")
         ext = extensions.pop()
-        # mhm - scapy errored with "module object has not TLSExtServernameIndication" when using tls.TLSExtServernameIndication directly. strange
-        SNI_LAYER = tls.TLSExtServernameIndication
-        self.assertEquals(ext[SNI_LAYER].server_names[1].data,"github.com") 
-        self.assertEquals(ext[SNI_LAYER].server_names[0].data,"www.github.com")
+        self.assertEquals(ext[tls.TLSExtServerNameIndication].server_names[1].data,"github.com") 
+        self.assertEquals(ext[tls.TLSExtServerNameIndication].server_names[0].data,"www.github.com")
         
 class TestToRaw(unittest.TestCase):
 
