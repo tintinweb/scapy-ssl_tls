@@ -131,14 +131,18 @@ class TestTLSClientHello(unittest.TestCase):
         self.assertEquals(extensions.pop()[tls.TLSExtSessionTicketTLS].data, "myticket") 
         self.assertEquals(extensions.pop()[tls.TLSExtHeartbeat].mode, tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND) 
         self.assertEquals(extensions.pop()[tls.TLSExtEllipticCurves].elliptic_curves[0], tls.TLSEllipticCurve.SECT571R1)
-        self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_points_formats[0], tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2) 
+        self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_point_formats[0], tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2) 
         self.assertEquals(extensions.pop()[tls.TLSExtCertificateURL].certificate_urls[0].url,"http://www.github.com/tintinweb") 
         self.assertEquals(extensions.pop()[tls.TLSExtMaxFragmentLength].fragment_length,0x03)  
-        self.assertEquals(extensions.pop()[tls.TLSExtALPN][1].protocol_name_list[0].data,"http/2.0")  
-        self.assertEquals(extensions.pop()[tls.TLSExtALPN][0].protocol_name_list[1].data,"http/1.0") 
-        self.assertEquals(extensions.pop()[tls.TLSExtALPN][0].protocol_name_list[0].data,"http/1.1") 
-        self.assertEquals(extensions.pop()[tls.TLSExtServernameIndication].server_names[1].data,"github.com") 
-        self.assertEquals(extensions.pop()[tls.TLSExtServernameIndication].server_names[0].data,"www.github.com")
+        self.assertEquals(extensions.pop()[tls.TLSExtALPN].protocol_name_list[0].data,"http/2.0")  
+        ext = extensions.pop()
+        self.assertEquals(ext[tls.TLSExtALPN].protocol_name_list[1].data,"http/1.0") 
+        self.assertEquals(ext[tls.TLSExtALPN].protocol_name_list[0].data,"http/1.1")
+        ext = extensions.pop()
+        # mhm - scapy errored with "module object has not TLSExtServernameIndication" when using tls.TLSExtServernameIndication directly. strange
+        SNI_LAYER = tls.TLSExtServernameIndication
+        self.assertEquals(ext[SNI_LAYER].server_names[1].data,"github.com") 
+        self.assertEquals(ext[SNI_LAYER].server_names[0].data,"www.github.com")
         
 class TestToRaw(unittest.TestCase):
 
