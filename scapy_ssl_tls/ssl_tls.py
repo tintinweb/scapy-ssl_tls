@@ -6,7 +6,7 @@
 import os
 import time
 
-from scapy.packet import bind_layers, NoPayload, Packet
+from scapy.packet import bind_layers, NoPayload, Packet, Raw
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
@@ -139,6 +139,7 @@ TLSContentType = EnumStruct(TLS_CONTENT_TYPES)
 TLS_HANDSHAKE_TYPES = {0x00:"hello_request",
                         0x01:"client_hello",
                         0x02:"server_hello",
+                        0x04:"new_session_ticket",
                         0x0b:"certificate",
                         0x0c:"server_key_exchange",
                         0x0d:"certificate_request",
@@ -165,7 +166,7 @@ TLS_EXTENSION_TYPES = {
                        0x0010:"application_layer_protocol_negotiation",
                        0x0023:"session_ticket_tls",
                        0x3374:"next_protocol_negotiation",
-                       0xff01:"renegotiationg_info",
+                       0xff01:"renegotiation_info",
                        }
 TLSExtensionType = EnumStruct(TLS_EXTENSION_TYPES)
 
@@ -290,15 +291,24 @@ class TLSRecord(Packet):
     fields_desc = [ByteEnumField("content_type", TLSContentType.UNKNOWN, TLS_CONTENT_TYPES),
                    XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
-
-    def do_dissect(self, s):
-        record_header_size = 0x5
-        # If we have at least on record, compute it's length
-        if len(s) >= record_header_size:
-            record_len = struct.unpack("!H", s[3:5])[0]
-        else :
-            record_len = len(s)
-        return Packet.do_dissect(self, s[:record_header_size+record_len])
+    
+    def do_dissect_payload(self, s):
+        # this is basically what scapy does + sensing for ciphertexts
+        cls = self.guess_payload_class(s)
+        p = cls(s, _internal=1, _underlayer=self)
+        # ------------->
+        # check sublayer sanity to distingiush wrong layers from Ciphertext
+        try:
+            # Raw sublayers to TLSRecords are most likely TLSCipherText 
+            # Bogus layers have invalid length fields. most likely an encrypted Handshake
+            if cls == Raw().__class__ or p.length > len(s) :
+                # length does not fit len raw_bytes, assume its corrupt or encrypted
+                p = TLSCiphertext(s, _internal=1, _underlayer=self)
+        except AttributeError, ae:
+            # e.g. TLSChangeCipherSpec might land here
+            pass
+        # <--------------
+        self.add_payload(p)
 
 class TLSHandshake(Packet):
     name = "TLS Handshake"
@@ -312,6 +322,9 @@ class TLSServerName(Packet):
                   StrLenField("data", "", length_from=lambda x:x.length),
                   ]
     
+    def extract_padding(self, s):
+        return '', s
+    
 class TLSServerNameIndication(Packet):
     name = "TLS Extension Servername Indication"
     fields_desc = [XFieldLenField("length", None, length_of="server_names", fmt="H"),
@@ -324,6 +337,9 @@ class TLSALPNProtocol(Packet):
                   XFieldLenField("length", None, length_of="data", fmt="B"),
                   StrLenField("data", "", length_from=lambda x:x.length),
                   ]
+    
+    def extract_padding(self, s):
+        return '', s
     
 class TLSALPN(Packet):
     name = "TLS Application-Layer Protocol Negotiation"
@@ -386,6 +402,21 @@ class TLSExtHeartbeat(Packet):
     def extract_padding(self, s):
         return '', s
 
+class TLSExtSessionTicketTLS(Packet):
+    name = "TLS Extension SessionTicket TLS"
+    fields_desc = [StrLenField("data", '', length_from=lambda x:x.underlayer.length),] 
+
+    def extract_padding(self, s):
+        return '', s
+    
+class TLSExtRenegotiationInfo(TLSExtSessionTicketTLS):
+    name = "TLS Extension Renegotiation Info"
+    fields_desc = [XFieldLenField("length", None, length_of="data", fmt="B"),
+                   StrLenField("data", '', length_from=lambda x:x.length),] 
+
+    def extract_padding(self, s):
+        return '', s
+
 class TLSHelloRequest(Packet):
     name = "TLS Hello Request"
     fields_desc = []
@@ -404,8 +435,8 @@ class TLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   ConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt: True if pkt.extensions != [] else False),
-                   ConditionalField(PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length), lambda pkt: True if pkt.extensions != [] else False)
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
+                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ] 
 
     
@@ -420,9 +451,16 @@ class TLSServerHello(Packet):
                    XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
-                   ConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt: True if pkt.extensions != [] else False),
-                   ConditionalField(PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length), lambda pkt: True if pkt.extensions != [] else False)
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), 
+                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length), 
                    ]
+
+class TLSNewSessionTicket(Packet):
+    name = "TLS Session Ticket"
+    fields_desc = [IntField("lifetime", 7200),
+                   XFieldLenField("ticket_length", None, length_of="ticket", fmt="!H"),
+                   StrLenField("ticket", '', length_from=lambda x:x.ticket_length),
+                   ]     
 
 class TLSAlert(Packet):
     name = "TLS Alert"
@@ -442,14 +480,10 @@ class TLSHeartBeat(Packet):
 class TLSClientKeyExchange(Packet):
     name = "TLS Client Key Exchange"
     fields_desc = [ XBLenField("length", None, fmt="!H",) ]
-
+    
 class TLSServerKeyExchange(Packet):
     name = "TLS Client Key Exchange"
     fields_desc = [ XBLenField("length", None, fmt="!H") ]
-    
-class TLSKexParamEncryptedPremasterSecret(Packet):
-    name = "TLS Kex encrypted PreMasterSecret"
-    fields_desc = [ StrLenField("data", None) ]
 
 class TLSKexParamDH(Packet):
     name = "TLS Kex DH Params"
@@ -493,8 +527,7 @@ class TLSChangeCipherSpec(Packet):
 
 class TLSCiphertext(Packet):
     name = "TLS Ciphertext"
-    fields_desc = [ StrField("data", None, fmt="H"),
-                    StrField("mac", None, fmt="H")]
+    fields_desc = [ StrField("data", None, fmt="H")]
 
 class TLSPlaintext(Packet):
     name = "TLS Plaintext"
@@ -650,8 +683,9 @@ class SSL(Packet):
         # Consume all bytes passed to us by the underlayer. We're expecting no
         # further payload on top of us. If there is additional data on top of our layer
         # We will incorrectly parse it
-        while pos < len(raw_bytes):
-            payload = record(raw_bytes[pos:])
+        while pos < len(raw_bytes)-record_header_len:   
+            payload_len = record(raw_bytes[pos:pos+record_header_len]).length
+            payload = record(raw_bytes[pos:pos+record_header_len+payload_len])
             # Populate our list of found records
             records.append(payload)
             # Move to the next record
@@ -796,9 +830,8 @@ bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':TLSHandshakeType.SERVER_
 bind_layers(TLSHandshake, TLSServerHelloDone, {'type':TLSHandshakeType.SERVER_HELLO_DONE})
 bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':TLSHandshakeType.CLIENT_KEY_EXCHANGE})
 bind_layers(TLSHandshake, TLSFinished, {'type':TLSHandshakeType.FINISHED})
+bind_layers(TLSHandshake, TLSNewSessionTicket, {'type':TLSHandshakeType.NEW_SESSION_TICKET})
 # <---
-bind_layers(TLSServerKeyExchange, TLSKexParamEncryptedPremasterSecret)
-bind_layers(TLSClientKeyExchange, TLSKexParamEncryptedPremasterSecret)
 
 
 bind_layers(TLSServerKeyExchange, TLSKexParamDH)
@@ -813,6 +846,8 @@ bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.ELLIPT
 bind_layers(TLSExtension, TLSALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
 # bind_layers(TLSExtension,Raw,{'type': 0x0023})
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
+bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSION_TICKET_TLS})
+bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type':TLSExtensionType.RENEGOTIATION_INFO})
 # <--
 
 # DTLSRecord
