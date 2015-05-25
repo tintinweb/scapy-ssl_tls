@@ -21,3 +21,11 @@ class TestPKCS7Encoder(unittest.TestCase):
         self.assertEqual(len(pkcs7_padding), self.pkcs7.k)
         self.assertEqual(chr(len(pkcs7_padding)) * len(pkcs7_padding), pkcs7_padding)
         self.assertEqual("%s%s" % (data, pkcs7_padding), self.pkcs7.encode(data))
+
+    def test_pkcs7_encode_decode(self):
+        data = 'X'
+        for length in xrange(self.pkcs7.k*2+1): 
+            encoded = self.pkcs7.encode(data*length) 
+            self.assertEqual(len(encoded)%self.pkcs7.k, 0)
+            self.assertEqual(self.pkcs7.decode(encoded), data*length)
+
