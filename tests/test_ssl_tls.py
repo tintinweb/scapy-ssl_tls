@@ -62,6 +62,84 @@ class TestTLSDissector(unittest.TestCase):
         self.assertListEqual(pkt[tls.TLSServerHello].extensions, [])
         self.assertIsNone(pkt[tls.TLSServerHello].extensions_length)
 
+class TestTLSClientHello(unittest.TestCase):
+    def setUp(self):
+        self.pkt = tls.TLSRecord()/ \
+              tls.TLSHandshake()/ \
+              tls.TLSClientHello(extensions=[ \
+                    tls.TLSExtension()/ \
+                            tls.TLSExtServerNameIndication(server_names=[tls.TLSServerName(data="www.github.com"),
+                                                                         tls.TLSServerName(data="github.com")]), \
+                    tls.TLSExtension()/ \
+                            tls.TLSExtALPN(protocol_name_list=[tls.TLSALPNProtocol(data="http/1.1"),
+                                                               tls.TLSALPNProtocol(data="http/1.0")]),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtALPN(protocol_name_list=[tls.TLSALPNProtocol(data="http/2.0"),]),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtMaxFragmentLength(fragment_length=0x03),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtCertificateURL(certificate_urls=[tls.TLSURLAndOptionalHash(url="http://www.github.com/tintinweb")]),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtECPointsFormat(ec_point_formats=[tls.TLSExtEcPointFormat.ANSIX962_COMPRESSED_CHAR2]),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSExtEllipticCurve.SECT571R1,]),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtHeartbeat(mode=0x02),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtSessionTicketTLS(data="myticket"),
+                    tls.TLSExtension()/ \
+                            tls.TLSExtRenegotiationInfo(data="myreneginfo"),
+                                ],)
+        unittest.TestCase.setUp(self)
+        
+        
+    def test_dissect_contains_client_hello(self):
+        p = tls.SSL(str(self.pkt))
+        self.assertEqual(len(p.records),1)
+        record = p.records[0]
+        self.assertTrue(record.haslayer(tls.TLSRecord))
+        self.assertTrue(record.haslayer(tls.TLSHandshake))
+        self.assertTrue(record.haslayer(tls.TLSClientHello))
+        
+    def test_dissect_stacked_contains_multiple_client_hello(self):
+        records = 5
+        p = tls.SSL(str(self.pkt)*records)
+        self.assertEqual(len(p.records),records)
+        for record in p.records:
+            self.assertTrue(record.haslayer(tls.TLSRecord))
+            self.assertTrue(record.haslayer(tls.TLSHandshake))
+            self.assertTrue(record.haslayer(tls.TLSClientHello))
+
+    def test_dissect_client_hello(self):
+        p = tls.SSL(str(self.pkt))
+        record = p.records[0]
+        self.assertEqual(record[tls.TLSRecord].version, self.pkt[tls.TLSRecord].version)
+        self.assertEqual(record[tls.TLSHandshake].type, self.pkt[tls.TLSHandshake].type)
+        self.assertEqual(record[tls.TLSClientHello].version, self.pkt[tls.TLSClientHello].version)
+        self.assertEqual(record[tls.TLSClientHello].gmt_unix_time, self.pkt[tls.TLSClientHello].gmt_unix_time)
+        self.assertEqual(record[tls.TLSClientHello].random_bytes, self.pkt[tls.TLSClientHello].random_bytes)
+        self.assertEqual(record[tls.TLSClientHello].session_id, self.pkt[tls.TLSClientHello].session_id)
+        self.assertEqual(record[tls.TLSClientHello].cipher_suites, self.pkt[tls.TLSClientHello].cipher_suites)
+        self.assertEqual(record[tls.TLSClientHello].compression_methods, self.pkt[tls.TLSClientHello].compression_methods)
+    
+    def test_dissect_client_hello_extensions(self):
+        p = tls.SSL(str(self.pkt))
+        p.show()
+        record = p.records[0]
+        extensions = record[tls.TLSClientHello].extensions
+        self.assertEquals(extensions.pop()[tls.TLSExtRenegotiationInfo].mode, "myreneginfo") 
+        self.assertEquals(extensions.pop()[tls.TLSExtSessionTicketTLS].mode, "myticket") 
+        self.assertEquals(extensions.pop()[tls.TLSExtEllipticCurves].elliptic_curves[0], tls.TLSExtEllipticCurve.SECT571R1)
+        self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_points_formats[0], tls.TLSExtEcPointFormat.ANSIX962_COMPRESSED_CHAR2) 
+        self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_points_formats[0], tls.TLSExtEcPointFormat.ANSIX962_COMPRESSED_CHAR2) 
+        self.assertEquals(extensions.pop()[tls.TLSExtCertificateURL].certificate_urls[0].url,"http://www.github.com/tintinweb") 
+        self.assertEquals(extensions.pop()[tls.TLSExtMaxFragmentLength].fragment_length,0x03)  
+        self.assertEquals(extensions.pop()[tls.TLSExtALPN][1].protocol_name_list[0].data,"http/2.0")  
+        self.assertEquals(extensions.pop()[tls.TLSExtALPN][0].protocol_name_list[1].data,"http/1.0") 
+        self.assertEquals(extensions.pop()[tls.TLSExtALPN][0].protocol_name_list[0].data,"http/1.1") 
+        self.assertEquals(extensions.pop()[tls.TLSExtServernameIndication].server_names[1].data,"github.com") 
+        self.assertEquals(extensions.pop()[tls.TLSExtServernameIndication].server_names[0].data,"www.github.com")
+        
 class TestToRaw(unittest.TestCase):
 
     def setUp(self):
