@@ -276,19 +276,24 @@ TLS_COMPRESSION_METHODS = {
                            }
 TLSCompressionMethod = EnumStruct(TLS_COMPRESSION_METHODS)
 
-CERT_CHAIN_TYPE = { 0x00: 'individual_certs',
+TLS_CERT_CHAIN_TYPE = { 0x00: 'individual_certs',
                     0x01: 'pkipath',
                     0xff: 'unknown'}
-TLSCertChainType = EnumStruct(CERT_CHAIN_TYPE)
+TLSCertChainType = EnumStruct(TLS_CERT_CHAIN_TYPE)
+
+TLS_HEARTBEAT_MODE = { 0x01: 'peer_allowed_to_send',
+                       0x02: 'peer_not_allowed_to_send',
+                       0xff: 'unknown'}
+TLSHeartbeatMode = EnumStruct(TLS_HEARTBEAT_MODE)
 
 TLS_TYPE_BOOLEAN = {0x00: 'false',
                     0x01: 'true'}
 TLSTypeBoolean = EnumStruct(TLS_TYPE_BOOLEAN)
 
-TLS_EXT_EC_POINT_FORMATS = {0x00:'uncompressed',
+TLS_EC_POINT_FORMATS = {0x00:'uncompressed',
                             0x01:'ansiX962_compressed_prime',
                             0x02:'ansiX962_compressed_char2'}
-TLSExtEcPointFormat = EnumStruct(TLS_EXT_EC_POINT_FORMATS)
+TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
     
 TLS_ELLIPTIC_CURVES = {0x000e:'sect571r1',}
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
@@ -370,7 +375,7 @@ class TLSURLAndOptionalHash(Packet):
     
 class TLSExtCertificateURL(PacketNoPadding):
     name = "TLS Extension Certificate URL"
-    fields_desc = [ByteEnumField("type", TLSCertChainType.INDIVIDUAL_CERTS, CERT_CHAIN_TYPE),
+    fields_desc = [ByteEnumField("type", TLSCertChainType.INDIVIDUAL_CERTS, TLS_CERT_CHAIN_TYPE),
                    XFieldLenField("length", None, length_of="certificate_urls", fmt="H"),
                    PacketListField("certificate_urls", None, TLSURLAndOptionalHash, length_from=lambda x:x.length)
                    ]
@@ -379,7 +384,7 @@ class TLSExtECPointsFormat(PacketNoPadding):
     name = "TLS Extension EC Points Format"
     fields_desc = [
                    XFieldLenField("length", None, length_of="ec_point_formats", fmt="B"),
-                   FieldListField("ec_point_formats", None, ByteEnumField("ec_point_format", None, TLS_EXT_EC_POINT_FORMATS), length_from=lambda x:x.length),
+                   FieldListField("ec_point_formats", None, ByteEnumField("ec_point_format", None, TLS_EC_POINT_FORMATS), length_from=lambda x:x.length),
                   ]
 
 class TLSExtEllipticCurves(PacketNoPadding):
@@ -391,8 +396,7 @@ class TLSExtEllipticCurves(PacketNoPadding):
     
 class TLSExtHeartbeat(PacketNoPadding):
     name = "TLS Extension HeartBeat"
-    fields_desc = [StrFixedLenField("mode", 0x01, 0x01)
-                  ]
+    fields_desc = [ByteEnumField("mode", TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND, TLS_HEARTBEAT_MODE)]
 
 class TLSExtSessionTicketTLS(PacketNoPadding):
     name = "TLS Extension SessionTicket TLS"
