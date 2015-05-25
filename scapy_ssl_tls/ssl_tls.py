@@ -445,7 +445,7 @@ class TLSServerHello(Packet):
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length), 
                    ]
 
-class TLSNewSessionTicket(Packet):
+class TLSSessionTicket(Packet):
     name = "TLS Session Ticket"
     fields_desc = [IntField("lifetime", 7200),
                    XFieldLenField("ticket_length", None, length_of="ticket", fmt="!H"),
@@ -820,7 +820,7 @@ bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':TLSHandshakeType.SERVER_
 bind_layers(TLSHandshake, TLSServerHelloDone, {'type':TLSHandshakeType.SERVER_HELLO_DONE})
 bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':TLSHandshakeType.CLIENT_KEY_EXCHANGE})
 bind_layers(TLSHandshake, TLSFinished, {'type':TLSHandshakeType.FINISHED})
-bind_layers(TLSHandshake, TLSNewSessionTicket, {'type':TLSHandshakeType.NEW_SESSION_TICKET})
+bind_layers(TLSHandshake, TLSSessionTicket, {'type':TLSHandshakeType.NEW_SESSION_TICKET})
 # <---
 
 
