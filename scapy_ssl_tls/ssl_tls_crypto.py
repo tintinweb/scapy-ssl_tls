@@ -248,9 +248,16 @@ class TLSSessionCtx(object):
     def insert(self, p):
         '''
         add packet to context
+        - unpack SSL.records and add them to history
         '''
-        self.packets.history.append(p)
-        self._process(p)        # fill structs
+        if p.haslayer(tls.SSL):
+            ps = p[tls.SSL].records
+        else:
+            ps = [p]
+        
+        for p in ps:
+            self.packets.history.append(p)
+            self._process(p)    # fill structs
          
     def _process(self,p):
         '''
@@ -370,7 +377,7 @@ class TLSSessionCtx(object):
         verify_data = []
         for pkt in self.packets.history:
             # Assume one record per packet for now, we're missing logic to handle these cases
-            for handshake in tls.get_all_tls_handshakes(pkt):
+            for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
                 if not handshake.haslayer(tls.TLSFinished) and not handshake.haslayer(tls.TLSHelloRequest):
                     verify_data.append(str(handshake))
 
