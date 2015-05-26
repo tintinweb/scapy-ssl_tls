@@ -111,6 +111,27 @@ class XBEnumField(BEnumField):
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))   
 
+class ConditionalFieldPlusPlus(ConditionalField):
+    '''
+    Base conditional field that is not restricted to pkt checks
+    + allows conditional checks on the raw_stream 's'
+    + allows conditional checks on the layers build value
+    '''
+    def _evalcond(self, pkt=None, s=None, val=None):
+        return self.cond(pkt, s, val)
+    
+    def getfield(self, pkt, s):
+        if self._evalcond(pkt,s):
+            return self.fld.getfield(pkt,s)
+        else:
+            return s,None
+        
+    def addfield(self, pkt, s, val):
+        if self._evalcond(pkt,s,val):
+            return self.fld.addfield(pkt,s,val)
+        else:
+            return s
+
 class PacketNoPadding(Packet):
     '''
     This type of packet does not contain padding or Raw data at the end
@@ -411,27 +432,6 @@ class TLSHelloRequest(Packet):
     name = "TLS Hello Request"
     fields_desc = []
 
-class ConditionalFieldPlusPlus(ConditionalField):
-    '''
-    Base conditional field that is not restricted to pkt checks
-    + allows conditional checks on the raw_stream 's'
-    + allows conditional checks on the layers build value
-    '''
-    def _evalcond(self, pkt=None, s=None, val=None):
-        return self.cond(pkt, s, val)
-    
-    def getfield(self, pkt, s):
-        if self._evalcond(pkt,s):
-            return self.fld.getfield(pkt,s)
-        else:
-            return s,None
-        
-    def addfield(self, pkt, s, val):
-        if self._evalcond(pkt,s,val):
-            return self.fld.addfield(pkt,s,val)
-        else:
-            return s
-
 class TLSClientHello(Packet):
     name = "TLS Client Hello"
     fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
@@ -576,7 +576,7 @@ class DTLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), 
+                   ConditionalFieldPlusPlus(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]   
     
