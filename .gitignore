@@ -56,3 +56,7 @@ docs/_build/
 
 # Vim local config file
 .lvimrc
+
+# Java
+*.class
+
