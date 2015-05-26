@@ -425,7 +425,7 @@ class TLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   ConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt: True if pkt.extensions != [] else False),
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), 
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length), 
                    ] 
 
@@ -441,7 +441,7 @@ class TLSServerHello(Packet):
                    XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
-                   ConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt: True if pkt.extensions != [] else False),
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    
                    ]
@@ -557,7 +557,7 @@ class DTLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   ConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt: True if pkt.extensions != [] else False),
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), 
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]   
     
