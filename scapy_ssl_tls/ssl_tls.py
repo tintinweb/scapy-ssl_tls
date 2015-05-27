@@ -721,6 +721,8 @@ class SSL(Packet):
         elif (record.haslayer(TLSHandshake) and record[TLSHandshake].payload.name == Raw.name):
             encrypted_payload = str(record.payload)
             decrypted_type = TLSHandshake
+        # This heuristic will not work for strem ciphers. Need to find a way to not rely on length
+        # OK for now, but alerts and ccs will not be decrypted for stream ciphers
         elif record.haslayer(TLSAlert) and record.length != 0x2:
             encrypted_payload = str(record.payload)
             decrypted_type = TLSAlert

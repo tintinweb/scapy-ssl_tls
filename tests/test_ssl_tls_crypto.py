@@ -75,8 +75,11 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_negotiated_cipher_is_used_in_context(self):
         # RSA_WITH_NULL_MD5
         cipher_suite = 0x1
-        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*24, cipher_suite=cipher_suite)
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*28, cipher_suite=cipher_suite)
         tls_ctx = tlsc.TLSSessionCtx()
+        # Simulate client hello random
+        tls_ctx.crypto.session.randombytes.client = "A"*32
+        tls_ctx.crypto.session.premaster_secret = "\x03\x01%s" % "B"*46
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.params.negotiated.key_exchange, tlsc.TLSSecurityParameters.crypto_params[cipher_suite]["key_exchange"]["name"])
         self.assertEqual(tls_ctx.params.negotiated.mac, tlsc.TLSSecurityParameters.crypto_params[cipher_suite]["hash"]["name"])
@@ -84,8 +87,11 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_negotiated_compression_method_is_used_in_context(self):
         # DEFLATE
         compression_method = 0x1
-        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*24, compression_method=compression_method)
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*28, compression_method=compression_method)
         tls_ctx = tlsc.TLSSessionCtx()
+        # Simulate client hello random
+        tls_ctx.crypto.session.randombytes.client = "B"*32
+        tls_ctx.crypto.session.premaster_secret = "\x03\x01%s" % "B"*46
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.params.negotiated.compression_algo, tlsc.TLSCompressionParameters.comp_params[compression_method]["name"])
         input_ = "some data" * 16

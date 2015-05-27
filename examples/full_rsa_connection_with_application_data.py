@@ -26,7 +26,8 @@ def _recv(sock, size=8192):
 
 def tls_hello(sock, ctx):
     client_hello = TLSRecord(version="TLS_1_0")/TLSHandshake()/TLSClientHello(version="TLS_1_0", compression_methods=[0],
-      cipher_suites=(TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA))
+                                                                              cipher_suites=(TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA))
+
     try:
         _send(sock, str(client_hello))
         ctx.insert(client_hello)
@@ -40,11 +41,11 @@ def tls_client_key_exchange(sock, ctx):
     client_ccs = TLSRecord()/TLSChangeCipherSpec()
     client_pkt = TLS.from_records([client_key_exchange, client_ccs])
     try:
-        _send(sock, str(client_pkt))
         ctx.insert(client_pkt)
+        _send(sock, str(client_pkt))
         client_finished = to_raw(TLSFinished(), ctx)
-        _send(sock, str(client_finished))
         ctx.insert(client_finished)
+        _send(sock, str(client_finished))
         server_finished = TLS(_recv(sock), ctx=ctx)
         ctx.insert(server_finished)
     except socket.timeout as st:
