@@ -129,7 +129,6 @@ class TestTLSClientHello(unittest.TestCase):
     
     def test_dissect_client_hello_extensions(self):
         p = tls.SSL(str(self.pkt))
-        p.show()
         record = p.records[0]
         extensions = record[tls.TLSClientHello].extensions
         self.assertEquals(extensions.pop()[tls.TLSExtRenegotiationInfo].data, "myreneginfo") 
@@ -313,10 +312,9 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_record_payload_is_identical_to_raw_payload(self):
         pkt = tls.TLSPlaintext(data=b"ABCD")
-        raw = tls.to_raw(pkt, self.tls_ctx)
+        raw = tls.to_raw(pkt, self.tls_ctx, include_record=False)
         record = tls.TLSRecord()/raw
-        # Length not set, until after scapy build() is called
-        #self.assertEqual(record[tls.TLSRecord].length, len(raw))
+        self.assertEqual(len(record[tls.TLSRecord]) - 0x5, len(raw))
         self.assertEqual(str(record[tls.TLSRecord].payload), raw)
 
     def test_all_hooks_are_called_when_defined(self):
@@ -329,7 +327,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         encrypt = lambda x, y, z: x
         data = b"ABCD"
         pkt = tls.TLSPlaintext(data=data)
-        raw = tls.to_raw(pkt, self.tls_ctx, compress_hook=custom_compress, pre_encrypt_hook=pre_encrypt, encrypt_hook=encrypt)
+        raw = tls.to_raw(pkt, self.tls_ctx, include_record=False, compress_hook=custom_compress, pre_encrypt_hook=pre_encrypt, encrypt_hook=encrypt)
         self.assertEqual(len(raw), len(data) * 2)
         self.assertEqual(raw, data * 2)
 
@@ -349,7 +347,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
             self.assertEqual(len(padding), 11)   
             self.assertTrue(all(map(lambda x: True if x == chr(11) else False, padding)))
             return "A"*48
-        client_finished = tls.TLSRecord(content_type=0x16)/tls.to_raw(tls.TLSFinished(), self.tls_ctx, encrypt_hook=encrypt)
+        client_finished = tls.TLSRecord(content_type=0x16)/tls.to_raw(tls.TLSFinished(), self.tls_ctx, include_record=False, encrypt_hook=encrypt)
         pkt = tls.TLS(str(client_finished))
         # 4 bytes of TLSHandshake header, 12 bytes of verify_data, 20 bytes of HMAC SHA1, 11 bytes of padding, 1 padding length byte
         self.assertEqual(pkt[tls.TLSRecord].length, len(tls.TLSHandshake()) + 12 + SHA.digest_size + 11 + 1)
@@ -459,39 +457,6 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         ciphertext_2 = ''.join(pubkey_extract_from_der.encrypt(plaintext,None))
         self.assertTrue(len(ciphertext))
         self.assertEqual(ciphertext,ciphertext_2)
-
-        
-
-class TestTopLevelFunctions(unittest.TestCase):
-
-    def setUp(self):
-        self.server_hello = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello()
-        self.cert_list = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSCertificateList()
-        self.server_hello_done = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHelloDone()
-        self.stacked_pkt = tls.TLS.from_records([self.server_hello, self.cert_list, self.server_hello_done])
-        unittest.TestCase.setUp(self)
-
-    def test_all_records_are_returned_on_iteration(self):
-        records = list(tls.get_all_tls_records(self.stacked_pkt))
-        self.assertEqual(str(records[0]), str(self.server_hello))
-        self.assertEqual(str(records[1]), str(self.cert_list))
-        self.assertEqual(str(records[2]), str(self.server_hello_done))
-
-    def test_all_handshakes_are_returned_on_iteration(self):
-        records = list(tls.get_all_tls_records(self.stacked_pkt))
-        self.assertEqual(str(records[0]), str(self.server_hello))
-        self.assertEqual(str(records[1]), str(self.cert_list))
-        self.assertEqual(str(records[2]), str(self.server_hello_done))
-
-    def test_leading_layers_are_ignored_from_record_list(self):
-        pkt = IP()/TCP()/self.server_hello
-        records = list(tls.get_all_tls_records(pkt))
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0], self.server_hello)
-
-    def test_all_layers_are_returned_upon_iteration(self):
-        layers = list(tls.get_individual_layers(self.stacked_pkt))
-        self.assertEqual(len(layers), 9)
 
 if __name__ == "__main__":
     unittest.main()

@@ -376,7 +376,6 @@ class TLSSessionCtx(object):
             label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
         verify_data = []
         for pkt in self.packets.history:
-            # Assume one record per packet for now, we're missing logic to handle these cases
             for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
                 if not handshake.haslayer(tls.TLSFinished) and not handshake.haslayer(tls.TLSHelloRequest):
                     verify_data.append(str(handshake))
@@ -498,12 +497,12 @@ class CryptoContainer(object):
             # TODO: Needs concurrent safety if this ever goes concurrent
             self.hmac_handler = tls_ctx.crypto.client.hmac
             self.enc_cipher = tls_ctx.crypto.client.enc
-            self.seq_number = tls_ctx.packets.client.sequence
+            self.seq_number = tls_ctx.crypto.session.key.client.seq_num
             tls_ctx.crypto.session.key.client.seq_num += 1
         else:
             self.hmac_handler = tls_ctx.crypto.server.hmac
             self.enc_cipher = tls_ctx.crypto.server.enc
-            self.seq_number = tls_ctx.packets.server.sequence
+            self.seq_number = tls_ctx.crypto.session.key.server.seq_num
             tls_ctx.crypto.session.key.server.seq_num += 1
         self.hmac()
         self.pad()
