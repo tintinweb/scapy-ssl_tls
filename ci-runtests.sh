@@ -13,7 +13,7 @@ echo "* installing requirements..."
 pip install -r requirements.txt
 pip install nosexcover
 echo "* running unittests"
-python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --xcoverage-file=cover/cobertura.xml
+python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --cover-branch --xcoverage-file=cover/cobertura.xml
 ERR=$?
 echo "**> exiting virtualenv"
 deactivate
