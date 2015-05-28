@@ -114,6 +114,9 @@ class TestTLSDissector(unittest.TestCase):
 
     def test_encrypted_handshake_which_fails_decryption_throws_error(self):
         tls_ctx = self._static_tls_handshake()
+        client_kex = tls.TLS.from_records([tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/tls_ctx.get_encrypted_pms(), tls.TLSRecord()/tls.TLSChangeCipherSpec()])
+        tls_ctx.insert(client_kex)
+        tls_ctx.insert(tls.to_raw(tls.TLSFinished(), tls_ctx))
         handshake = tls.TLSRecord()/tls.TLSHandshake()/"C"*5
         with self.assertRaises(ValueError):
             tls.TLS(str(handshake), ctx=tls_ctx)

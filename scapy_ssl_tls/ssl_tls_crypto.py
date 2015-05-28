@@ -303,13 +303,6 @@ class TLSSessionCtx(object):
                     except KeyError:
                         raise UnsupportedCipherError("Cipher 0x%04x not supported" % self.params.negotiated.ciphersuite)
 
-                    if self.params.negotiated.key_exchange == "RSA":
-                        self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
-                                                                self.crypto.session.premaster_secret, 
-                                                                self.crypto.session.randombytes.client,
-                                                                self.crypto.session.randombytes.server)
-                        self._assign_crypto_material(self.sec_params)
-
             if p.haslayer(tls.TLSCertificateList):
                 # TODO: Probably don't want to do that if rsa_load_priv*() is called 
                 if self.params.negotiated.key_exchange and self.params.negotiated.key_exchange == "RSA":
@@ -322,9 +315,14 @@ class TLSSessionCtx(object):
                 self.crypto.session.encrypted_premaster_secret = str(p[tls.TLSClientKeyExchange].payload)
                 # If we have the private key, let's decrypt the PMS
                 if self.crypto.server.rsa.privkey is not None:
-                    decrypted_pms = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
-                    if self.crypto.session.premaster_secret != decrypted_pms:
-                        raise ValueError("Mismatching premaster secret after decryption. Was the right private key provided?")
+                    self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
+
+                if self.params.negotiated.key_exchange == "RSA":
+                        self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
+                                                                self.crypto.session.premaster_secret, 
+                                                                self.crypto.session.randombytes.client,
+                                                                self.crypto.session.randombytes.server)
+                        self._assign_crypto_material(self.sec_params)
 
     def _assign_crypto_material(self, sec_params):
         self.crypto.session.key.length.mac = sec_params.negotiated_crypto_param["hash"]["type"].digest_size
