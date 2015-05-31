@@ -408,7 +408,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         data = b"ABCD" * 389
         pkt = tls.TLSPlaintext(data=data)
         # Use server side keys, include TLSRecord header in output
-        record = tls.to_raw(pkt, self.tls_ctx, client=False, include_record=True)
+        self.tls_ctx.client = False
+        record = tls.to_raw(pkt, self.tls_ctx, include_record=True)
         self.assertTrue(record.haslayer(tls.TLSRecord))
         self.assertEqual(record.content_type, 0x17)
         self.assertEqual(record.version, self.tls_ctx.params.negotiated.version)

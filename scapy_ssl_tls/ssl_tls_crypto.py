@@ -92,7 +92,9 @@ def x509_extract_pubkey_from_pem(public_key_string):
 
 class TLSSessionCtx(object):
 
-    def __init__(self):
+    def __init__(self, client=True):
+        self.client = client
+        self.server = not self.client
         self.packets = namedtuple('packets',['history','client','server'])
         self.packets.history=[]         #packet history
         self.sec_params = None
@@ -486,7 +488,7 @@ class TLSPRF(object):
 
 class CryptoContainer(object):
     
-    def __init__(self, tls_ctx, data="", content_type=tls.TLSContentType.APPLICATION_DATA, to_server=True):
+    def __init__(self, tls_ctx, data="", content_type=tls.TLSContentType.APPLICATION_DATA):
         if tls_ctx is None:
             raise ValueError("Valid TLS session context required")
         self.tls_ctx = tls_ctx
@@ -494,7 +496,7 @@ class CryptoContainer(object):
         self.version = tls_ctx.params.negotiated.version
         self.content_type = content_type
         self.pkcs7 = pkcs7.PKCS7Encoder()
-        if to_server:
+        if tls_ctx.client:
             # TODO: Needs concurrent safety if this ever goes concurrent
             self.hmac_handler = tls_ctx.crypto.client.hmac
             self.enc_cipher = tls_ctx.crypto.client.enc

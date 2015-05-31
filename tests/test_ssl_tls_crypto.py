@@ -307,7 +307,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         client_seq_num += 1
         self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
         self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num)
-        tlsc.CryptoContainer(self.tls_ctx, to_server=False)
+        self.tls_ctx.client = False
+        tlsc.CryptoContainer(self.tls_ctx)
         self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
         self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num + 1)
 
@@ -324,14 +325,16 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_crypto_container_returns_ciphertext(self):
         data = b"C"*102
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data, to_server=False)
+        self.tls_ctx.client = False
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
         cleartext = str(crypto_container)
         ciphertext = crypto_container.encrypt()
         self.assertEqual(cleartext, self.tls_ctx.crypto.server.dec.decrypt(ciphertext))
 
     def test_generated_mac_can_be_overiden(self):
         data = b"C"*102
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data, to_server=False)
+        self.tls_ctx.client = False
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
         initial_mac = crypto_container.mac
         crypto_container.hmac(data_len=1024)
         self.assertNotEqual(initial_mac, crypto_container.mac)

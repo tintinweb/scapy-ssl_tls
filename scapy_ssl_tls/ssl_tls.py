@@ -764,9 +764,10 @@ class SSL(Packet):
                 encrypted_payload, layer = self._get_encrypted_payload(record)
                 if encrypted_payload is not None:
                     try:
-                        # TODO: Only valid in client mode. Find a way to choose proper stream in
-                        # future commit
-                        cleartext = self.tls_ctx.crypto.server.dec.decrypt(encrypted_payload)
+                        if self.tls_ctx.client:
+                            cleartext = self.tls_ctx.crypto.server.dec.decrypt(encrypted_payload)
+                        else:
+                            cleartext = self.tls_ctx.crypto.client.dec.decrypt(encrypted_payload)
                         pkt = layer(cleartext, ctx=self.tls_ctx)
                         record[self.guessed_next_layer].payload = pkt
                     # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
@@ -776,12 +777,12 @@ class SSL(Packet):
 
 TLS = SSL
 
-cleartext_handler = { TLSPlaintext: lambda pkt, tls_ctx, client: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
-                      TLSFinished: lambda pkt, tls_ctx, client: (TLSContentType.HANDSHAKE, str(TLSHandshake(type=TLSHandshakeType.FINISHED)/tls_ctx.get_verify_data())),
-                      TLSChangeCipherSpec: lambda pkt, tls_ctx, client: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt)),
-                      TLSAlert: lambda pkt, tls_ctx, client: (TLSContentType.ALERT, str(pkt)) }
+cleartext_handler = { TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
+                      TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(TLSHandshake(type=TLSHandshakeType.FINISHED)/tls_ctx.get_verify_data())),
+                      TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt)),
+                      TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt)) }
 
-def to_raw(pkt, tls_ctx, client=True, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
+def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
     import ssl_tls_crypto as tlsc
 
     if tls_ctx is None:
@@ -791,7 +792,7 @@ def to_raw(pkt, tls_ctx, client=True, include_record=True, compress_hook=None, p
     content_type, data = None, None
     for tls_proto, handler in cleartext_handler.iteritems():
         if pkt.haslayer(tls_proto):
-            content_type, data = handler(pkt[tls_proto], tls_ctx, client)
+            content_type, data = handler(pkt[tls_proto], tls_ctx)
     if content_type is None and data is None:
         raise KeyError("Unhandled encryption for TLS protocol: %s" % tls_proto)
 
@@ -802,12 +803,12 @@ def to_raw(pkt, tls_ctx, client=True, include_record=True, compress_hook=None, p
 
     if pre_encrypt_hook is not None:
         cleartext, mac, padding = pre_encrypt_hook(post_compress_data)
-        crypto_container = tlsc.CryptoContainer(tls_ctx, cleartext, content_type, client)
+        crypto_container = tlsc.CryptoContainer(tls_ctx, cleartext, content_type)
         crypto_container.mac = mac
         crypto_container.padding = padding
     else:
         cleartext = post_compress_data
-        crypto_container = tlsc.CryptoContainer(tls_ctx, cleartext, content_type, client)
+        crypto_container = tlsc.CryptoContainer(tls_ctx, cleartext, content_type)
         mac = crypto_container.mac
         padding = crypto_container.padding
 
