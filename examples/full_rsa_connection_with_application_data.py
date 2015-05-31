@@ -48,6 +48,7 @@ def tls_client_key_exchange(sock, ctx):
         _send(sock, str(client_finished))
         server_finished = TLS(_recv(sock), ctx=ctx)
         ctx.insert(server_finished)
+        server_finished.show()
     except socket.timeout as st:
         print("No reponse from peer after TLS Finished", file=sys.stderr)
 

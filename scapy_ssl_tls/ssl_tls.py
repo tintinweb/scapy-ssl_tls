@@ -111,7 +111,7 @@ class XBEnumField(BEnumField):
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))   
 
-class ConditionalFieldPlusPlus(ConditionalField):
+class StrConditionalField(ConditionalField):
     '''
     Base conditional field that is not restricted to pkt checks
     + allows conditional checks on the raw_stream 's'
@@ -444,7 +444,7 @@ class TLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   ConditionalFieldPlusPlus(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ] 
  
@@ -459,7 +459,7 @@ class TLSServerHello(Packet):
                    XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
-                   ConditionalFieldPlusPlus(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]
 
@@ -539,7 +539,34 @@ class TLSCiphertext(Packet):
 
 class TLSPlaintext(Packet):
     name = "TLS Plaintext"
-    fields_desc = [ StrField("data", None, fmt="H") ]
+    fields_desc = [ StrField("data", None, fmt="H"),
+                   StrField("mac", "", fmt="H"),
+                   StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len),
+                   ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False ) ]
+
+    def __init__(self, *args, **fields):
+        try:
+            self.tls_ctx = fields["ctx"]
+            del(fields["ctx"])
+        except KeyError:
+            self.tls_ctx = None
+        Packet.__init__(self, *args, **fields)
+
+    def do_dissect(self, raw_bytes):
+        self.data = raw_bytes
+        if self.tls_ctx is not None:
+            hash_size = self.tls_ctx.sec_params.mac_key_length
+            # CBC mode
+            if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
+                try:
+                    self.padding_len = ord(raw_bytes[-1])
+                    self.padding = raw_bytes[-self.padding_len - 1:-2]
+                    self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
+                    self.data = raw_bytes[:-self.padding_len - hash_size - 1]
+                except IndexError:
+                    self.data = raw_bytes
+        # Nothing left, return ""
+        return ""
 
 class DTLSRecord(Packet):
     name = "DTLS Record"
@@ -574,7 +601,7 @@ class DTLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   ConditionalFieldPlusPlus(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]   
     
@@ -737,8 +764,10 @@ class SSL(Packet):
                 encrypted_payload, layer = self._get_encrypted_payload(record)
                 if encrypted_payload is not None:
                     try:
+                        # TODO: Only valid in client mode. Find a way to choose proper stream in
+                        # future commit
                         cleartext = self.tls_ctx.crypto.server.dec.decrypt(encrypted_payload)
-                        pkt = layer(cleartext)
+                        pkt = layer(cleartext, ctx=self.tls_ctx)
                         record[self.guessed_next_layer].payload = pkt
                     # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
                     except ValueError as ve:

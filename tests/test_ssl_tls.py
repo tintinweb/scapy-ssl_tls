@@ -13,8 +13,6 @@ from Crypto.PublicKey import RSA
 from scapy.all import conf, rdpcap
 from scapy.layers import x509
 from scapy.layers.inet import IP, TCP
-from scapy_ssl_tls.ssl_tls import TLSHandshake, TLSCertificate,\
-    TLSCertificateList, TLSServerKeyExchange
 
 def env_local_file(file):
     return os.path.join(os.path.dirname(__file__),'files',file)
@@ -94,7 +92,10 @@ class TestTLSDissector(unittest.TestCase):
         tls_ctx.insert(app_response_records)
         # Test decryption against given states
         self.assertTrue(server_finished_records.haslayer(tls.TLSPlaintext))
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].data, "\x14\x00\x00\x0c3\x13V\xac\x90.6\x89~7\x13\xbd\xac'\x9a\x94\xf6t'\x18E\x03nD\x0b\xf4\xf7\xf5T\xce\x05q\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b")
+        self.assertEqual(server_finished_records[tls.TLSPlaintext].data, "\x14\x00\x00\x0c3\x13V\xac\x90.6\x89~7\x13\xbd")
+        self.assertEqual(server_finished_records[tls.TLSPlaintext].mac, "\xac'\x9a\x94\xf6t'\x18E\x03nD\x0b\xf4\xf7\xf5T\xce\x05q")
+        self.assertEqual(server_finished_records[tls.TLSPlaintext].padding, "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b")
+        self.assertEqual(server_finished_records[tls.TLSPlaintext].padding_len, ord("\x0b"))
         self.assertTrue(app_response_records.haslayer(tls.TLSPlaintext))
         self.assertTrue(app_response_records[3][tls.TLSPlaintext].data.startswith("HTTP"))
 
@@ -200,6 +201,23 @@ class TestTLSClientHello(unittest.TestCase):
         ext = extensions.pop()
         self.assertEquals(ext[tls.TLSExtServerNameIndication].server_names[1].data,"github.com") 
         self.assertEquals(ext[tls.TLSExtServerNameIndication].server_names[0].data,"www.github.com")
+
+class TestTLSPlaintext(unittest.TestCase):
+
+    def test_built_plaintext_has_no_mac_and_padding_when_unspecified(self):
+        plaintext = tls.TLSPlaintext(data="AAAA")
+        self.assertEqual(str(plaintext), "AAAA")
+
+    def test_built_plaintext_includes_mac_and_padding_if_not_empty(self):
+        data = "A"*4
+        mac="B"*16
+        padding="C"*19
+        plaintext = tls.TLSPlaintext(data=data, mac=mac, padding=padding)
+        self.assertEqual(len(data) + len(mac) + len(padding) + 1, len(str(plaintext)))
+        self.assertEqual(plaintext.mac, mac)
+        self.assertEqual(plaintext.padding, padding)
+        self.assertEqual(ord(str(plaintext)[-1]), len(padding))
+        self.assertEqual("%s%s%s%s" % (data, mac, padding, chr(len(padding))), str(plaintext))
 
 class TestPCAP(unittest.TestCase):
     
