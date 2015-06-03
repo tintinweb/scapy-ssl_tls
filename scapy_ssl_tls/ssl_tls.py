@@ -292,8 +292,8 @@ TLS_CIPHER_SUITES = {
 TLSCipherSuite = EnumStruct(TLS_CIPHER_SUITES)
 
 TLS_COMPRESSION_METHODS = {
-                           0x00: 'null',
-                           0x01: 'deflate',
+                           0x00: 'NULL',
+                           0x01: 'DEFLATE',
                            }
 TLSCompressionMethod = EnumStruct(TLS_COMPRESSION_METHODS)
 
@@ -565,6 +565,9 @@ class TLSPlaintext(Packet):
                     self.data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
                     self.data = raw_bytes
+            else:
+                self.mac = raw_bytes[-hash_size:]
+                self.data = raw_bytes[:-hash_size]
         # Nothing left, return ""
         return ""
 
@@ -682,8 +685,68 @@ class SSLv2ClientMasterKey(Packet):
                    StrLenField("encrypted_key", '', length_from=lambda x:x.clear_key_length),
                    StrLenField("key_argument", '', length_from=lambda x:x.key_argument_length),
                    ]
-    
 
+class TLSSocket(object):
+
+    def __init__(self, socket, client=None, tls_ctx=None):
+        if socket is not None:
+            self._s = socket
+        else:
+            raise ValueError("Socket cannot be None")
+
+        if client is None:
+            self.client = self._is_listening(socket)
+        else:
+            self.client = client
+
+        if tls_ctx is None:
+            import ssl_tls_crypto as tlsc
+            self.tls_ctx = tlsc.TLSSessionCtx(self.client)
+        else:
+            self.tls_ctx = tls_ctx
+
+    def _is_listening(self, socket):
+        import errno
+        import socket
+        try:
+            is_listening = self._s.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN)
+        except socket.error as se:
+            # OSX and BSDs do not support ENOPROTOOPT. Linux and Windows seem to
+            if se.errno == errno.ENOPROTOOPT:
+                raise RuntimeError("OS does not support SO_ACCEPTCONN, cannot determine socket state. Please supply an explicit client value (True for client, False for server)")
+            else:
+                raise
+        return True if is_listening != 0 else False
+
+    def __getattr__(self, attr):
+        try:
+            super(TLSSocket, self).__getattr__()
+        except AttributeError:
+            return getattr(self._s, attr)
+
+    def sendall(self, pkt, timeout=2):
+        prev_timeout = self._s.gettimeout()
+        self._s.settimeout(timeout)
+        self._s.sendall(str(pkt))
+        self.tls_ctx.insert(pkt)
+        self._s.settimeout(prev_timeout)
+
+    def recvall(self, size=8192, timeout=0.5):
+        resp = []
+        prev_timeout = self._s.gettimeout()
+        self._s.settimeout(timeout)
+        while True:
+            try:
+                data = self._s.recv(size)
+                if not data:
+                    break
+                resp.append(data)
+            except socket.timeout:
+                break
+        self._s.settimeout(prev_timeout)
+        records = TLS("".join(resp), ctx=self.tls_ctx)
+        self.tls_ctx.insert(records)
+        return records
 
 # entry class
 class SSL(Packet):
@@ -748,8 +811,7 @@ class SSL(Packet):
         elif (record.haslayer(TLSHandshake) and record[TLSHandshake].payload.name == Raw.name):
             encrypted_payload = str(record.payload)
             decrypted_type = TLSHandshake
-        # This heuristic will not work for strem ciphers. Need to find a way to not rely on length
-        # OK for now, but alerts and ccs will not be decrypted for stream ciphers
+        # Do not decrypt cleartext Alerts and CCS
         elif record.haslayer(TLSAlert) and record.length != 0x2:
             encrypted_payload = str(record.payload)
             decrypted_type = TLSAlert

@@ -3,6 +3,7 @@
 import binascii
 import os
 import re
+import socket
 import unittest
 import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
@@ -13,6 +14,7 @@ from Crypto.PublicKey import RSA
 from scapy.all import conf, rdpcap
 from scapy.layers import x509
 from scapy.layers.inet import IP, TCP
+
 
 def env_local_file(file):
     return os.path.join(os.path.dirname(__file__),'files',file)
@@ -362,7 +364,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         # TLSv1.0
         self.hello_version = 0x0301
         # RSA_WITH_RC4_128_SHA
-        self.cipher_suite = 0x5
+        self.cipher_suite = 0x2f
         # NULL
         self.comp_method = 0x0
         self.client_hello = tls.TLSRecord(version=self.record_version)/tls.TLSHandshake()/tls.TLSClientHello(version=self.hello_version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])
@@ -531,6 +533,11 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         ciphertext_2 = ''.join(pubkey_extract_from_der.encrypt(plaintext,None))
         self.assertTrue(len(ciphertext))
         self.assertEqual(ciphertext,ciphertext_2)
+
+class TestTLSSocket(unittest.TestCase):
+
+    def test_tls_context_is_created_when_not_supplied(self):
+        raise NotImplementedError("Come on... Get your sleeves up and mock socket...")
 
 if __name__ == "__main__":
     unittest.main()
