@@ -5,9 +5,6 @@ from __future__ import with_statement
 from __future__ import print_function
 import socket
 import sys
-from scapy_ssl_tls.ssl_tls import *
-from scapy_ssl_tls.ssl_tls_crypto import *
-
 
 def _send(sock, pkt):
     sock.sendall(pkt)
@@ -65,7 +62,7 @@ def tls_client(ip, priv_key=None):
         tls_hello(sock, ssl_ctx)
         tls_client_key_exchange(sock, ssl_ctx)
         print("Finished handshake. Sending application data (GET request)")
-        app_data = to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"), ssl_ctx)
+        app_data = to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"), ssl_ctx)
         _send(sock, str(app_data))
         data = _recv(sock)
         resp = TLS(data, ctx=ssl_ctx)
@@ -78,5 +75,8 @@ def tls_client(ip, priv_key=None):
         sock.close()
 
 if __name__ == "__main__":
-    server = ("127.0.0.1", 8443)
+    if len(sys.argv)>2:
+        server = (sys.argv[1],int(sys.argv[2]))
+    else:
+        server = ("127.0.0.1", 8443)
     tls_client(server)
