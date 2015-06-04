@@ -36,10 +36,10 @@ if __name__=="__main__":
                                cipher_suites= [TLSCipherSuite.NULL_WITH_NULL_NULL]+range(0xff-1),
                                extensions=[
                                        TLSExtension()/ \
-                                            TLSServerNameIndication(server_names= [TLSServerName(data="a"*500,length=16),
+                                            TLSExtServerNameIndication(server_names= [TLSServerName(data="a"*500,length=16),
                                                                                    TLSServerName(length=222)]),
                                        TLSExtension()/ \
-                                            TLSServerNameIndication(server_names=[TLSServerName(length=2)])
+                                            TLSExtServerNameIndication(server_names=[TLSServerName(length=2)])
                                        ])
                 
     p.show()
@@ -47,7 +47,7 @@ if __name__=="__main__":
     
     print "sending TLS payload"
     s.sendall(str(p))
-    resp = s.recv(1024)
+    resp = s.recv(1024*8)
     print "received, %s"%repr(resp)
     
     SSL(resp).show()

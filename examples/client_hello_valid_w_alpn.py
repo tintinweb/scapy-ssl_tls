@@ -36,7 +36,7 @@ if __name__=="__main__":
         TLSClientHello(compression_methods=range(0xff), 
                        cipher_suites=range(0xff), 
                        extensions=[TLSExtension()/ \
-                                  TLSALPN(protocol_name_list= \
+                                  TLSExtALPN(protocol_name_list= \
                                                     [TLSALPNProtocol(data="http/1.1"),
                                                      TLSALPNProtocol(data="http/1.3"),
                                                      TLSALPNProtocol(data="\x00htt\x01%sp/1.1"),
@@ -46,7 +46,7 @@ if __name__=="__main__":
 
     print "sending TLS payload"
     s.sendall(str(p))
-    resp = s.recv(1024)
+    resp = s.recv(1024*8)
     print "received, %s"%repr(resp)
     SSL(resp).show()
     s.close()

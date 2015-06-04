@@ -29,14 +29,12 @@ if __name__=="__main__":
     s.connect(target)
     
     # create TLS Handhsake / Client Hello packet
-    p = TLSRecord()/TLSHandshake()/TLSClientHello(compression_methods=None, cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA])
+    p = TLSRecord()/TLSHandshake()/TLSClientHello(cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA])
                 
     p.show()
     print "sending TLS payload"
     s.sendall(str(p))
-    resp=''
-    for i in range(15):
-        resp += s.recv(1024)
+    resp=s.recv(1024*8)
     print "received, %d --  %s"%(len(resp),repr(resp))
     SSL(resp).show()
     s.close()
