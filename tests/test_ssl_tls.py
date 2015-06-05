@@ -534,10 +534,5 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertTrue(len(ciphertext))
         self.assertEqual(ciphertext,ciphertext_2)
 
-class TestTLSSocket(unittest.TestCase):
-
-    def test_tls_context_is_created_when_not_supplied(self):
-        raise NotImplementedError("Come on... Get your sleeves up and mock socket...")
-
 if __name__ == "__main__":
     unittest.main()

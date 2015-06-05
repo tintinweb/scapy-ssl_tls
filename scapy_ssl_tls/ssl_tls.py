@@ -470,13 +470,6 @@ class TLSSessionTicket(Packet):
                    StrLenField("ticket", '', length_from=lambda x:x.ticket_length),
                    ]     
 
-class TLSAlert(Packet):
-    name = "TLS Alert"
-    fields_desc = [ByteEnumField("level", TLSAlertLevel.UNKNOWN, TLS_ALERT_LEVELS),
-                  ByteEnumField("description", TLSAlertDescription.UNKNOWN, TLS_ALERT_DESCRIPTIONS),
-                  ]
-
-
 class TLSHeartBeat(Packet):
     name = "TLS Extension HeartBeat"
     fields_desc = [ByteEnumField("type", 0x01, {0x01:"request"}),
@@ -529,31 +522,26 @@ class TLSCertificateList(Packet):
                    PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length),
                   ]   
 
-class TLSChangeCipherSpec(Packet):
-    name = "TLS ChangeCipherSpec"
-    fields_desc = [ StrField("message", '\x01', fmt="H")]
+class TLSDecryptablePacket(Packet):
 
-class TLSCiphertext(Packet):
-    name = "TLS Ciphertext"
-    fields_desc = [ StrField("data", None, fmt="H")]
-
-class TLSPlaintext(Packet):
-    name = "TLS Plaintext"
-    fields_desc = [ StrField("data", None, fmt="H"),
-                   StrField("mac", "", fmt="H"),
-                   StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len),
-                   ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False ) ]
+    mac_field = StrField("mac", "", fmt="H")
+    padding_field = StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len)
+    padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False )
+    decryptable_fields = [mac_field, padding_field, padding_len_field]
 
     def __init__(self, *args, **fields):
         try:
             self.tls_ctx = fields["ctx"]
             del(fields["ctx"])
+            for field in self.decryptable_fields:
+                if field not in self.fields_desc:
+                    self.fields_desc.append(field)
         except KeyError:
             self.tls_ctx = None
         Packet.__init__(self, *args, **fields)
 
-    def do_dissect(self, raw_bytes):
-        self.data = raw_bytes
+    def pre_dissect(self, raw_bytes):
+        data = raw_bytes
         if self.tls_ctx is not None:
             hash_size = self.tls_ctx.sec_params.mac_key_length
             # CBC mode
@@ -562,14 +550,32 @@ class TLSPlaintext(Packet):
                     self.padding_len = ord(raw_bytes[-1])
                     self.padding = raw_bytes[-self.padding_len - 1:-2]
                     self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
-                    self.data = raw_bytes[:-self.padding_len - hash_size - 1]
+                    data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
-                    self.data = raw_bytes
+                    data = raw_bytes
             else:
                 self.mac = raw_bytes[-hash_size:]
-                self.data = raw_bytes[:-hash_size]
-        # Nothing left, return ""
-        return ""
+                data = raw_bytes[:-hash_size]
+        # Return plaintext without mac and padding
+        return data
+
+class TLSPlaintext(TLSDecryptablePacket):
+    name = "TLS Plaintext"
+    fields_desc = [ StrField("data", None, fmt="H") ]
+
+class TLSChangeCipherSpec(TLSDecryptablePacket):
+    name = "TLS ChangeCipherSpec"
+    fields_desc = [ StrField("message", '\x01', fmt="H")]
+
+class TLSAlert(TLSDecryptablePacket):
+    name = "TLS Alert"
+    fields_desc = [ ByteEnumField("level", TLSAlertLevel.UNKNOWN, TLS_ALERT_LEVELS),
+                    ByteEnumField("description", TLSAlertDescription.UNKNOWN, TLS_ALERT_DESCRIPTIONS),
+                  ]
+
+class TLSCiphertext(Packet):
+    name = "TLS Ciphertext"
+    fields_desc = [ StrField("data", None, fmt="H") ]
 
 class DTLSRecord(Packet):
     name = "DTLS Record"
