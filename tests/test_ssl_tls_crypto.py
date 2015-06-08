@@ -75,7 +75,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_negotiated_cipher_is_used_in_context(self):
         # RSA_WITH_NULL_MD5
         cipher_suite = 0x1
-        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*24, cipher_suite=cipher_suite)
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*28, cipher_suite=cipher_suite)
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.params.negotiated.key_exchange, tlsc.TLSSecurityParameters.crypto_params[cipher_suite]["key_exchange"]["name"])
@@ -84,7 +84,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_negotiated_compression_method_is_used_in_context(self):
         # DEFLATE
         compression_method = 0x1
-        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*24, compression_method=compression_method)
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A"*28, compression_method=compression_method)
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.params.negotiated.compression_algo, tlsc.TLSCompressionParameters.comp_params[compression_method]["name"])
@@ -307,15 +307,16 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         client_seq_num += 1
         self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
         self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num)
-        tlsc.CryptoContainer(self.tls_ctx, to_server=False)
+        self.tls_ctx.client = False
+        tlsc.CryptoContainer(self.tls_ctx)
         self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
         self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num + 1)
 
     def test_crypto_container_str_returns_cipher_payload(self):
         data = b"abcde"
         crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
-        padding = crypto_container.pad()
-        self.assertEqual("%s%s%s%s" % (data, crypto_container.hmac(), padding, chr(len(padding))), str(crypto_container))
+        padding = crypto_container.padding
+        self.assertEqual("%s%s%s%s" % (data, crypto_container.mac, padding, chr(len(padding))), str(crypto_container))
 
     def test_cipher_payload_is_block_size_aligned(self):
         data = b"A"*1025
@@ -324,14 +325,16 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_crypto_container_returns_ciphertext(self):
         data = b"C"*102
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data, to_server=False)
+        self.tls_ctx.client = False
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
         cleartext = str(crypto_container)
         ciphertext = crypto_container.encrypt()
         self.assertEqual(cleartext, self.tls_ctx.crypto.server.dec.decrypt(ciphertext))
 
     def test_generated_mac_can_be_overiden(self):
         data = b"C"*102
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data, to_server=False)
+        self.tls_ctx.client = False
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
         initial_mac = crypto_container.mac
         crypto_container.hmac(data_len=1024)
         self.assertNotEqual(initial_mac, crypto_container.mac)

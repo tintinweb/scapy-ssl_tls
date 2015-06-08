@@ -34,6 +34,7 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+cover/
 
 # Translations
 *.mo
@@ -56,3 +57,7 @@ docs/_build/
 
 # Vim local config file
 .lvimrc
+
+# Java
+*.class
+

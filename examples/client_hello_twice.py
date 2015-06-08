@@ -37,13 +37,13 @@ if __name__=="__main__":
     
     print "sending TLS payload"
     s.sendall(str(p))
-    resp = s.recv(10240)
+    resp = s.recv(1024*8)
     print "received, %s"%repr(resp)
     SSL(resp).show()
     
     print "sending TLS payload"
     s.sendall(str(p))
-    resp = s.recv(10240)
+    resp = s.recv(1024*8)
     print "received, %s"%repr(resp)
     SSL(resp).show()
 
