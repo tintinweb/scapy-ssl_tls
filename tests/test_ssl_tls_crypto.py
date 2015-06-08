@@ -315,8 +315,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_crypto_container_str_returns_cipher_payload(self):
         data = b"abcde"
         crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
-        padding = crypto_container.pad()
-        self.assertEqual("%s%s%s%s" % (data, crypto_container.hmac(), padding, chr(len(padding))), str(crypto_container))
+        padding = crypto_container.padding
+        self.assertEqual("%s%s%s%s" % (data, crypto_container.mac, padding, chr(len(padding))), str(crypto_container))
 
     def test_cipher_payload_is_block_size_aligned(self):
         data = b"A"*1025

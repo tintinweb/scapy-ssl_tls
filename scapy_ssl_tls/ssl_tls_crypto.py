@@ -507,8 +507,13 @@ class CryptoContainer(object):
             self.enc_cipher = tls_ctx.crypto.server.enc
             self.seq_number = tls_ctx.crypto.session.key.server.seq_num
             tls_ctx.crypto.session.key.server.seq_num += 1
+        # CBC mode
         self.hmac()
-        self.pad()
+        if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
+            self.pad()
+        # No padding otherwise
+        else:
+            self.padding = ""
 
     def hmac(self, seq=None, version=None, data_len=None):
         # Grab a copy of the initialized HMAC handler
@@ -519,17 +524,18 @@ class CryptoContainer(object):
         len_ = struct.pack("!H", data_len or len(self.data))
         hmac.update("%s%s%s%s%s" % (seq_, content_type_, version_, len_, self.data))
         self.mac = hmac.digest()
-        return self.mac
 
     def pad(self):
         # "\xff" is a dummy trailing byte, to increase the length of imput
         # data by one byte. Any byte could do. This is to account for the
         # trailing padding_length byte in the RFC
         self.padding = self.pkcs7.get_padding("%s%s\xff" %(self.data, self.mac))
-        return self.padding
 
     def __str__(self):
-        return "%s%s%s%s" % (self.data, self.mac, self.padding, chr(len(self.padding)))
+        if len(self.padding) != 0:
+            return "%s%s%s%s" % (self.data, self.mac, self.padding, chr(len(self.padding)))
+        else:
+            return "%s%s%s" % (self.data, self.mac, self.padding)
 
     def __len__(self):
         return len(str(self))

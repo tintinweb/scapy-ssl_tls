@@ -3,16 +3,18 @@
 import binascii
 import os
 import re
+import socket
 import unittest
 import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
 
 from Crypto.Cipher import PKCS1_v1_5
-from Crypto.Hash import SHA
+from Crypto.Hash import MD5, SHA
 from Crypto.PublicKey import RSA
 from scapy.all import conf, rdpcap
 from scapy.layers import x509
 from scapy.layers.inet import IP, TCP
+
 
 def env_local_file(file):
     return os.path.join(os.path.dirname(__file__),'files',file)
@@ -92,10 +94,10 @@ class TestTLSDissector(unittest.TestCase):
         tls_ctx.insert(app_response_records)
         # Test decryption against given states
         self.assertTrue(server_finished_records.haslayer(tls.TLSPlaintext))
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].data, "\x14\x00\x00\x0c3\x13V\xac\x90.6\x89~7\x13\xbd")
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].mac, "\xac'\x9a\x94\xf6t'\x18E\x03nD\x0b\xf4\xf7\xf5T\xce\x05q")
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].padding, "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b")
         self.assertEqual(server_finished_records[tls.TLSPlaintext].padding_len, ord("\x0b"))
+        self.assertEqual(server_finished_records[tls.TLSPlaintext].padding, "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b")
+        self.assertEqual(server_finished_records[tls.TLSPlaintext].mac, "\xac'\x9a\x94\xf6t'\x18E\x03nD\x0b\xf4\xf7\xf5T\xce\x05q")
+        self.assertEqual(server_finished_records[tls.TLSPlaintext].data, "\x14\x00\x00\x0c3\x13V\xac\x90.6\x89~7\x13\xbd")
         self.assertTrue(app_response_records.haslayer(tls.TLSPlaintext))
         self.assertTrue(app_response_records[3][tls.TLSPlaintext].data.startswith("HTTP"))
 
@@ -121,6 +123,39 @@ class TestTLSDissector(unittest.TestCase):
         handshake = tls.TLSRecord()/tls.TLSHandshake()/"C"*5
         with self.assertRaises(ValueError):
             tls.TLS(str(handshake), ctx=tls_ctx)
+
+
+class TestTLSDecryptablePacket(unittest.TestCase):
+
+    def test_packet_does_not_contain_mac_or_padding_if_not_received_encrypted(self):
+        pkt = tls.TLSRecord()/tls.TLSChangeCipherSpec()
+        records = tls.TLS(str(pkt))
+        with self.assertRaises(AttributeError):
+            records[tls.TLSChangeCipherSpec].mac
+            records[tls.TLSChangeCipherSpec].padding
+
+    def test_session_context_is_removed_from_scapy_on_init(self):
+        pkt = tls.TLSRecord()/tls.TLSAlert()
+        records = tls.TLS(str(pkt), ctx=tlsc.TLSSessionCtx())
+        with self.assertRaises(KeyError):
+            records.fields["ctx"]
+
+    def test_streaming_mac_and_padding_are_added_if_session_context_is_provided(self):
+        data = "%s%s" % ("A"*2, "B"*MD5.digest_size)
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.sec_params = tlsc.TLSSecurityParameters(tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_MD5, "A"*48, "B"*32, "C"*32)
+        records = tls.TLSAlert(data, ctx=tls_ctx)
+        self.assertEqual("B"*MD5.digest_size, records[tls.TLSAlert].mac)
+        self.assertEqual("", records[tls.TLSAlert].padding)
+
+    def test_cbc_mac_and_padding_are_added_if_session_context_is_provided(self):
+        data = "%s%s%s" % ("A"*2, "B"*SHA.digest_size, "\x03"*4)
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.sec_params = tlsc.TLSSecurityParameters(tls.TLSCipherSuite.RSA_WITH_DES_CBC_SHA, "A"*48, "B"*32, "C"*32)
+        records = tls.TLSAlert(data, ctx=tls_ctx)
+        self.assertEqual(ord("\x03"), records[tls.TLSAlert].padding_len)
+        self.assertEqual("\x03"*3, records[tls.TLSAlert].padding)
+        self.assertEqual("B"*SHA.digest_size, records[tls.TLSAlert].mac)
 
 class TestTLSClientHello(unittest.TestCase):
     
@@ -362,7 +397,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         # TLSv1.0
         self.hello_version = 0x0301
         # RSA_WITH_RC4_128_SHA
-        self.cipher_suite = 0x5
+        self.cipher_suite = 0x2f
         # NULL
         self.comp_method = 0x0
         self.client_hello = tls.TLSRecord(version=self.record_version)/tls.TLSHandshake()/tls.TLSClientHello(version=self.hello_version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])

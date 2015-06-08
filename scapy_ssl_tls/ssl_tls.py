@@ -292,8 +292,8 @@ TLS_CIPHER_SUITES = {
 TLSCipherSuite = EnumStruct(TLS_CIPHER_SUITES)
 
 TLS_COMPRESSION_METHODS = {
-                           0x00: 'null',
-                           0x01: 'deflate',
+                           0x00: 'NULL',
+                           0x01: 'DEFLATE',
                            }
 TLSCompressionMethod = EnumStruct(TLS_COMPRESSION_METHODS)
 
@@ -470,13 +470,6 @@ class TLSSessionTicket(Packet):
                    StrLenField("ticket", '', length_from=lambda x:x.ticket_length),
                    ]     
 
-class TLSAlert(Packet):
-    name = "TLS Alert"
-    fields_desc = [ByteEnumField("level", TLSAlertLevel.UNKNOWN, TLS_ALERT_LEVELS),
-                  ByteEnumField("description", TLSAlertDescription.UNKNOWN, TLS_ALERT_DESCRIPTIONS),
-                  ]
-
-
 class TLSHeartBeat(Packet):
     name = "TLS Extension HeartBeat"
     fields_desc = [ByteEnumField("type", 0x01, {0x01:"request"}),
@@ -529,44 +522,60 @@ class TLSCertificateList(Packet):
                    PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length),
                   ]   
 
-class TLSChangeCipherSpec(Packet):
-    name = "TLS ChangeCipherSpec"
-    fields_desc = [ StrField("message", '\x01', fmt="H")]
+class TLSDecryptablePacket(Packet):
 
-class TLSCiphertext(Packet):
-    name = "TLS Ciphertext"
-    fields_desc = [ StrField("data", None, fmt="H")]
-
-class TLSPlaintext(Packet):
-    name = "TLS Plaintext"
-    fields_desc = [ StrField("data", None, fmt="H"),
-                   StrField("mac", "", fmt="H"),
-                   StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len),
-                   ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False ) ]
+    mac_field = StrField("mac", "", fmt="H")
+    padding_field = StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len)
+    padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False )
+    decryptable_fields = [mac_field, padding_field, padding_len_field]
 
     def __init__(self, *args, **fields):
         try:
             self.tls_ctx = fields["ctx"]
             del(fields["ctx"])
+            for field in self.decryptable_fields:
+                if field not in self.fields_desc:
+                    self.fields_desc.append(field)
         except KeyError:
             self.tls_ctx = None
         Packet.__init__(self, *args, **fields)
 
-    def do_dissect(self, raw_bytes):
-        self.data = raw_bytes
+    def pre_dissect(self, raw_bytes):
+        data = raw_bytes
         if self.tls_ctx is not None:
             hash_size = self.tls_ctx.sec_params.mac_key_length
             # CBC mode
             if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
                 try:
                     self.padding_len = ord(raw_bytes[-1])
-                    self.padding = raw_bytes[-self.padding_len - 1:-2]
+                    self.padding = raw_bytes[-self.padding_len - 1:-1]
                     self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
-                    self.data = raw_bytes[:-self.padding_len - hash_size - 1]
+                    data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
-                    self.data = raw_bytes
-        # Nothing left, return ""
-        return ""
+                    data = raw_bytes
+            else:
+                self.mac = raw_bytes[-hash_size:]
+                data = raw_bytes[:-hash_size]
+        # Return plaintext without mac and padding
+        return data
+
+class TLSPlaintext(TLSDecryptablePacket):
+    name = "TLS Plaintext"
+    fields_desc = [ StrField("data", None, fmt="H") ]
+
+class TLSChangeCipherSpec(TLSDecryptablePacket):
+    name = "TLS ChangeCipherSpec"
+    fields_desc = [ StrField("message", '\x01', fmt="H") ]
+
+class TLSAlert(TLSDecryptablePacket):
+    name = "TLS Alert"
+    fields_desc = [ ByteEnumField("level", TLSAlertLevel.UNKNOWN, TLS_ALERT_LEVELS),
+                    ByteEnumField("description", TLSAlertDescription.UNKNOWN, TLS_ALERT_DESCRIPTIONS),
+                  ]
+
+class TLSCiphertext(Packet):
+    name = "TLS Ciphertext"
+    fields_desc = [ StrField("data", None, fmt="H") ]
 
 class DTLSRecord(Packet):
     name = "DTLS Record"
@@ -682,8 +691,68 @@ class SSLv2ClientMasterKey(Packet):
                    StrLenField("encrypted_key", '', length_from=lambda x:x.clear_key_length),
                    StrLenField("key_argument", '', length_from=lambda x:x.key_argument_length),
                    ]
-    
 
+class TLSSocket(object):
+
+    def __init__(self, socket, client=None, tls_ctx=None):
+        if socket is not None:
+            self._s = socket
+        else:
+            raise ValueError("Socket cannot be None")
+
+        if client is None:
+            self.client = self._is_listening(socket)
+        else:
+            self.client = client
+
+        if tls_ctx is None:
+            import ssl_tls_crypto as tlsc
+            self.tls_ctx = tlsc.TLSSessionCtx(self.client)
+        else:
+            self.tls_ctx = tls_ctx
+
+    def _is_listening(self, socket):
+        import errno
+        import socket
+        try:
+            is_listening = self._s.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN)
+        except socket.error as se:
+            # OSX and BSDs do not support ENOPROTOOPT. Linux and Windows seem to
+            if se.errno == errno.ENOPROTOOPT:
+                raise RuntimeError("OS does not support SO_ACCEPTCONN, cannot determine socket state. Please supply an explicit client value (True for client, False for server)")
+            else:
+                raise
+        return True if is_listening != 0 else False
+
+    def __getattr__(self, attr):
+        try:
+            super(TLSSocket, self).__getattr__()
+        except AttributeError:
+            return getattr(self._s, attr)
+
+    def sendall(self, pkt, timeout=2):
+        prev_timeout = self._s.gettimeout()
+        self._s.settimeout(timeout)
+        self._s.sendall(str(pkt))
+        self.tls_ctx.insert(pkt)
+        self._s.settimeout(prev_timeout)
+
+    def recvall(self, size=8192, timeout=0.5):
+        resp = []
+        prev_timeout = self._s.gettimeout()
+        self._s.settimeout(timeout)
+        while True:
+            try:
+                data = self._s.recv(size)
+                if not data:
+                    break
+                resp.append(data)
+            except socket.timeout:
+                break
+        self._s.settimeout(prev_timeout)
+        records = TLS("".join(resp), ctx=self.tls_ctx)
+        self.tls_ctx.insert(records)
+        return records
 
 # entry class
 class SSL(Packet):
@@ -748,8 +817,7 @@ class SSL(Packet):
         elif (record.haslayer(TLSHandshake) and record[TLSHandshake].payload.name == Raw.name):
             encrypted_payload = str(record.payload)
             decrypted_type = TLSHandshake
-        # This heuristic will not work for strem ciphers. Need to find a way to not rely on length
-        # OK for now, but alerts and ccs will not be decrypted for stream ciphers
+        # Do not decrypt cleartext Alerts and CCS
         elif record.haslayer(TLSAlert) and record.length != 0x2:
             encrypted_payload = str(record.payload)
             decrypted_type = TLSAlert
