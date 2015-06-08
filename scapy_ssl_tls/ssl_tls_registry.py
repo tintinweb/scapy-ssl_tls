@@ -187,15 +187,15 @@ TLS_CIPHER_SUITE_REGISTRY = {
     0xc017: 'ECDH_anon_WITH_3DES_EDE_CBC_SHA',
     0xc018: 'ECDH_anon_WITH_AES_128_CBC_SHA',
     0xc019: 'ECDH_anon_WITH_AES_256_CBC_SHA',
-    0xc01a: 'RP_SHA_WITH_3DES_EDE_CBC_SHA',
-    0xc01b: 'RP_SHA_RSA_WITH_3DES_EDE_CBC_SHA',
-    0xc01c: 'RP_SHA_DSS_WITH_3DES_EDE_CBC_SHA',
-    0xc01d: 'RP_SHA_WITH_AES_128_CBC_SHA',
-    0xc01e: 'RP_SHA_RSA_WITH_AES_128_CBC_SHA',
-    0xc01f: 'RP_SHA_DSS_WITH_AES_128_CBC_SHA',
-    0xc020: 'RP_SHA_WITH_AES_256_CBC_SHA',
-    0xc021: 'RP_SHA_RSA_WITH_AES_256_CBC_SHA',
-    0xc022: 'RP_SHA_DSS_WITH_AES_256_CBC_SHA',
+    0xc01a: 'SRP_SHA_WITH_3DES_EDE_CBC_SHA',
+    0xc01b: 'SRP_SHA_RSA_WITH_3DES_EDE_CBC_SHA',
+    0xc01c: 'SRP_SHA_DSS_WITH_3DES_EDE_CBC_SHA',
+    0xc01d: 'SRP_SHA_WITH_AES_128_CBC_SHA',
+    0xc01e: 'SRP_SHA_RSA_WITH_AES_128_CBC_SHA',
+    0xc01f: 'SRP_SHA_DSS_WITH_AES_128_CBC_SHA',
+    0xc020: 'SRP_SHA_WITH_AES_256_CBC_SHA',
+    0xc021: 'SRP_SHA_RSA_WITH_AES_256_CBC_SHA',
+    0xc022: 'SRP_SHA_DSS_WITH_AES_256_CBC_SHA',
     0xc023: 'ECDHE_ECDSA_WITH_AES_128_CBC_SHA256',
     0xc024: 'ECDHE_ECDSA_WITH_AES_256_CBC_SHA384',
     0xc025: 'ECDH_ECDSA_WITH_AES_128_CBC_SHA256',
@@ -514,7 +514,7 @@ HEARTBEAT_MODES = {
 TLS_COMPRESSION_METHOD_IDENTIFIERS = {
     0x00: 'NULL',
     0x01: 'DEFLATE',
-    0x40: 'ZS',
+    0x40: 'LZS',
     }
 # Generator: fetch_iana_tls_registry.py
 # date:      2015-06-09
@@ -546,7 +546,7 @@ EXTENSIONTYPE_VALUES = {
     0x15: 'padding (TEMPORARY - registered 2014-03-12, expires 2016-03-12)',
     0x16: 'encrypt_then_mac',
     0x17: 'extended_master_secret (TEMPORARY - registered 2014-09-26, expires 2015-09-26)',
-    0x23: 'essionTicket TLS',
+    0x23: 'SessionTicket TLS',
     0xff01: 'renegotiation_info',
     }
 TLS_CERTIFICATE_TYPES = {
@@ -569,3 +569,4 @@ APPLICATION_LAYER_PROTOCOL_NEGOTIATIONPROTOCOL_IDS = {
     'spdy/3': '0x73 0x70 0x64 0x79 0x2f 0x33 ("spdy/3")',
     'traversal using relays around nat (turn)': '0x73 0x74 0x75 0x6E 0x2E 0x74 0x75 0x72 0x6E ("stun.turn")',
     }
+

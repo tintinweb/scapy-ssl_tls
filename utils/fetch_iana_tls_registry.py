@@ -49,7 +49,7 @@ def normalize_value(strval):
     '''normalize values
        strip TLS_ prefix
     '''
-    return strval.lstrip("TLS_")
+    return re.sub(r'^TLS_','',strval)
 
 def normalize_title(strval):
     '''normalize registry titles
@@ -114,3 +114,4 @@ def main(sources, ids, verbose=False):
 if __name__=="__main__":
     ids = sys.argv[1].strip().split(",") if len(sys.argv)>1 else None
     main(sources = URL_IANA_DEFS, ids = ids, verbose=True)
+
