@@ -11,6 +11,7 @@ from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
 
+import ssl_tls_registry
 
 class BLenField(LenField):
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
@@ -156,46 +157,14 @@ TLS_VERSIONS = {  0x0002:"SSL_2_0",
                   }
 TLSVersion = EnumStruct(TLS_VERSIONS)
 
-TLS_CONTENT_TYPES = {0x14:"change_cipher_spec",
-                        0x15:"alert",
-                        0x16:"handshake",
-                        0x17:"application_data",
-                        0x18:"heartbeat",
-                        0xff:"unknown"}
+TLS_CONTENT_TYPES = ssl_tls_registry.TLS_CONTENTTYPE_REGISTRY
 TLSContentType = EnumStruct(TLS_CONTENT_TYPES)
 
-TLS_HANDSHAKE_TYPES = {0x00:"hello_request",
-                        0x01:"client_hello",
-                        0x02:"server_hello",
-                        0x04:"new_session_ticket",
-                        0x0b:"certificate",
-                        0x0c:"server_key_exchange",
-                        0x0d:"certificate_request",
-                        0x0e:"server_hello_done",
-                        0x0f:"certificate_verify",
-                        0x10:"client_key_exchange",
-                        0x14:"finished",
-                        0x15:"certificate_url",
-                        0x16:"certificate_stats",
-                        0xff:"unknown"}
+TLS_HANDSHAKE_TYPES = ssl_tls_registry.TLS_HANDSHAKETYPE_REGISTRY
 TLSHandshakeType = EnumStruct(TLS_HANDSHAKE_TYPES)
 
-TLS_EXTENSION_TYPES = {
-                       0x0000:"server_name",
-                       0x0001:"max_fragment_length",
-                       0x0002:"client_certificate_url",
-                       0x0003:"trusted_ca_keys",
-                       0x0004:"truncated_hmac",
-                       0x0005:"status_request",
-                       0x000a:"elliptic_curves",
-                       0x000b:"ec_point_formats",
-                       0x000d:"signature_algorithms",
-                       0x000f:"heartbeat",
-                       0x0010:"application_layer_protocol_negotiation",
-                       0x0023:"session_ticket_tls",
-                       0x3374:"next_protocol_negotiation",
-                       0xff01:"renegotiation_info",
-                       }
+TLS_EXTENSION_TYPES = ssl_tls_registry.EXTENSIONTYPE_VALUES
+TLS_EXTENSION_TYPES.update({0x3374:"next_protocol_negotiation"})    # manually add NPN as it is not in iana registry
 TLSExtensionType = EnumStruct(TLS_EXTENSION_TYPES)
 
 TLS_ALERT_LEVELS = { 0x01: "warning",
@@ -203,38 +172,7 @@ TLS_ALERT_LEVELS = { 0x01: "warning",
                      0xff: "unknown", }
 TLSAlertLevel = EnumStruct(TLS_ALERT_LEVELS)
 
-TLS_ALERT_DESCRIPTIONS = {    
-                    0:"CLOSE_NOTIFY",
-                    10:"UNEXPECTED_MESSAGE",
-                    20:"BAD_RECORD_MAC",
-                    21:"DECRYPTION_FAILED",
-                    22:"RECORD_OVERFLOW",
-                    30:"DECOMPRESSION_FAILURE",
-                    40:"HANDSHAKE_FAILURE",
-                    41:"NO_CERTIFICATE_RESERVED",
-                    42:"BAD_CERTIFICATE",
-                    43:"UNSUPPORTED_CERTIFICATE",
-                    44:"CERTIFICATE_REVOKED",
-                    45:"CERTIFICATE_EXPIRED",
-                    46:"CERTIFICATE_UNKNOWN",
-                    47:"ILLEGAL_PARAMETER",
-                    48:"UNKNOWN_CA",
-                    49:"ACCESS_DENIED",
-                    50:"DECODE_ERROR",
-                    51:"DECRYPT_ERROR",
-                    60:"EXPORT_RESTRICTION",
-                    70:"PROTOCOL_VERSION",
-                    71:"INSUFFICIENT_SECURITY",
-                    80:"INTERNAL_ERROR",
-                    86:"INAPPROPRIATE_FALLBACK",
-                    90:"USER_CANCELED",
-                    100:"NO_RENEGOTIATION",
-                    110:"UNSUPPORTED_EXTENSION",
-                    111:"CERTIFICATE_UNOBTAINABLE",
-                    112:"UNRECOGNIZED_NAME",
-                    113:"BAD_CERTIFICATE_STATUS_RESPONSE",
-                    114:"BAD_CERTIFICATE_HASH_VALUE",
-                    255:"UNKNOWN" }
+TLS_ALERT_DESCRIPTIONS = ssl_tls_registry.TLS_ALERT_REGISTRY
 TLSAlertDescription = EnumStruct(TLS_ALERT_DESCRIPTIONS)
 
 TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM = {
@@ -245,56 +183,10 @@ TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM = {
                                     0xff: 'unknown',
                                     }
 
-
-TLS_CIPHER_SUITES = {
-                        0x0000: 'NULL_WITH_NULL_NULL',
-                        0x0001: 'RSA_WITH_NULL_MD5',
-                        0x0002: 'RSA_WITH_NULL_SHA1',
-                        0x0003: 'RSA_EXPORT_WITH_RC4_40_MD5',
-                        0x0004: 'RSA_WITH_RC4_128_MD5',
-                        0x0005: 'RSA_WITH_RC4_128_SHA',
-                        0x0006: 'RSA_EXPORT_WITH_RC2_CBC_40_MD5',
-                        0x0007: 'RSA_WITH_IDEA_CBC_SHA',
-                        0x0008: 'RSA_EXPORT_WITH_DES40_CBC_SHA',
-                        0x0009: 'RSA_WITH_DES_CBC_SHA',
-                        0x000a: 'RSA_WITH_3DES_EDE_CBC_SHA',
-                        0x0011: 'DHE_DSS_EXPORT_WITH_DES40_CBC_SHA',
-                        0x0012: 'DHE_DSS_WITH_DES_CBC_SHA',
-                        0x0013: 'DHE_DSS_WITH_3DES_EDE_CBC_SHA',
-                        0x0014: 'DHE_RSA_EXPORT_WITH_DES40_CBC_SHA',
-                        0x0015: 'DHE_RSA_WITH_DES_CBC_SHA',
-                        0x0016: 'DHE_RSA_WITH_3DES_EDE_CBC_SHA',
-                        0x002f: 'RSA_WITH_AES_128_CBC_SHA',
-                        0x0032: 'DHE_DSS_WITH_AES_128_CBC_SHA',
-                        0x0033: 'DHE_RSA_WITH_AES_128_CBC_SHA',
-                        0x0035: 'RSA_WITH_AES_256_CBC_SHA',
-                        0x0038: 'DHE_DSS_WITH_AES_256_CBC_SHA',
-                        0x0039: 'DHE_RSA_WITH_AES_256_CBC_SHA',
-                        0x003b: 'RSA_WITH_NULL_SHA256',
-                        0x0060: 'RSA_EXPORT1024_WITH_RC4_56_MD5',
-                        0x0061: 'RSA_EXPORT1024_WITH_RC2_CBC_56_MD5',
-                        0x0062: 'RSA_EXPORT1024_WITH_DES_CBC_SHA',
-                        0x0063: 'DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA',
-                        0x0064: 'RSA_EXPORT1024_WITH_RC4_56_SHA',
-                        0x0065: 'DHE_DSS_EXPORT1024_WITH_RC4_56_SHA',
-                        0x0066: 'DHE_DSS_WITH_RC4_128_SHA',
-                        0x0084: 'RSA_WITH_CAMELLIA_256_CBC_SHA',
-                        0x0087: 'DHE_DSS_WITH_CAMELLIA_256_CBC_SHA',
-                        0x0088: 'DHE_RSA_WITH_CAMELLIA_256_CBC_SHA',
-                        0x5600: 'TLS_FALLBACK_SCSV',
-                        0xc005: 'ECDH_ECDSA_WITH_AES_256_CBC_SHA',
-                        0xc00a: 'ECDHE_ECDSA_WITH_AES_256_CBC_SHA',
-                        0xc00f: 'ECDH_RSA_WITH_AES_256_CBC_SHA',
-                        0xc014: 'ECDHE_RSA_WITH_AES_256_CBC_SHA',
-                        0xc021: 'SRP_SHA_RSA_WITH_AES_256_CBC_SHA',
-                        0xc022: 'SRP_SHA_DSS_WITH_AES_256_CBC_SHA',
-}
+TLS_CIPHER_SUITES = ssl_tls_registry.TLS_CIPHER_SUITE_REGISTRY
 TLSCipherSuite = EnumStruct(TLS_CIPHER_SUITES)
 
-TLS_COMPRESSION_METHODS = {
-                           0x00: 'NULL',
-                           0x01: 'DEFLATE',
-                           }
+TLS_COMPRESSION_METHODS = ssl_tls_registry.TLS_COMPRESSION_METHOD_IDENTIFIERS
 TLSCompressionMethod = EnumStruct(TLS_COMPRESSION_METHODS)
 
 TLS_CERT_CHAIN_TYPE = { 0x00: 'individual_certs',
@@ -302,21 +194,20 @@ TLS_CERT_CHAIN_TYPE = { 0x00: 'individual_certs',
                     0xff: 'unknown'}
 TLSCertChainType = EnumStruct(TLS_CERT_CHAIN_TYPE)
 
-TLS_HEARTBEAT_MODE = { 0x01: 'peer_allowed_to_send',
-                       0x02: 'peer_not_allowed_to_send',
-                       0xff: 'unknown'}
+TLS_HEARTBEAT_MODE = HEARTBEAT_MODES
 TLSHeartbeatMode = EnumStruct(TLS_HEARTBEAT_MODE)
+
+TLS_HEARTBEAT_MESSAGE_TYPE = ssl_tls_registry.HEARTBEAT_MESSAGE_TYPES
+TLSHeartbeatMessageType = EnumStruct(TLS_HEARTBEAT_MESSAGE_TYPE)
 
 TLS_TYPE_BOOLEAN = {0x00: 'false',
                     0x01: 'true'}
 TLSTypeBoolean = EnumStruct(TLS_TYPE_BOOLEAN)
 
-TLS_EC_POINT_FORMATS = {0x00:'uncompressed',
-                            0x01:'ansiX962_compressed_prime',
-                            0x02:'ansiX962_compressed_char2'}
+TLS_EC_POINT_FORMATS = ssl_tls_registry.EC_POINT_FORMAT_REGISTRY
 TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
     
-TLS_ELLIPTIC_CURVES = {0x000e:'sect571r1',}
+TLS_ELLIPTIC_CURVES = ssl_tls_registry.EC_NAMED_CURVE_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
 class TLSRecord(Packet):
@@ -472,7 +363,7 @@ class TLSSessionTicket(Packet):
 
 class TLSHeartBeat(Packet):
     name = "TLS Extension HeartBeat"
-    fields_desc = [ByteEnumField("type", 0x01, {0x01:"request"}),
+    fields_desc = [ByteEnumField("type", TLSHeartbeatMessageType.HEARTBEAT_REQUEST, TLS_HEARTBEAT_MESSAGE_TYPE),
                   FieldLenField("length", None, length_of="data", fmt="H"),
                   StrLenField("data", "", length_from=lambda x:x.length),
                   StrLenField("padding", "", length_from=lambda x: 'P' * (16 - x.length)),
@@ -626,8 +517,8 @@ class DTLSHelloVerify(Packet):
     
     
 SSLv2_MESSAGE_TYPES = {0x01:'client_hello',
-                     0x04: 'server_hello',
-                     0x02: 'client_master_key'}
+                       0x04: 'server_hello',
+                       0x02: 'client_master_key'}
 SSLv2MessageType = EnumStruct(SSLv2_MESSAGE_TYPES)
 
 SSLv2_CIPHER_SUITES = {
