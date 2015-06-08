@@ -11,8 +11,13 @@ from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
 
-import ssl_tls_registry
-
+import ssl_tls_registry as registry
+try:
+    # may fail in case pyCrypto is not installed. we'll proceed anyway
+    import ssl_tls_crypto as crypto
+except ImportError, ie:
+    print repr(ie)
+    
 class BLenField(LenField):
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
         self.name = name
@@ -145,45 +150,50 @@ class EnumStruct(object):
         entries = dict((v.replace(' ','_').upper(),k) for k,v in entries.iteritems())
         self.__dict__.update(entries)
 
-TLS_VERSIONS = {  0x0002:"SSL_2_0",
-                  0x0300:"SSL_3_0",
-                  0x0301:"TLS_1_0",
-                  0x0302:"TLS_1_1",
-                  0x0303:"TLS_1_2",
-                  
-                  0x0100:"PROTOCOL_DTLS_1_0_OPENSSL_PRE_0_9_8f",
-                  0xfeff:"DTLS_1_0",
-                  0xfefd:"DTLS_1_1",
-                  }
+TLS_VERSIONS = {
+    # SSL
+    0x0002:"SSL_2_0",
+    0x0300:"SSL_3_0",
+    # TLS
+    0x0301:"TLS_1_0",
+    0x0302:"TLS_1_1",
+    0x0303:"TLS_1_2",
+    # DTLS
+    0x0100:"PROTOCOL_DTLS_1_0_OPENSSL_PRE_0_9_8f",
+    0xfeff:"DTLS_1_0",
+    0xfefd:"DTLS_1_1",
+    }
 TLSVersion = EnumStruct(TLS_VERSIONS)
 
-TLS_CONTENT_TYPES = ssl_tls_registry.TLS_CONTENTTYPE_REGISTRY
+TLS_CONTENT_TYPES = registry.TLS_CONTENTTYPE_REGISTRY
 TLSContentType = EnumStruct(TLS_CONTENT_TYPES)
 
-TLS_HANDSHAKE_TYPES = ssl_tls_registry.TLS_HANDSHAKETYPE_REGISTRY
+TLS_HANDSHAKE_TYPES = registry.TLS_HANDSHAKETYPE_REGISTRY
 TLSHandshakeType = EnumStruct(TLS_HANDSHAKE_TYPES)
 
-TLS_EXTENSION_TYPES = ssl_tls_registry.EXTENSIONTYPE_VALUES
+TLS_EXTENSION_TYPES = registry.EXTENSIONTYPE_VALUES
 TLS_EXTENSION_TYPES.update({0x3374:"next_protocol_negotiation"})    # manually add NPN as it is not in iana registry
 TLSExtensionType = EnumStruct(TLS_EXTENSION_TYPES)
 
-TLS_ALERT_LEVELS = { 0x01: "warning",
-                     0x02: "fatal",
-                     0xff: "unknown", }
+TLS_ALERT_LEVELS = {
+    0x01: "warning",
+    0x02: "fatal",
+    0xff: "unknown", 
+    }
 TLSAlertLevel = EnumStruct(TLS_ALERT_LEVELS)
 
-TLS_ALERT_DESCRIPTIONS = ssl_tls_registry.TLS_ALERT_REGISTRY
+TLS_ALERT_DESCRIPTIONS = registry.TLS_ALERT_REGISTRY
 TLSAlertDescription = EnumStruct(TLS_ALERT_DESCRIPTIONS)
 
 TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM = {
-                                    0x01: 2 ** 9,
-                                    0x02: 2 ** 10,
-                                    0x03: 2 ** 11,
-                                    0x04: 2 ** 12,
-                                    0xff: 'unknown',
-                                    }
+    0x01: 2 ** 9,
+    0x02: 2 ** 10,
+    0x03: 2 ** 11,
+    0x04: 2 ** 12,
+    0xff: 'unknown',
+    }
 
-TLS_CIPHER_SUITES = ssl_tls_registry.TLS_CIPHER_SUITE_REGISTRY
+TLS_CIPHER_SUITES = registry.TLS_CIPHER_SUITE_REGISTRY
 # adding missing ciphers
 TLS_CIPHER_SUITES.update({
     0x0060: 'RSA_EXPORT1024_WITH_RC4_56_MD5',
@@ -195,28 +205,32 @@ TLS_CIPHER_SUITES.update({
     0x0066: 'DHE_DSS_WITH_RC4_128_SHA'})
 TLSCipherSuite = EnumStruct(TLS_CIPHER_SUITES)
 
-TLS_COMPRESSION_METHODS = ssl_tls_registry.TLS_COMPRESSION_METHOD_IDENTIFIERS
+TLS_COMPRESSION_METHODS = registry.TLS_COMPRESSION_METHOD_IDENTIFIERS
 TLSCompressionMethod = EnumStruct(TLS_COMPRESSION_METHODS)
 
-TLS_CERT_CHAIN_TYPE = { 0x00: 'individual_certs',
-                    0x01: 'pkipath',
-                    0xff: 'unknown'}
+TLS_CERT_CHAIN_TYPE = {
+    0x00: 'individual_certs',
+    0x01: 'pkipath',
+    0xff: 'unknown',
+    }
 TLSCertChainType = EnumStruct(TLS_CERT_CHAIN_TYPE)
 
-TLS_HEARTBEAT_MODE = ssl_tls_registry.HEARTBEAT_MODES
+TLS_HEARTBEAT_MODE = registry.HEARTBEAT_MODES
 TLSHeartbeatMode = EnumStruct(TLS_HEARTBEAT_MODE)
 
-TLS_HEARTBEAT_MESSAGE_TYPE = ssl_tls_registry.HEARTBEAT_MESSAGE_TYPES
+TLS_HEARTBEAT_MESSAGE_TYPE = registry.HEARTBEAT_MESSAGE_TYPES
 TLSHeartbeatMessageType = EnumStruct(TLS_HEARTBEAT_MESSAGE_TYPE)
 
-TLS_TYPE_BOOLEAN = {0x00: 'false',
-                    0x01: 'true'}
+TLS_TYPE_BOOLEAN = {
+    0x00: 'false',
+    0x01: 'true',
+    }
 TLSTypeBoolean = EnumStruct(TLS_TYPE_BOOLEAN)
 
-TLS_EC_POINT_FORMATS = ssl_tls_registry.EC_POINT_FORMAT_REGISTRY
+TLS_EC_POINT_FORMATS = registry.EC_POINT_FORMAT_REGISTRY
 TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
     
-TLS_ELLIPTIC_CURVES = ssl_tls_registry.EC_NAMED_CURVE_REGISTRY
+TLS_ELLIPTIC_CURVES = registry.EC_NAMED_CURVE_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
 class TLSRecord(Packet):
@@ -514,7 +528,7 @@ class DTLSClientHello(Packet):
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]   
     
-SSLv2_CERTIFICATE_TYPES = { 0x01: 'x509'}
+SSLv2_CERTIFICATE_TYPES = { 0x01: 'x509' }
 SSLv2CertificateType = EnumStruct(SSLv2_CERTIFICATE_TYPES)
 
 class DTLSHelloVerify(Packet):
@@ -525,20 +539,22 @@ class DTLSHelloVerify(Packet):
                    ]
     
     
-SSLv2_MESSAGE_TYPES = {0x01:'client_hello',
-                       0x04: 'server_hello',
-                       0x02: 'client_master_key'}
+SSLv2_MESSAGE_TYPES = {
+    0x01:'client_hello',
+    0x04: 'server_hello',
+    0x02: 'client_master_key',
+    }
 SSLv2MessageType = EnumStruct(SSLv2_MESSAGE_TYPES)
 
 SSLv2_CIPHER_SUITES = {
-                        0x10080: 'RC4_128_WITH_MD5',
-                        0x20080: 'RC4_128_EXPORT40_WITH_MD5',
-                        0x40080: 'RC2_CBC_128_CBC_WITH_MD5',
-                        0x50080: 'IDEA_128_CBC_WITH_MD5',
-                        0x60040: 'DES_64_CBC_WITH_MD5',
-                        0x700c0: 'DES_192_EDE3_CBC_WITH_MD5',
-                        0x80080: 'RC4_64_WITH_MD5',
-}
+    0x10080: 'RC4_128_WITH_MD5',
+    0x20080: 'RC4_128_EXPORT40_WITH_MD5',
+    0x40080: 'RC2_CBC_128_CBC_WITH_MD5',
+    0x50080: 'IDEA_128_CBC_WITH_MD5',
+    0x60040: 'DES_64_CBC_WITH_MD5',
+    0x700c0: 'DES_192_EDE3_CBC_WITH_MD5',
+    0x80080: 'RC4_64_WITH_MD5',
+    }
 
 SSLv2CipherSuite = EnumStruct(SSLv2_CIPHER_SUITES)
 
