@@ -142,7 +142,7 @@ class PacketNoPadding(Packet):
     
 class EnumStruct(object):
     def __init__(self, entries):
-        entries = dict((v.upper(),k) for k,v in entries.iteritems())
+        entries = dict((v.replace(' ','_').upper(),k) for k,v in entries.iteritems())
         self.__dict__.update(entries)
 
 TLS_VERSIONS = {  0x0002:"SSL_2_0",
@@ -184,6 +184,15 @@ TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM = {
                                     }
 
 TLS_CIPHER_SUITES = ssl_tls_registry.TLS_CIPHER_SUITE_REGISTRY
+# adding missing ciphers
+TLS_CIPHER_SUITES.update({
+    0x0060: 'RSA_EXPORT1024_WITH_RC4_56_MD5',
+    0x0061: 'RSA_EXPORT1024_WITH_RC2_CBC_56_MD5',
+    0x0062: 'RSA_EXPORT1024_WITH_DES_CBC_SHA',
+    0x0063: 'DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA',
+    0x0064: 'RSA_EXPORT1024_WITH_RC4_56_SHA',
+    0x0065: 'DHE_DSS_EXPORT1024_WITH_RC4_56_SHA',
+    0x0066: 'DHE_DSS_WITH_RC4_128_SHA'})
 TLSCipherSuite = EnumStruct(TLS_CIPHER_SUITES)
 
 TLS_COMPRESSION_METHODS = ssl_tls_registry.TLS_COMPRESSION_METHOD_IDENTIFIERS
@@ -194,7 +203,7 @@ TLS_CERT_CHAIN_TYPE = { 0x00: 'individual_certs',
                     0xff: 'unknown'}
 TLSCertChainType = EnumStruct(TLS_CERT_CHAIN_TYPE)
 
-TLS_HEARTBEAT_MODE = HEARTBEAT_MODES
+TLS_HEARTBEAT_MODE = ssl_tls_registry.HEARTBEAT_MODES
 TLSHeartbeatMode = EnumStruct(TLS_HEARTBEAT_MODE)
 
 TLS_HEARTBEAT_MESSAGE_TYPE = ssl_tls_registry.HEARTBEAT_MESSAGE_TYPES
@@ -212,7 +221,7 @@ TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
 class TLSRecord(Packet):
     name = "TLS Record"
-    fields_desc = [ByteEnumField("content_type", TLSContentType.UNKNOWN, TLS_CONTENT_TYPES),
+    fields_desc = [ByteEnumField("content_type", TLSContentType.APPLICATION_DATA, TLS_CONTENT_TYPES),
                    XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
     
@@ -234,7 +243,7 @@ class TLSRecord(Packet):
 
 class TLSHandshake(Packet):
     name = "TLS Handshake"
-    fields_desc = [ByteEnumField("type", TLSHandshakeType.UNKNOWN, TLS_HANDSHAKE_TYPES),
+    fields_desc = [ByteEnumField("type", TLSHandshakeType.CLIENT_HELLO, TLS_HANDSHAKE_TYPES),
                    XBLenField("length", None, fmt="!I", numbytes=3), ]
 
 class TLSServerName(PacketNoPadding):
@@ -460,8 +469,8 @@ class TLSChangeCipherSpec(TLSDecryptablePacket):
 
 class TLSAlert(TLSDecryptablePacket):
     name = "TLS Alert"
-    fields_desc = [ ByteEnumField("level", TLSAlertLevel.UNKNOWN, TLS_ALERT_LEVELS),
-                    ByteEnumField("description", TLSAlertDescription.UNKNOWN, TLS_ALERT_DESCRIPTIONS),
+    fields_desc = [ ByteEnumField("level", TLSAlertLevel.WARNING, TLS_ALERT_LEVELS),
+                    ByteEnumField("description", TLSAlertDescription.CLOSE_NOTIFY, TLS_ALERT_DESCRIPTIONS),
                   ]
 
 class TLSCiphertext(Packet):
@@ -470,7 +479,7 @@ class TLSCiphertext(Packet):
 
 class DTLSRecord(Packet):
     name = "DTLS Record"
-    fields_desc = [ByteEnumField("content_type", TLSContentType.UNKNOWN, TLS_CONTENT_TYPES),
+    fields_desc = [ByteEnumField("content_type", TLSContentType.APPLICATION_DATA, TLS_CONTENT_TYPES),
                    XShortEnumField("version", TLSVersion.DTLS_1_0, TLS_VERSIONS),
                    ShortField("epoch", None),
                    XBLenField("sequence", None, fmt="!Q", numbytes=6),
@@ -805,7 +814,7 @@ bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':TLSHandshakeType.SERVER_
 bind_layers(TLSHandshake, TLSServerHelloDone, {'type':TLSHandshakeType.SERVER_HELLO_DONE})
 bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':TLSHandshakeType.CLIENT_KEY_EXCHANGE})
 bind_layers(TLSHandshake, TLSFinished, {'type':TLSHandshakeType.FINISHED})
-bind_layers(TLSHandshake, TLSSessionTicket, {'type':TLSHandshakeType.NEW_SESSION_TICKET})
+bind_layers(TLSHandshake, TLSSessionTicket, {'type':TLSHandshakeType.NEWSESSIONTICKET})
 # <---
 
 bind_layers(TLSServerKeyExchange, TLSKexParamDH)
@@ -820,7 +829,7 @@ bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.ELLIPT
 bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
 # bind_layers(TLSExtension,Raw,{'type': 0x0023})
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
-bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSION_TICKET_TLS})
+bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSIONTICKET_TLS})
 bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type':TLSExtensionType.RENEGOTIATION_INFO})
 # <--
 
