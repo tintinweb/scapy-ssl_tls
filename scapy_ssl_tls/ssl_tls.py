@@ -12,11 +12,6 @@ from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
 
 import ssl_tls_registry as registry
-try:
-    # may fail in case pyCrypto is not installed. we'll proceed anyway
-    import ssl_tls_crypto as crypto
-except ImportError, ie:
-    print repr(ie)
     
 class BLenField(LenField):
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
