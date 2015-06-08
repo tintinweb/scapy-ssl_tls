@@ -548,7 +548,7 @@ class TLSDecryptablePacket(Packet):
             if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
                 try:
                     self.padding_len = ord(raw_bytes[-1])
-                    self.padding = raw_bytes[-self.padding_len - 1:-2]
+                    self.padding = raw_bytes[-self.padding_len - 1:-1]
                     self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
                     data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
@@ -565,7 +565,7 @@ class TLSPlaintext(TLSDecryptablePacket):
 
 class TLSChangeCipherSpec(TLSDecryptablePacket):
     name = "TLS ChangeCipherSpec"
-    fields_desc = [ StrField("message", '\x01', fmt="H")]
+    fields_desc = [ StrField("message", '\x01', fmt="H") ]
 
 class TLSAlert(TLSDecryptablePacket):
     name = "TLS Alert"
