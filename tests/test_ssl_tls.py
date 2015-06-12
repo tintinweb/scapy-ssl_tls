@@ -572,7 +572,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
                                                                                       tls.TLSCertificate(data=x509.X509Cert(self.der_cert)),
                                                                                       tls.TLSCertificate(data=x509.X509Cert(self.der_cert))])
 
-        self.assertEqual(len(pkt[tls.TLSCertificateList].certificate), 3)
+        self.assertEqual(len(pkt[tls.TLSCertificateList].certificates), 3)
         
         for tlscert in pkt[tls.TLSCertificateList].certificates:
             self.assertEqual(str(tlscert.data), self.der_cert)
@@ -583,7 +583,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         
         # serialize and dissect the same packet
         pkt_d = tls.SSL(str(pkt))
-        self.assertEqual(len(pkt_d[tls.TLSCertificateList].certificate), 3)
+        self.assertEqual(len(pkt_d[tls.TLSCertificateList].certificates), 3)
         
         for tlscert in pkt_d[tls.TLSCertificateList].certificates:
             self.assertEqual(str(tlscert.data), self.der_cert)
