@@ -5,6 +5,7 @@ from __future__ import with_statement
 from __future__ import print_function
 import socket
 import sys
+from scapy.all import conf
 from scapy_ssl_tls.ssl_tls import *
 from scapy_ssl_tls.ssl_tls_crypto import *
 
