@@ -140,6 +140,30 @@ class PacketNoPadding(Packet):
     def extract_padding(self, s):
         return '', s
     
+class StackedLenPacket(Packet):
+    ''' Allows stacked packets. Tries to fetch payload.length and chops packets
+    '''
+    def do_dissect_payload(self, s):
+        # prototype for this layer. only layers of same type can be stacked
+        cls = self.guess_payload_class(s)
+        cls_header_len = len(cls())
+        # dissect potentially stacked sublayers.
+        while len(s):
+            # dissect raw_bytes s
+            p = cls(s, _internal=1, _underlayer=self)
+            s_len = len(s)
+            try:
+                # if there is a length field, chop the stream, add the payload
+                # otherwise we'll consume the full length and return
+                if p.length <= s_len:
+                    p = cls(s[:cls_header_len+p.length], _internal=1, _underlayer=self)
+                    s_len = cls_header_len+p.length
+            except AttributeError, ae:
+                # e.g. TLSChangeCipherSpec might land here
+                pass
+            self.add_payload(p)
+            s = s[s_len:]  
+
 class EnumStruct(object):
     def __init__(self, entries):
         entries = dict((v.replace(' ','_').upper(),k) for k,v in entries.iteritems())
@@ -228,27 +252,24 @@ TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
 TLS_ELLIPTIC_CURVES = registry.EC_NAMED_CURVE_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
-class TLSRecord(Packet):
+class TLSRecord(StackedLenPacket):
     name = "TLS Record"
     fields_desc = [ByteEnumField("content_type", TLSContentType.APPLICATION_DATA, TLS_CONTENT_TYPES),
                    XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
     
-    def do_dissect_payload(self, s):
-        # this is basically what scapy does + sensing for ciphertexts
-        cls = self.guess_payload_class(s)
-        p = cls(s, _internal=1, _underlayer=self)
-        # check sublayer sanity to distingiush wrong layers from Ciphertext
+    def guess_payload_class(self, payload):
+        ''' Sense for ciphertext
+        '''
+        cls = StackedLenPacket.guess_payload_class(self, payload)
+        p = cls(payload, _internal=1, _underlayer=self)
         try:
-            # Raw sublayers to TLSRecords are most likely TLSCipherText 
-            # Bogus layers have invalid length fields. most likely an encrypted Handshake
-            if cls == Raw().__class__ or p.length > len(s) :
+            if cls == Raw().__class__ or p.length > len(payload) :
                 # length does not fit len raw_bytes, assume its corrupt or encrypted
-                p = TLSCiphertext(s, _internal=1, _underlayer=self)
-        except AttributeError, ae:
-            # e.g. TLSChangeCipherSpec might land here
+                cls = TLSCiphertext
+        except AttributeError:
             pass
-        self.add_payload(p)
+        return cls
 
 class TLSHandshake(Packet):
     name = "TLS Handshake"
@@ -419,7 +440,7 @@ class TLSServerHelloDone(Packet):
     fields_desc = [ XBLenField("length", None, fmt="!I", numbytes=3),
                     StrLenField("data", "", length_from=lambda x:x.length), ]
     
-class TLSCertificate(Packet):
+class TLSCertificate(PacketNoPadding):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
                     PacketLenField("data", None, x509.X509Cert, length_from=lambda x:x.length),]
@@ -664,6 +685,8 @@ class TLSSocket(object):
         records = TLS("".join(resp), ctx=self.tls_ctx)
         self.tls_ctx.insert(records)
         return records
+
+
 
 # entry class
 class SSL(Packet):
