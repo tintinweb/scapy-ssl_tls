@@ -105,9 +105,9 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         with self.assertRaises(ValueError):
             tls_ctx.get_encrypted_pms()
 
-    def test_random_pms_is_generated_on_client_hello(self):
+    def test_random_pms_is_generated_on_server_hello(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientHello(version=0x0301)
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(version=0x0301)
         tls_ctx.insert(pkt)
         self.assertIsNotNone(tls_ctx.crypto.session.premaster_secret)
 
@@ -131,9 +131,9 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         tls_ctx.rsa_load_keys(self.pem_priv_key)
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientHello()
         tls_ctx.insert(pkt)
-        epms = tls_ctx.get_encrypted_pms()
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello()
         tls_ctx.insert(pkt)
+        epms = tls_ctx.get_encrypted_pms()
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/epms
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.crypto.session.encrypted_premaster_secret, epms)
