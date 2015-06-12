@@ -107,16 +107,16 @@ def read(fname):
 
 setup(
     name="scapy-ssl_tls",
-    version="1.1",
+    version="1.2",
     packages=["scapy_ssl_tls"],
     author="tintinweb",
     author_email="tintinweb@oststrom.com",
     description=(
         "An SSL/TLS layer for scapy the interactive packet manipulation tool"),
     license="GPLv2",
-    keywords=["scapy", "ssl", "tls", "network", "dissect", "packets", "decrypt"],
+    keywords=["scapy", "ssl", "tls", "layer", "network", "dissect", "packets", "decrypt"],
     url="https://github.com/tintinweb/scapy-ssl_tls/",
-    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.1",
+    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.2",
     long_description=read("README.md"),
     install_requires=["scapy", "pycrypto"],
     test_suite="nose.collector",
