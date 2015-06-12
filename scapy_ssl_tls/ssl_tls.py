@@ -141,7 +141,7 @@ class PacketNoPadding(Packet):
         return '', s
     
 class StackedLenPacket(Packet):
-    ''' Allows stacked packets. Tries to fetch payload.length and chops packets
+    ''' Allows stacked packets. Tries to chop layers by layer.length
     '''
     def do_dissect_payload(self, s):
         # prototype for this layer. only layers of same type can be stacked
@@ -159,7 +159,6 @@ class StackedLenPacket(Packet):
                     p = cls(s[:cls_header_len+p.length], _internal=1, _underlayer=self)
                     s_len = cls_header_len+p.length
             except AttributeError, ae:
-                # e.g. TLSChangeCipherSpec might land here
                 pass
             self.add_payload(p)
             s = s[s_len:]  
@@ -268,6 +267,7 @@ class TLSRecord(StackedLenPacket):
                 # length does not fit len raw_bytes, assume its corrupt or encrypted
                 cls = TLSCiphertext
         except AttributeError:
+            # e.g. TLSChangeCipherSpec might land here
             pass
         return cls
 
