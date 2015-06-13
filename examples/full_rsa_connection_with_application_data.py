@@ -10,7 +10,7 @@ from scapy_ssl_tls.ssl_tls import *
 from scapy_ssl_tls.ssl_tls_crypto import *
 
 def tls_hello(sock):
-    client_hello = TLSRecord(version="TLS_1_0")/TLSHandshake()/TLSClientHello(version="TLS_1_0", compression_methods=[0],
+    client_hello = TLSRecord(version="TLS_1_1")/TLSHandshake()/TLSClientHello(version="TLS_1_1", compression_methods=[0],
                                                                               cipher_suites=(TLSCipherSuite.RSA_WITH_RC4_128_SHA))
     sock.sendall(client_hello)
     server_hello = sock.recvall()
@@ -40,8 +40,6 @@ def tls_client(ip, priv_key=None):
         resp = sock.recvall()
         print("Got response from server")
         resp.show()
-        close_notify = sock.sendall(to_raw(TLSAlert(level=TLSAlertLevel.WARNING, description=TLSAlertDescription.CLOSE_NOTIFY), sock.tls_ctx))
-        print("Sending close notify to tear down connection")
     finally:
         sock.close()
 

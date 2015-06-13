@@ -319,12 +319,13 @@ class TLSSessionCtx(object):
                 if self.crypto.server.rsa.privkey is not None:
                     self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
 
-                if self.params.negotiated.key_exchange == "RSA":
-                        self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
-                                                                self.crypto.session.premaster_secret, 
-                                                                self.crypto.session.randombytes.client,
-                                                                self.crypto.session.randombytes.server)
-                        self._assign_crypto_material(self.sec_params)
+                explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
+                self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
+                                                        self.crypto.session.premaster_secret,
+                                                        self.crypto.session.randombytes.client,
+                                                        self.crypto.session.randombytes.server,
+                                                        explicit_iv)
+                self._assign_crypto_material(self.sec_params)
 
     def _assign_crypto_material(self, sec_params):
         self.crypto.session.key.length.mac = sec_params.negotiated_crypto_param["hash"]["type"].digest_size
@@ -492,7 +493,11 @@ class CryptoContainer(object):
         if tls_ctx is None:
             raise ValueError("Valid TLS session context required")
         self.tls_ctx = tls_ctx
-        self.data = data
+        is_cbc = self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None
+        if self.tls_ctx.params.negotiated.version > tls.TLSVersion.TLS_1_0 and is_cbc:
+            self.data = "%s%s" % (os.urandom(self.tls_ctx.crypto.session.key.length.iv), data)
+        else:
+            self.data = data
         self.version = tls_ctx.params.negotiated.version
         self.content_type = content_type
         self.pkcs7 = pkcs7.PKCS7Encoder()
@@ -509,7 +514,7 @@ class CryptoContainer(object):
             tls_ctx.crypto.session.key.server.seq_num += 1
         # CBC mode
         self.hmac()
-        if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
+        if is_cbc:
             self.pad()
         # No padding otherwise
         else:
@@ -638,7 +643,7 @@ class TLSSecurityParameters(object):
 #         ECDH_ECDSA_WITH_AES_256_CBC_SHA = 0xc005
 #         TLS_FALLBACK_SCSV = 0x5600
 
-    def __init__(self, cipher_suite, pms, client_random, server_random):
+    def __init__(self, cipher_suite, pms, client_random, server_random, explicit_iv=True):
         """ /!\ This class is not thread safe
         """
         try:
@@ -656,8 +661,9 @@ class TLSSecurityParameters(object):
         self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
         self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
         self.iv_length = self.negotiated_crypto_param["cipher"]["type"].block_size
+        self.explicit_iv = explicit_iv
         self.prf = TLSPRF(SHA256)
-        self.__init_crypto(pms, client_random, server_random)
+        self.__init_crypto(pms, client_random, server_random, explicit_iv)
     
     def get_client_hmac(self):
         return self.__client_hmac
@@ -677,7 +683,7 @@ class TLSSecurityParameters(object):
     def get_client_dec_cipher(self):
         return self.__client_dec_cipher
 #         
-    def __init_key_material(self, data):
+    def __init_key_material(self, data, explicit_iv):
         i = 0
         self.client_write_MAC_key = data[i:i+self.mac_key_length]
         i += self.mac_key_length
@@ -687,12 +693,16 @@ class TLSSecurityParameters(object):
         i += self.cipher_key_length
         self.server_write_key = data[i:i+self.cipher_key_length]
         i += self.cipher_key_length
-        self.client_write_IV = data[i:i+self.iv_length]
-        i += self.iv_length
-        self.server_write_IV = data[i:i+self.iv_length]
-        i += self.iv_length
+        if explicit_iv:
+            self.client_write_IV = data[i:i+self.iv_length]
+            i += self.iv_length
+            self.server_write_IV = data[i:i+self.iv_length]
+            i += self.iv_length
+        else:
+            self.client_write_IV = None
+            self.server_write_IV = None
         
-    def __init_crypto(self, pms, client_random, server_random):
+    def __init_crypto(self, pms, client_random, server_random, explicit_iv):
         self.master_secret = self.prf.prf_numbytes(pms,
                                                    TLSPRF.TLS_MD_MASTER_SECRET_CONST,
                                                    client_random + server_random, 
@@ -701,7 +711,7 @@ class TLSSecurityParameters(object):
                                           TLSPRF.TLS_MD_KEY_EXPANSION_CONST, 
                                           server_random + client_random, 
                                           numbytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
-        self.__init_key_material(key_block)
+        self.__init_key_material(key_block, explicit_iv)
         cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
         cipher_type = self.negotiated_crypto_param["cipher"]["type"]
         hash_type = self.negotiated_crypto_param["hash"]["type"]
