@@ -9,16 +9,18 @@ from scapy.all import conf
 from scapy_ssl_tls.ssl_tls import *
 from scapy_ssl_tls.ssl_tls_crypto import *
 
+tls_version = TLSVersion.TLS_1_1
+
 def tls_hello(sock):
-    client_hello = TLSRecord(version="TLS_1_1")/TLSHandshake()/TLSClientHello(version="TLS_1_1", compression_methods=[0],
-                                                                              cipher_suites=(TLSCipherSuite.RSA_WITH_RC4_128_SHA))
+    client_hello = TLSRecord(version=tls_version)/TLSHandshake()/TLSClientHello(version=tls_version, compression_methods=[0],
+                                                                            cipher_suites=(TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA))
     sock.sendall(client_hello)
     server_hello = sock.recvall()
     server_hello.show()
 
 def tls_client_key_exchange(sock):
-    client_key_exchange = TLSRecord()/TLSHandshake()/TLSClientKeyExchange()/sock.tls_ctx.get_encrypted_pms()
-    client_ccs = TLSRecord()/TLSChangeCipherSpec()
+    client_key_exchange = TLSRecord(version=tls_version)/TLSHandshake()/TLSClientKeyExchange()/sock.tls_ctx.get_encrypted_pms()
+    client_ccs = TLSRecord(version=tls_version)/TLSChangeCipherSpec()
     sock.sendall(TLS.from_records([client_key_exchange, client_ccs]))
     sock.sendall(to_raw(TLSFinished(), sock.tls_ctx))
     server_finished = sock.recvall()
