@@ -413,7 +413,7 @@ class TLSClientKeyExchange(Packet):
     fields_desc = [ XBLenField("length", None, fmt="!H",) ]
     
 class TLSServerKeyExchange(Packet):
-    name = "TLS Client Key Exchange"
+    name = "TLS Server Key Exchange"
     fields_desc = [ XBLenField("length", None, fmt="!H") ]
 
 class TLSKexParamDH(Packet):
