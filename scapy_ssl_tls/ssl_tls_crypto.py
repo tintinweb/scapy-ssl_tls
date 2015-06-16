@@ -284,7 +284,9 @@ class TLSSessionCtx(object):
                     # fetch randombytes for crypto stuff
                     if not self.crypto.session.randombytes.client:
                         self.crypto.session.randombytes.client = struct.pack("!I", p[tls.TLSClientHello].gmt_unix_time) + p[tls.TLSClientHello].random_bytes
-
+                    # Generate a random PMS. Overriden at decryption time if private key is provided
+                    if self.crypto.session.premaster_secret is None:
+                        self.crypto.session.premaster_secret = self._generate_random_pms(self.params.negotiated.version)
             if p.haslayer(tls.TLSServerHello):
                 if not self.params.handshake.server:
                     self.params.handshake.server = p[tls.TLSServerHello]
@@ -292,9 +294,6 @@ class TLSSessionCtx(object):
                     #fetch randombytes
                     if not self.crypto.session.randombytes.server:
                         self.crypto.session.randombytes.server = struct.pack("!I", p[tls.TLSServerHello].gmt_unix_time) + p[tls.TLSServerHello].random_bytes
-                    # Generate a random PMS. Overriden at decryption time if private key is provided
-                    if self.crypto.session.premaster_secret is None:
-                        self.crypto.session.premaster_secret = self._generate_random_pms(self.params.negotiated.version)
                 # negotiated params
                 if not self.params.negotiated.ciphersuite:
                     self.params.negotiated.ciphersuite = p[tls.TLSServerHello].cipher_suite
