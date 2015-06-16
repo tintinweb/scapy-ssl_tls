@@ -319,12 +319,13 @@ class TLSSessionCtx(object):
                 if self.crypto.server.rsa.privkey is not None:
                     self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
 
-                if self.params.negotiated.key_exchange == "RSA":
-                        self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
-                                                                self.crypto.session.premaster_secret, 
-                                                                self.crypto.session.randombytes.client,
-                                                                self.crypto.session.randombytes.server)
-                        self._assign_crypto_material(self.sec_params)
+                explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
+                self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
+                                                        self.crypto.session.premaster_secret,
+                                                        self.crypto.session.randombytes.client,
+                                                        self.crypto.session.randombytes.server,
+                                                        explicit_iv)
+                self._assign_crypto_material(self.sec_params)
 
     def _assign_crypto_material(self, sec_params):
         self.crypto.session.key.length.mac = sec_params.negotiated_crypto_param["hash"]["type"].digest_size
@@ -492,24 +493,29 @@ class CryptoContainer(object):
         if tls_ctx is None:
             raise ValueError("Valid TLS session context required")
         self.tls_ctx = tls_ctx
+        is_cbc = self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None
+        if self.tls_ctx.params.negotiated.version > tls.TLSVersion.TLS_1_0 and is_cbc:
+            self.explicit_iv = os.urandom(self.tls_ctx.crypto.session.key.length.iv)
+        else:
+            self.explicit_iv = ""
         self.data = data
         self.version = tls_ctx.params.negotiated.version
         self.content_type = content_type
         self.pkcs7 = pkcs7.PKCS7Encoder()
-        if tls_ctx.client:
+        if self.tls_ctx.client:
             # TODO: Needs concurrent safety if this ever goes concurrent
             self.hmac_handler = tls_ctx.crypto.client.hmac
             self.enc_cipher = tls_ctx.crypto.client.enc
             self.seq_number = tls_ctx.crypto.session.key.client.seq_num
-            tls_ctx.crypto.session.key.client.seq_num += 1
+            self.tls_ctx.crypto.session.key.client.seq_num += 1
         else:
             self.hmac_handler = tls_ctx.crypto.server.hmac
             self.enc_cipher = tls_ctx.crypto.server.enc
             self.seq_number = tls_ctx.crypto.session.key.server.seq_num
-            tls_ctx.crypto.session.key.server.seq_num += 1
+            self.tls_ctx.crypto.session.key.server.seq_num += 1
         # CBC mode
         self.hmac()
-        if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
+        if is_cbc:
             self.pad()
         # No padding otherwise
         else:
@@ -533,7 +539,7 @@ class CryptoContainer(object):
 
     def __str__(self):
         if len(self.padding) != 0:
-            return "%s%s%s%s" % (self.data, self.mac, self.padding, chr(len(self.padding)))
+            return "%s%s%s%s%s" % (self.explicit_iv, self.data, self.mac, self.padding, chr(len(self.padding)))
         else:
             return "%s%s%s" % (self.data, self.mac, self.padding)
 
@@ -638,7 +644,7 @@ class TLSSecurityParameters(object):
 #         ECDH_ECDSA_WITH_AES_256_CBC_SHA = 0xc005
 #         TLS_FALLBACK_SCSV = 0x5600
 
-    def __init__(self, cipher_suite, pms, client_random, server_random):
+    def __init__(self, cipher_suite, pms, client_random, server_random, explicit_iv=False):
         """ /!\ This class is not thread safe
         """
         try:
@@ -656,8 +662,9 @@ class TLSSecurityParameters(object):
         self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
         self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
         self.iv_length = self.negotiated_crypto_param["cipher"]["type"].block_size
+        self.explicit_iv = explicit_iv
         self.prf = TLSPRF(SHA256)
-        self.__init_crypto(pms, client_random, server_random)
+        self.__init_crypto(pms, client_random, server_random, explicit_iv)
     
     def get_client_hmac(self):
         return self.__client_hmac
@@ -666,18 +673,30 @@ class TLSSecurityParameters(object):
         return self.__server_hmac
     
     def get_server_enc_cipher(self):
-        return self.__server_enc_cipher
+        if self.explicit_iv and self.cipher_mode is not None:
+            return self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
+        else:
+            return self.__server_enc_cipher
     
     def get_server_dec_cipher(self):
-        return self.__server_dec_cipher
+        if self.explicit_iv and self.cipher_mode is not None:
+            return self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
+        else:
+            return self.__server_dec_cipher
     
     def get_client_enc_cipher(self):
-        return self.__client_enc_cipher
+        if self.explicit_iv and self.cipher_mode is not None:
+            return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
+        else:
+            return self.__client_enc_cipher
     
     def get_client_dec_cipher(self):
-        return self.__client_dec_cipher
+        if self.explicit_iv and self.cipher_mode is not None:
+            return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
+        else:
+            return self.__client_dec_cipher
 #         
-    def __init_key_material(self, data):
+    def __init_key_material(self, data, explicit_iv):
         i = 0
         self.client_write_MAC_key = data[i:i+self.mac_key_length]
         i += self.mac_key_length
@@ -687,12 +706,16 @@ class TLSSecurityParameters(object):
         i += self.cipher_key_length
         self.server_write_key = data[i:i+self.cipher_key_length]
         i += self.cipher_key_length
-        self.client_write_IV = data[i:i+self.iv_length]
-        i += self.iv_length
-        self.server_write_IV = data[i:i+self.iv_length]
-        i += self.iv_length
+        if explicit_iv:
+            self.client_write_IV = "\x00"*self.iv_length
+            self.server_write_IV = "\x00"*self.iv_length
+        else:
+            self.client_write_IV = data[i:i+self.iv_length]
+            i += self.iv_length
+            self.server_write_IV = data[i:i+self.iv_length]
+            i += self.iv_length
         
-    def __init_crypto(self, pms, client_random, server_random):
+    def __init_crypto(self, pms, client_random, server_random, explicit_iv):
         self.master_secret = self.prf.prf_numbytes(pms,
                                                    TLSPRF.TLS_MD_MASTER_SECRET_CONST,
                                                    client_random + server_random, 
@@ -701,24 +724,24 @@ class TLSSecurityParameters(object):
                                           TLSPRF.TLS_MD_KEY_EXPANSION_CONST, 
                                           server_random + client_random, 
                                           numbytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
-        self.__init_key_material(key_block)
-        cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
-        cipher_type = self.negotiated_crypto_param["cipher"]["type"]
-        hash_type = self.negotiated_crypto_param["hash"]["type"]
+        self.__init_key_material(key_block, explicit_iv)
+        self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
+        self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
+        self.hash_type = self.negotiated_crypto_param["hash"]["type"]
         # Block ciphers
-        if cipher_mode is not None:
-            self.__client_enc_cipher = cipher_type.new(self.client_write_key, mode=cipher_mode, IV=self.client_write_IV)
-            self.__client_dec_cipher = cipher_type.new(self.client_write_key, mode=cipher_mode, IV=self.client_write_IV)
-            self.__server_enc_cipher = cipher_type.new(self.server_write_key, mode=cipher_mode, IV=self.server_write_IV)
-            self.__server_dec_cipher = cipher_type.new(self.server_write_key, mode=cipher_mode, IV=self.server_write_IV)
+        if self.cipher_mode is not None:
+            self.__client_enc_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
+            self.__client_dec_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
+            self.__server_enc_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
+            self.__server_dec_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
         # Stream ciphers
         else:
-            self.__client_enc_cipher = cipher_type.new(self.client_write_key)
-            self.__client_dec_cipher = cipher_type.new(self.client_write_key)
-            self.__server_enc_cipher = cipher_type.new(self.server_write_key)
-            self.__server_dec_cipher = cipher_type.new(self.server_write_key)
-        self.__client_hmac = HMAC.new(self.client_write_MAC_key, digestmod=hash_type)
-        self.__server_hmac = HMAC.new(self.server_write_MAC_key, digestmod=hash_type)
+            self.__client_enc_cipher = self.cipher_type.new(self.client_write_key)
+            self.__client_dec_cipher = self.cipher_type.new(self.client_write_key)
+            self.__server_enc_cipher = self.cipher_type.new(self.server_write_key)
+            self.__server_dec_cipher = self.cipher_type.new(self.server_write_key)
+        self.__client_hmac = HMAC.new(self.client_write_MAC_key, digestmod=self.hash_type)
+        self.__server_hmac = HMAC.new(self.server_write_MAC_key, digestmod=self.hash_type)
 
     def __str__(self):
         s=[]

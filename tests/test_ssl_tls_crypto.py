@@ -216,7 +216,14 @@ class TestTLSSecurityParameters(unittest.TestCase):
         client_hmac = sec_params.get_client_hmac()
         client_hmac.update("some secret")
         self.assertEqual(client_hmac.hexdigest(), HMAC.new(sec_params.client_write_MAC_key, "some secret", digestmod=SHA).hexdigest())
-  
+
+    def test_tls_1_1_and_above_iv_is_null(self):
+        # RSA_WITH_AES_128_CBC_SHA
+        cipher_suite = 0x2f
+        sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random, self.server_random, explicit_iv=True)
+        self.assertEqual(sec_params.client_write_IV, "\x00"*16)
+        self.assertEqual(sec_params.server_write_IV, "\x00"*16)
+
 class TestNullCompression(unittest.TestCase):
 
     def test_null_compression_returns_input_on_compress(self):
@@ -248,6 +255,10 @@ class TestTLSCompressionParameters(unittest.TestCase):
 class TestCryptoContainer(unittest.TestCase):
 
     def setUp(self):
+        self._do_kex(tls.TLSVersion.TLS_1_0)
+        unittest.TestCase.setUp(self)
+
+    def _do_kex(self, version):
         self.pem_priv_key = """-----BEGIN PRIVATE KEY-----
 MIIEwAIBADANBgkqhkiG9w0BAQEFAASCBKowggSmAgEAAoIBAQDDLrmt4lKRpm6P
 2blptwJsa1EBuxuuAayLjwNqKGvm5c1CAUEa/NtEpUMM8WYKRDwxzakUIGI/BdP3
@@ -285,20 +296,18 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.tls_ctx.rsa_load_keys(self.pem_priv_key)
         # SSLv2
         self.record_version = 0x0002
-        # TLSv1.0
-        self.hello_version = 0x0301
+        self.version = version
         # RSA_WITH_AES_128_SHA
-        self.cipher_suite = 0x2f
+        self.cipher_suite = tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA
         # DEFLATE
-        self.comp_method = 0x1
-        self.client_hello = tls.TLSRecord(version=self.record_version)/tls.TLSHandshake()/tls.TLSClientHello(version=self.hello_version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])
+        self.comp_method = tls.TLSCompressionMethod.NULL
+        self.client_hello = tls.TLSRecord(version=self.record_version)/tls.TLSHandshake()/tls.TLSClientHello(version=version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])
         self.tls_ctx.insert(self.client_hello)
-        self.server_hello = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSServerHello(version=self.hello_version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
+        self.server_hello = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSServerHello(version=version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSClientKeyExchange()/self.tls_ctx.get_encrypted_pms()
+        self.client_kex = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSClientKeyExchange()/self.tls_ctx.get_encrypted_pms()
         self.tls_ctx.insert(self.client_kex)
-        unittest.TestCase.setUp(self)
 
     def test_crypto_container_increments_sequence_number(self):
         client_seq_num = self.tls_ctx.crypto.session.key.client.seq_num
@@ -338,6 +347,20 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         initial_mac = crypto_container.mac
         crypto_container.hmac(data_len=1024)
         self.assertNotEqual(initial_mac, crypto_container.mac)
+
+    def test_tls_1_1_and_above_has_a_random_explicit_iv_with_block_cipher(self):
+        data = b"C"*102
+        self._do_kex(tls.TLSVersion.TLS_1_1)
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        self.assertNotEqual(crypto_container.explicit_iv, "")
+        self.assertEqual(len(crypto_container.explicit_iv), AES.block_size)
+        self.assertTrue(str(crypto_container).startswith(crypto_container.explicit_iv))
+
+    def test_tls_1_0_and_below_has_no_explicit_iv(self):
+        data = b"C"*102
+        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        self.assertEqual(crypto_container.explicit_iv, "")
+        self.assertTrue(str(crypto_container).startswith(data))
 
 if __name__ == "__main__":
     unittest.main()

@@ -454,6 +454,7 @@ class TLSCertificateList(Packet):
 
 class TLSDecryptablePacket(Packet):
 
+    explicit_iv_field = StrField("explicit_iv", "", fmt="H")
     mac_field = StrField("mac", "", fmt="H")
     padding_field = StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len)
     padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False )
@@ -463,6 +464,9 @@ class TLSDecryptablePacket(Packet):
         try:
             self.tls_ctx = fields["ctx"]
             del(fields["ctx"])
+            self.above_tls10 = self.tls_ctx.params.negotiated.version > TLSVersion.TLS_1_0
+            if self.explicit_iv_field not in self.fields_desc and self.above_tls10:
+                self.fields_desc.append(self.explicit_iv_field)
             for field in self.decryptable_fields:
                 if field not in self.fields_desc:
                     self.fields_desc.append(field)
@@ -474,13 +478,18 @@ class TLSDecryptablePacket(Packet):
         data = raw_bytes
         if self.tls_ctx is not None:
             hash_size = self.tls_ctx.sec_params.mac_key_length
+            iv_size = self.tls_ctx.sec_params.iv_length
             # CBC mode
             if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
                 try:
                     self.padding_len = ord(raw_bytes[-1])
                     self.padding = raw_bytes[-self.padding_len - 1:-1]
                     self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
-                    data = raw_bytes[:-self.padding_len - hash_size - 1]
+                    if self.above_tls10:
+                        self.explicit_iv = raw_bytes[:iv_size]
+                        data = raw_bytes[iv_size:-self.padding_len - hash_size - 1]
+                    else:
+                        data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
                     data = raw_bytes
             else:

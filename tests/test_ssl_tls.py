@@ -8,7 +8,7 @@ import unittest
 import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
 
-from Crypto.Cipher import PKCS1_v1_5
+from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.Hash import MD5, SHA
 from Crypto.PublicKey import RSA
 from scapy.all import conf, rdpcap
@@ -44,7 +44,6 @@ class TestTLSRecord(unittest.TestCase):
         
     def test_pkt_built_from_stacked_tls_handshakes_is_identical(self):
         # issue #28
-        self.stacked_handshake.show()
         # layers are present
         self.assertTrue(self.stacked_handshake.haslayer(tls.TLSRecord))
         self.assertTrue(self.stacked_handshake.haslayer(tls.TLSHandshake))
@@ -155,6 +154,14 @@ class TestTLSDecryptablePacket(unittest.TestCase):
             records[tls.TLSChangeCipherSpec].mac
             records[tls.TLSChangeCipherSpec].padding
 
+    def test_tls_1_1_packet_does_not_contain_mac_or_padding_if_not_received_encrypted(self):
+        pkt = tls.TLSRecord(version=tls.TLSVersion.TLS_1_1)/tls.TLSChangeCipherSpec()
+        records = tls.TLS(str(pkt))
+        with self.assertRaises(AttributeError):
+            records[tls.TLSChangeCipherSpec].explicit_iv
+            records[tls.TLSChangeCipherSpec].mac
+            records[tls.TLSChangeCipherSpec].padding
+
     def test_session_context_is_removed_from_scapy_on_init(self):
         pkt = tls.TLSRecord()/tls.TLSAlert()
         records = tls.TLS(str(pkt), ctx=tlsc.TLSSessionCtx())
@@ -177,6 +184,17 @@ class TestTLSDecryptablePacket(unittest.TestCase):
         self.assertEqual(ord("\x03"), records[tls.TLSAlert].padding_len)
         self.assertEqual("\x03"*3, records[tls.TLSAlert].padding)
         self.assertEqual("B"*SHA.digest_size, records[tls.TLSAlert].mac)
+
+    def test_explicit_iv_is_added_for_tls_1_1_if_session_context_is_provided(self):
+        data = "%s%s%s%s" % ("C"*AES.block_size, "A"*2, "B"*SHA.digest_size, "\x03"*4)
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.params.negotiated.version = tls.TLSVersion.TLS_1_1
+        tls_ctx.sec_params = tlsc.TLSSecurityParameters(tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA, "A"*48, "B"*32, "C"*32, True)
+        records = tls.TLSAlert(data, ctx=tls_ctx)
+        self.assertEqual(ord("\x03"), records[tls.TLSAlert].padding_len)
+        self.assertEqual("\x03"*3, records[tls.TLSAlert].padding)
+        self.assertEqual("B"*SHA.digest_size, records[tls.TLSAlert].mac)
+        self.assertEqual("C"*AES.block_size, records[tls.TLSAlert].explicit_iv)
 
 class TestTLSClientHello(unittest.TestCase):
     
