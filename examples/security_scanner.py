@@ -10,6 +10,7 @@ An example implementation of a passive TLS security scanner with custom starttls
     
 '''
 import sys, os
+import concurrent.futures
 try:
     import scapy.all as scapy
 except ImportError:
@@ -39,7 +40,6 @@ class TCPConnection(object):
                 break
             except socket.error, se:
                 print "- connection retry %s: %s"%(t,repr(target))
-                self._s=None
                 last_exception = se
         if not self._s:
             raise se
@@ -173,6 +173,8 @@ class TLSInfo(object):
         self._process(pkt, client=client)
     
     def _process(self, pkt, client=None):
+        if pkt is None:
+            return
         if not pkt.haslayer(SSL) and not pkt.haslayer(TLSRecord):
             return
         
@@ -212,7 +214,8 @@ class TLSInfo(object):
             self.history.append(pkt)
 
 class TLSScanner(object):
-    def __init__(self):
+    def __init__(self, workers=10):
+        self.workers = workers
         self.capabilities = TLSInfo()
     
     def scan(self, target, starttls=None):
@@ -225,43 +228,57 @@ class TLSScanner(object):
             # prepare pkt
             pkt = TLSRecord()/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_1, cipher_suites=range(0xfe)[::-1], compression_methods=comp)
             # connect
+            try:
+                t = TCPConnection(target)
+                t.sendall(pkt)
+                resp = t.recvall(timeout=0.5)
+                self.capabilities.insert(resp, client=False)
+            except socket.error, se:
+                print repr(se)
+
+    
+    def _check_cipher(self, target,  cipher_id, starttls=None,version=TLSVersion.TLS_1_0):
+        pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, cipher_suites=[cipher_id])
+        try:
             t = TCPConnection(target)
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
-            self.capabilities.insert(resp, client=False)
-            del t
+        except socket.error, se:
+            print repr(se)
+            return None
+        return resp
     
     def _scan_accepted_ciphersuites(self, target, starttls=None, cipherlist=TLS_CIPHER_SUITES.keys(), version=TLSVersion.TLS_1_0): 
-        for cipher_id in cipherlist:
-            # prepare pkt
-            pkt = TLSRecord()/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_2, cipher_suites=[cipher_id])
-            # connect
-            t = TCPConnection(target)
-            t.sendall(pkt)
-            resp = t.recvall(timeout=0.5)
-            self.capabilities.insert(resp, client=False)
-            del t
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
+            tasks = [executor.submit(self._check_cipher, target, cipher_id, starttls, version) for cipher_id in cipherlist]
+            for future in concurrent.futures.as_completed(tasks):
+                self.capabilities.insert(future.result(), client=False)
+
     
     def _scan_supported_protocol_versions(self, target, starttls=None, versionlist=((k,v) for k,v in TLS_VERSIONS.iteritems() if v.startswith("TLS_") or v.startswith("SSL_"))):
         for magic, name in versionlist:
             pkt = TLSRecord(version=magic)/TLSHandshake()/TLSClientHello(version=magic, 
                                                                          cipher_suites=range(0xfe)[::-1],
                                                                          extensions=[TLSExtension()/TLSExtHeartbeat(mode=TLSHeartbeatMode.PEER_ALLOWED_TO_SEND)])
-            # connect
-            t = TCPConnection(target)
-            t.sendall(pkt)
-            resp = t.recvall(timeout=0.5)
-            self.capabilities.insert(resp, client=False)
-            del t
+            try:
+                # connect
+                t = TCPConnection(target)
+                t.sendall(pkt)
+                resp = t.recvall(timeout=0.5)
+                self.capabilities.insert(resp, client=False)
+            except socket.error, se:
+                print repr(se)
             
     def _scan_scsv(self, target, starttls=None): 
         pkt = TLSRecord(version=TLSVersion.TLS_1_1)/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_0, cipher_suites=[TLSCipherSuite.FALLBACK_SCSV]+range(0xfe)[::-1])
         # connect
-        t = TCPConnection(target)
-        t.sendall(pkt)
-        resp = t.recvall(timeout=2)
-        self.capabilities.insert(resp, client=False)
-        del t  
+        try:
+            t = TCPConnection(target)
+            t.sendall(pkt)
+            resp = t.recvall(timeout=2)
+            self.capabilities.insert(resp, client=False)
+        except socket.error, se:
+            print repr(se)
     
     def disabled_scan_heartbleed(self, target, starttls=None):
         TLSRecord(version="TLS_1_1")/TLSHeartBeat(length=2**14-1,data='bleed...')
@@ -275,7 +292,9 @@ if __name__=="__main__":
     starttls = sys.argv[3] if len(sys.argv)>3 else None
     host = sys.argv[1]
     port = int(sys.argv[2])
-    scanner = TLSScanner()
+    workers = 10
+    print "Scanning with %s parallel threads..."%workers
+    scanner = TLSScanner(workers=workers)
     t_start = time.time()
     scanner.scan((host,port), starttls=starttls)
     print "\n"
