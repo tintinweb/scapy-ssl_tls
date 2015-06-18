@@ -9,6 +9,7 @@ import copy
 import os
 import struct
 import zlib
+import re
 import pkcs7
 import ssl_tls as tls
 
@@ -35,6 +36,14 @@ https://tools.ietf.org/html/rfc4346#section-6.3
 '''
 def prf(master_secret, label, data):
     pass
+
+REX_PEM = re.compile(r'(\-+BEGIN\s*([^\-]+)\-+(.*?)\-+END[^\-]+\-+)', re.DOTALL)
+def pem_get_objects(data):
+    d = {}
+    for full, pemtype, pemdata in REX_PEM.findall(data):
+        d[pemtype]={'data':data,
+                    'full':full}
+    return d
 
 def x509_extract_pubkey_from_der(der_certificate):
     # Extract subjectPublicKeyInfo field from X.509 certificate (see RFC3280)
@@ -278,7 +287,6 @@ class TLSSessionCtx(object):
                     # Generate a random PMS. Overriden at decryption time if private key is provided
                     if self.crypto.session.premaster_secret is None:
                         self.crypto.session.premaster_secret = self._generate_random_pms(self.params.negotiated.version)
-
             if p.haslayer(tls.TLSServerHello):
                 if not self.params.handshake.server:
                     self.params.handshake.server = p[tls.TLSServerHello]
@@ -357,8 +365,10 @@ class TLSSessionCtx(object):
 
     def rsa_load_keys_from_file(self, priv_key_file):
         with open(priv_key_file,'r') as f:
-            self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(f.read())
-    
+            # _rsa_load_keys expects one pem/der key per file.
+            privkey = pem_get_objects(f.read()).get("RSA PRIVATE KEY",{}).get("full")
+            self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(privkey)
+
     def rsa_load_keys(self, priv_key):
         self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(priv_key)
 
@@ -747,7 +757,7 @@ class TLSSecurityParameters(object):
         s=[]
         for f in (f for f in dir(self) if "_write_" in f):
             s.append( "%20s | %s"%(f,repr(getattr(self,f))))
-        s.append("%20s| %s" % ("premaster_secret", repr(self.premaster_secret)))
+        s.append("%20s| %s" % ("premaster_secret", repr(self.pms)))
         s.append("%20s| %s" % ("master_secret", repr(self.master_secret)))
         s.append("%20s| %s" % ("master_secret [bytes]", binascii.hexlify(self.master_secret)))
         return "\n".join(s)
