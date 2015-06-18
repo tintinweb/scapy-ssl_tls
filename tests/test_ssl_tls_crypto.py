@@ -134,7 +134,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         epms = tls_ctx.get_encrypted_pms()
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello()
         tls_ctx.insert(pkt)
-        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/epms
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange(data=epms)
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.crypto.session.encrypted_premaster_secret, epms)
         self.assertEqual(tls_ctx.crypto.session.premaster_secret, self.priv_key.decrypt(epms, None))
@@ -149,7 +149,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         epms = "C"*256
         server_hello = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=1234, random_bytes="A"*28)
         tls_ctx.insert(server_hello)
-        client_kex = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/epms
+        client_kex = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange(data=epms)
         tls_ctx.insert(client_kex)
         self.assertEqual(binascii.hexlify(tls_ctx.get_verify_data()), verify_data)
 
@@ -163,7 +163,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
         unittest.TestCase.setUp(self)
 
     def test_unsupported_cipher_suite_throws_exception(self):
-        with self.assertRaises(tlsc.UnsupportedCipherError):
+        with self.assertRaises(RuntimeError):
             tlsc.TLSSecurityParameters(0xffff, self.pre_master_secret, self.client_random, self.server_random)
 
     def test_building_with_supported_cipher_sets_lengths(self):
@@ -306,7 +306,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.server_hello = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSServerHello(version=version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSClientKeyExchange()/self.tls_ctx.get_encrypted_pms()
+        self.client_kex = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSClientKeyExchange(data=self.tls_ctx.get_encrypted_pms())
         self.tls_ctx.insert(self.client_kex)
 
     def test_crypto_container_increments_sequence_number(self):

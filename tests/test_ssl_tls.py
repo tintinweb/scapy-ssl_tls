@@ -101,7 +101,7 @@ class TestTLSDissector(unittest.TestCase):
 
     def test_encrypted_layer_is_decrypted_if_required(self):
         tls_ctx = self._static_tls_handshake()
-        client_kex = tls.TLS.from_records([tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/tls_ctx.get_encrypted_pms(), tls.TLSRecord()/tls.TLSChangeCipherSpec()])
+        client_kex = tls.TLS.from_records([tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/tls_ctx.get_encrypted_pms(), tls.TLSRecord()/tls.TLSChangeCipherSpec()], tls_ctx)
         tls_ctx.insert(client_kex)
         tls_ctx.insert(tls.to_raw(tls.TLSFinished(), tls_ctx))
         server_finished = binascii.unhexlify("14030100010116030100305b0241932c63c0cf1e4955e0cc65f751a3921fe8227c2bae045c66be327f7e68a39dc163b382c90d2caaf197ba0563a7")
@@ -131,13 +131,13 @@ class TestTLSDissector(unittest.TestCase):
 
     def test_cleartext_handshake_is_not_decrypted(self):
         tls_ctx = self._static_tls_handshake()
-        handshake = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerKeyExchange()
+        handshake = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerKeyExchange()/tls.TLSServerDHParams()
         record = tls.TLS(str(handshake), ctx=tls_ctx)
         self.assertTrue(record.haslayer(tls.TLSServerKeyExchange))
 
     def test_encrypted_handshake_which_fails_decryption_throws_error(self):
         tls_ctx = self._static_tls_handshake()
-        client_kex = tls.TLS.from_records([tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/tls_ctx.get_encrypted_pms(), tls.TLSRecord()/tls.TLSChangeCipherSpec()])
+        client_kex = tls.TLS.from_records([tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/tls_ctx.get_encrypted_pms(), tls.TLSRecord()/tls.TLSChangeCipherSpec()], tls_ctx)
         tls_ctx.insert(client_kex)
         tls_ctx.insert(tls.to_raw(tls.TLSFinished(), tls_ctx))
         handshake = tls.TLSRecord()/tls.TLSHandshake()/"C"*5
@@ -349,7 +349,7 @@ class TestPCAP(unittest.TestCase):
         self.assertTrue(record.haslayer(tls.TLSRecord))
         self.assertTrue(record.haslayer(tls.TLSHandshake))
         self.assertTrue(record.haslayer(tls.TLSClientKeyExchange))
-        self.assertEqual(record[tls.TLSClientKeyExchange].load, '\x9es\xdf\xe0\xf2\xd0@2D\x9a4\x7fW\x86\x10\xea=\xc5\xe2\xf9\xa5iC\xc9\x0b\x00~\x911W\xfc\xc5e\x18\rD\xfdQ\xf8\xda\x8az\xab\x16\x03\xeb\xac#n\x8d\xdd\xbb\xf4u\xe7\xb7\xa3\xce\xdbgk}0*')
+        self.assertEqual(record[tls.TLSClientKeyExchange].data, '\x9es\xdf\xe0\xf2\xd0@2D\x9a4\x7fW\x86\x10\xea=\xc5\xe2\xf9\xa5iC\xc9\x0b\x00~\x911W\xfc\xc5e\x18\rD\xfdQ\xf8\xda\x8az\xab\x16\x03\xeb\xac#n\x8d\xdd\xbb\xf4u\xe7\xb7\xa3\xce\xdbgk}0*')
         # Change Cipher Spec
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
@@ -444,7 +444,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.server_hello = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSServerHello(version=self.hello_version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSClientKeyExchange()/self.tls_ctx.get_encrypted_pms()
+        self.client_kex = tls.TLSRecord(version=self.hello_version)/tls.TLSHandshake()/tls.TLSClientKeyExchange(data=self.tls_ctx.get_encrypted_pms())
         self.tls_ctx.insert(self.client_kex)
         unittest.TestCase.setUp(self)
 
@@ -633,6 +633,9 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         ciphertext_2 = ''.join(pubkey_extract_from_der.encrypt(plaintext,None))
         self.assertTrue(len(ciphertext))
         self.assertEqual(ciphertext,ciphertext_2)
+
+class TestTLSKeyExchange(unittest.TestCase):
+    pass
 
 if __name__ == "__main__":
     unittest.main()
