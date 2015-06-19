@@ -140,13 +140,24 @@ class TLSSessionCtx(object):
         self.crypto.client.enc = None
         self.crypto.client.dec = None
         self.crypto.client.hmac = None
+        self.crypto.client.dh = namedtuple("dh", ["x", "y_c"])
+        self.crypto.client.dh.x = None
+        self.crypto.client.dh.y_c = None
         self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
         self.crypto.server.hmac = None
-        self.crypto.server.rsa = namedtuple('rsa', ['pubkey','privkey'])
-        self.crypto.server.rsa.pubkey=None
-        self.crypto.server.rsa.privkey=None
+        self.crypto.server.rsa = namedtuple("rsa", ["pubkey","privkey"])
+        self.crypto.server.rsa.pubkey = None
+        self.crypto.server.rsa.privkey = None
+        self.crypto.server.dsa = namedtuple("dsa", ["pubkey","privkey"])
+        self.crypto.server.dsa.pubkey = None
+        self.crypto.server.dsa.privkey = None
+        self.crypto.server.dh = namedtuple("dh", ["p", "g", "x", "y_s"])
+        self.crypto.server.dh.p = None
+        self.crypto.server.dh.g = None
+        self.crypto.server.dh.x = None
+        self.crypto.server.dh.y_s = None
         self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
                                                      'premaster_secret',
                                                      'master_secret',
@@ -182,11 +193,12 @@ class TLSSessionCtx(object):
         params = {'id':id(self),
                   'params-handshake-client':repr(self.params.handshake.client),
                   'params-handshake-server':repr(self.params.handshake.server),
-                  'params-negotiated-ciphersuite':self.params.negotiated.ciphersuite,
+                  "params-negotiated-version":tls.TLS_VERSIONS[self.params.negotiated.version],
+                  'params-negotiated-ciphersuite':tls.TLS_CIPHER_SUITES[self.params.negotiated.ciphersuite],
                   'params-negotiated-key_exchange':self.params.negotiated.key_exchange,
                   'params-negotiated-encryption':self.params.negotiated.encryption,
                   'params-negotiated-mac':self.params.negotiated.mac,
-                  'params-negotiated-compression':self.params.negotiated.compression,
+                  'params-negotiated-compression':tls.TLS_COMPRESSION_METHODS[self.params.negotiated.compression],
                   
                   'crypto-client-enc':repr(self.crypto.client.enc),
                   'crypto-client-dec':repr(self.crypto.client.dec),
@@ -195,7 +207,17 @@ class TLSSessionCtx(object):
                   
                   'crypto-server-rsa-pubkey':repr(self.crypto.server.rsa.pubkey),
                   'crypto-server-rsa-privkey':repr(self.crypto.server.rsa.privkey),
-                  
+
+                  "crypto-server-dsa-pubkey":repr(self.crypto.server.dsa.pubkey),
+                  "crypto-server-dsa-privkey":repr(self.crypto.server.dsa.privkey),
+
+                  "crypto-client-dh-x":repr(self.crypto.client.dh.x),
+                  "crypto-client-dh-y_c":repr(self.crypto.client.dh.y_c),
+                  "crypto-server-dh-p":repr(self.crypto.server.dh.p),
+                  "crypto-server-dh-g":repr(self.crypto.server.dh.g),
+                  "crypto-server-dh-x":repr(self.crypto.server.dh.x),
+                  "crypto-server-dh-y_s":repr(self.crypto.server.dh.y_s),
+
                   'crypto-session-encrypted_premaster_secret':repr(self.crypto.session.encrypted_premaster_secret),
                   'crypto-session-premaster_secret':repr(self.crypto.session.premaster_secret),
                   'crypto-session-master_secret':repr(self.crypto.session.master_secret),
@@ -221,6 +243,7 @@ class TLSSessionCtx(object):
         
         str_ +="\n\t params.handshake.client=%(params-handshake-client)s"
         str_ +="\n\t params.handshake.server=%(params-handshake-server)s"
+        str_ +="\n\t params.negotiated.version=%(params-negotiated-version)s"
         str_ +="\n\t params.negotiated.ciphersuite=%(params-negotiated-ciphersuite)s"
         str_ +="\n\t params.negotiated.key_exchange=%(params-negotiated-key_exchange)s"
         str_ +="\n\t params.negotiated.encryption=%(params-negotiated-encryption)s"
@@ -234,7 +257,17 @@ class TLSSessionCtx(object):
         
         str_ +="\n\t crypto.server.rsa.privkey=%(crypto-server-rsa-privkey)s"
         str_ +="\n\t crypto.server.rsa.pubkey=%(crypto-server-rsa-pubkey)s"
-        
+
+        str_ +="\n\t crypto.server.dsa.privkey=%(crypto-server-dsa-privkey)s"
+        str_ +="\n\t crypto.server.dsa.pubkey=%(crypto-server-dsa-pubkey)s"
+
+        str_ +="\n\t crypto.client.dh.x=%(crypto-client-dh-x)s"
+        str_ +="\n\t crypto.client.dh.y_c=%(crypto-client-dh-y_c)s"
+        str_ +="\n\t crypto.server.dh.p=%(crypto-server-dh-p)s"
+        str_ +="\n\t crypto.server.dh.g=%(crypto-server-dh-g)s"
+        str_ +="\n\t crypto.server.dh.x=%(crypto-server-dh-x)s"
+        str_ +="\n\t crypto.server.dh.y_s=%(crypto-server-dh-y_s)s"
+
         str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
         str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
         str_ +="\n\t crypto.session.master_secret=%(crypto-session-master_secret)s"
@@ -321,28 +354,31 @@ class TLSSessionCtx(object):
                     # fetch server pubkey // PKCS1_v1_5
                     cert = p[tls.TLSCertificateList].certificates[0].data
                     self.crypto.server.rsa.pubkey = PKCS1_v1_5.new(x509_extract_pubkey_from_der(str(cert)))
+                    # TODO: In the future also handle kex = DH and extract static DH params from cert
                 elif self.params.negotiated.key_exchange is not None and self.params.negotiated.sig == DSA:
                     # TODO: Handle DSA sig key loading here to allow sig checks
                     # Pycrypto doesn't currently have an interface to this.
                     # Filed bug https://github.com/dlitz/pycrypto/issues/137
                     # Could port the change manually from master
-                    # Could move to cryptography.io which also supports TLS1.2 GCM modes
+                    # Could move to cryptography.io which also supports TLS1.2 AES GCM modes
                     pass
 
             if p.haslayer(tls.TLSServerKeyExchange):
-                # TODO: generate PMS
-                pass
+                # DHE case
+                if p.haslayer(tls.TLSServerDHParams):
+                    self.crypto.server.dh.p = p[tls.TLSServerDHParams].p
+                    self.crypto.server.dh.g = p[tls.TLSServerDHParams].g
+                    self.crypto.server.dh.y_s = p[tls.TLSServerDHParams].y_s
 
             # calculate key material
             if p.haslayer(tls.TLSClientKeyExchange):
                 if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:
-                    self.crypto.session.encrypted_premaster_secret = str(p[tls.TLSClientKeyExchange].data)
+                    self.crypto.session.encrypted_premaster_secret = p[tls.TLSClientKeyExchange].data
                     # If we have the private key, let's decrypt the PMS
                     if self.crypto.server.rsa.privkey is not None:
                         self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
                 elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
-                    # TODO: generate PMS for server side
-                    self.crypto.session.premaster_secret = None
+                    self.crypto.client.dh.y_c = p[tls.TLSClientKeyExchange].data
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
                 self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
@@ -400,6 +436,39 @@ class TLSSessionCtx(object):
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.crypto.session.encrypted_premaster_secret
 
+    def get_client_dh_pubkey(self, x=None):
+        # ValueError is propagated to caller both if hex or int conversion fail
+        import math
+        import random
+        str_to_int = lambda x: int(binascii.hexlify(x), 16)
+        def int_to_str(int_):
+            hex_ = "%x" % int_
+            return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
+        nb_bits = lambda x: int(math.ceil(math.log(x) / math.log(2)))
+        p = str_to_int(self.crypto.server.dh.p)
+        g = str_to_int(self.crypto.server.dh.g)
+        y_s = str_to_int(self.crypto.server.dh.y_s)
+        # Client private key
+        # Long story short, this provides 128bits of key space (sqrt(2**256)). TLS leaves this up to the implementation.
+        # Another option is to gather random.randint(0, 2**nb_bits(p) - 1), but has little added security
+        # In our case, since we don't care about security, it really doesn't matter what we pick
+        a = x or random.randint(0, 2**256 - 1)
+        self.crypto.client.dh.x = int_to_str(a)
+        self.crypto.client.dh.y_c = int_to_str(pow(g, a, p))
+        # Per RFC 4346 section 8.1.2
+        # Leading bytes of Z that contain all zero bits are stripped before it is used as the
+        # pre_master_secret.
+        self.crypto.session.premaster_secret = int_to_str(pow(y_s, a, p)).lstrip("\x00")
+        return self.crypto.client.dh.y_c
+
+    def get_client_kex_data(self, val=None):
+        if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:
+            return self.get_encrypted_pms(val)
+        elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
+            return self.get_client_dh_pubkey(val)
+        else:
+            raise NotImplementedError("Key exchange unknown or currently not supported")
+
     def get_verify_data(self, client=True, data=None):
         if client:
             label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
@@ -416,7 +485,7 @@ class TLSSessionCtx(object):
                                                                "%s%s" % (MD5.new("".join(verify_data)).digest(), SHA.new("".join(verify_data)).digest()),
                                                                numbytes=12)
         return prf_verify_data
-        
+
 class TLSPRF(object):
     TLS_MD_CLIENT_FINISH_CONST = "client finished"
     TLS_MD_SERVER_FINISH_CONST = "server finished"
@@ -646,30 +715,29 @@ class TLSSecurityParameters(object):
             tls.TLSCipherSuite.RSA_EXPORT1024_WITH_DES_CBC_SHA: {"name":tls.TLS_CIPHER_SUITES[0x0062], "export":True, "key_exchange":{"type":RSA, "name":tls.TLSKexNames.RSA, "sig":None}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
             tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_SHA:  {"name":tls.TLS_CIPHER_SUITES[0x0064], "export":True, "key_exchange":{"type":RSA, "name":tls.TLSKexNames.RSA, "sig":None}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
             # 0x0084: RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
-            tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_CBC_SHA:    {"name":tls.TLS_CIPHER_SUITES[0x0039], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_EXPORT_WITH_DES40_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0x0011], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":DES, "name":"DES", "key_len":5, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_WITH_DES_CBC_SHA:        {"name":tls.TLS_CIPHER_SUITES[0x0012], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_WITH_3DES_EDE_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0x0013], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":DES3, "name":"DES3", "key_len":24, "mode":DES3.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_RSA_EXPORT_WITH_DES40_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0x0014], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":RSA}, "cipher":{"type":DES, "name":"DES", "key_len":5, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_RSA_WITH_DES_CBC_SHA:        {"name":tls.TLS_CIPHER_SUITES[0x0015], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":RSA}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_RSA_WITH_3DES_EDE_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0x0016], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":RSA}, "cipher":{"type":DES3, "name":"DES3", "key_len":24, "mode":DES3.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA:    {"name":tls.TLS_CIPHER_SUITES[0x0032], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA:    {"name":tls.TLS_CIPHER_SUITES[0x0033], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_WITH_AES_256_CBC_SHA:    {"name":tls.TLS_CIPHER_SUITES[0x0038], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_CBC_SHA:    {"name":tls.TLS_CIPHER_SUITES[0x0039], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA: {"name":tls.TLS_CIPHER_SUITES[0x0063], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_RC4_56_SHA:  {"name":tls.TLS_CIPHER_SUITES[0x0065], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.DHE_DSS_WITH_RC4_128_SHA:            {"name":tls.TLS_CIPHER_SUITES[0x0066], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
+            # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
             }
-# Unsupported for now, until DHE support implemented
-#         DHE_RSA_WITH_3DES_EDE_CBC_SHA = 0x0016    
-#         DHE_DSS_WITH_3DES_EDE_CBC_SHA = 0x0013
-#         DHE_RSA_WITH_AES_128_CBC_SHA = 0x0033
-#         DHE_DSS_WITH_AES_128_CBC_SHA = 0x0032
-#         DHE_DSS_WITH_RC4_128_SHA = 0x0066       
-#         DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA = 0x0063
-#         DHE_RSA_WITH_DES_CBC_SHA = 0x0015
-#         DHE_DSS_WITH_DES_CBC_SHA = 0x0012
-#         DHE_DSS_EXPORT1024_WITH_RC4_56_SHA = 0x0065
-#         DHE_RSA_EXPORT_WITH_DES40_CBC_SHA = 0x0014
-#         DHE_DSS_EXPORT_WITH_DES40_CBC_SHA = 0x0011
-#         DHE_DSS_WITH_AES_256_CBC_SHA = 0x0038    
-#         DHE_RSA_WITH_AES_256_CBC_SHA = 0x0039
+# Unsupported for now, until TLS1.2 and ECDHE support implemented
+#         ECDH_ECDSA_WITH_AES_256_CBC_SHA = 0xc005
 #         ECDHE_ECDSA_WITH_AES_256_CBC_SHA = 0xc00a
 #         ECDH_RSA_WITH_AES_256_CBC_SHA = 0xc00f    
 #         ECDHE_RSA_WITH_AES_256_CBC_SHA = 0xc014
 #         SRP_SHA_RSA_WITH_AES_256_CBC_SHA = 0xc021
 #         SRP_SHA_DSS_WITH_AES_256_CBC_SHA = 0xc022
-#         DHE_DSS_WITH_CAMELLIA_256_CBC_SHA = 0x0087
-#         DHE_RSA_WITH_CAMELLIA_256_CBC_SHA = 0x0088
-#         ECDH_ECDSA_WITH_AES_256_CBC_SHA = 0xc005
 #         TLS_FALLBACK_SCSV = 0x5600
 
     def __init__(self, cipher_suite, pms, client_random, server_random, explicit_iv=False):

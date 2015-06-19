@@ -143,6 +143,7 @@ class PacketNoPadding(Packet):
 class StackedLenPacket(Packet):
     ''' Allows stacked packets. Tries to chop layers by layer.length
     '''
+
     def do_dissect_payload(self, s):
         # prototype for this layer. only layers of same type can be stacked
         cls = self.guess_payload_class(s)
@@ -433,8 +434,8 @@ class TLSServerDHParams(Packet):
                    StrLenField("p", '', length_from=lambda x:x.p_length),
                    XFieldLenField("g_length", None, length_of="g", fmt="!H"),
                    StrLenField("g", '', length_from=lambda x:x.g_length),
-                   XFieldLenField("Ys_length", None, length_of="Ys", fmt="!H"),
-                   StrLenField("Ys", "", length_from=lambda x:x.Ys_length),
+                   XFieldLenField("ys_length", None, length_of="y_s", fmt="!H"),
+                   StrLenField("y_s", "", length_from=lambda x:x.ys_length),
                    XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
                    StrLenField("sig", '', length_from=lambda x:x.sig_length) ]
 

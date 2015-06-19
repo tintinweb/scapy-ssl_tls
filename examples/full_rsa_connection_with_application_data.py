@@ -9,17 +9,20 @@ from scapy.all import conf
 from scapy_ssl_tls.ssl_tls import *
 from scapy_ssl_tls.ssl_tls_crypto import *
 
-tls_version = TLSVersion.TLS_1_2
+tls_version = TLSVersion.TLS_1_1
 
 def tls_hello(sock):
-    client_hello = TLSRecord(version=tls_version)/TLSHandshake()/TLSClientHello(version=tls_version, compression_methods=[0],
-                                                                            cipher_suites=(TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA))
+    client_hello = TLSRecord(version=tls_version)/TLSHandshake()/TLSClientHello(version=tls_version, compression_methods=(TLSCompressionMethod.NULL),
+#                                                                             cipher_suites=(TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA))
+#                                                                             cipher_suites=(TLSCipherSuite.RSA_WITH_RC4_128_SHA))
+                                                                            cipher_suites=(TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA))
+#                                                                             cipher_suites=(TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA))
     sock.sendall(client_hello)
     server_hello = sock.recvall()
     server_hello.show()
 
 def tls_client_key_exchange(sock):
-    client_key_exchange = TLSRecord(version=tls_version)/TLSHandshake()/TLSClientKeyExchange(data=sock.tls_ctx.get_encrypted_pms())
+    client_key_exchange = TLSRecord(version=tls_version)/TLSHandshake()/TLSClientKeyExchange(data=sock.tls_ctx.get_client_kex_data())
     client_ccs = TLSRecord(version=tls_version)/TLSChangeCipherSpec()
     sock.sendall(TLS.from_records([client_key_exchange, client_ccs]))
     sock.sendall(to_raw(TLSFinished(), sock.tls_ctx))
@@ -42,6 +45,7 @@ def tls_client(ip, priv_key=None):
         resp = sock.recvall()
         print("Got response from server")
         resp.show()
+        print(sock.tls_ctx)
     finally:
         sock.close()
 
