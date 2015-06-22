@@ -252,6 +252,12 @@ TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
 TLS_ELLIPTIC_CURVES = registry.EC_NAMED_CURVE_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
+TLS_HASH_ALGORITHMS = registry.TLS_HASHALGORITHM_REGISTRY
+TLSHashAlgorithm = EnumStruct(TLS_HASH_ALGORITHMS)
+
+TLS_SIGNATURE_ALGORITHMS = registry.TLS_SIGNATUREALGORITHM_REGISTRY
+TLSSignatureAlgorithm = EnumStruct(TLS_SIGNATURE_ALGORITHMS)
+
 class TLSKexNames(object):
     RSA = "RSA"
     DHE = "DHE"
@@ -357,6 +363,20 @@ class TLSExtEllipticCurves(PacketNoPadding):
                    FieldListField("elliptic_curves", None, ShortEnumField("elliptic_curve", None, TLS_ELLIPTIC_CURVES), length_from=lambda x:x.length),
                   ]
     
+class TLSSignatureHashAlgorithm(PacketNoPadding):
+    name = "TLS Signature Hash Algorithm Pair"
+    fields_desc = [
+                   ByteEnumField("hash_algorithm", None, TLS_HASH_ALGORITHMS),
+                   ByteEnumField("signature_algorithm", None, TLS_SIGNATURE_ALGORITHMS),
+                  ]  
+    
+class TLSExtSignatureAndHashAlgorithm(PacketNoPadding):
+    name = "TLS Extension Signature And Hash Algorithm"
+    fields_desc = [
+                   XFieldLenField("length", None, length_of="algorithms", fmt="H"),
+                   PacketListField("algorithms", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length),
+                  ]  
+
 class TLSExtHeartbeat(PacketNoPadding):
     name = "TLS Extension HeartBeat"
     fields_desc = [ByteEnumField("mode", TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND, TLS_HEARTBEAT_MODE)]
@@ -388,7 +408,7 @@ class TLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ] 
  
@@ -403,7 +423,7 @@ class TLSServerHello(Packet):
                    XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
-                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]
 
@@ -939,6 +959,7 @@ bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYE
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
 bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSIONTICKET_TLS})
 bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type':TLSExtensionType.RENEGOTIATION_INFO})
+bind_layers(TLSExtension, TLSExtSignatureAndHashAlgorithm, {'type':TLSExtensionType.SIGNATURE_ALGORITHMS})
 # <--
 
 # DTLSRecord
