@@ -29,94 +29,113 @@ except ImportError:
     
 import socket
 
+class Sniffer(object):
+    ''' Sniffer()
+        .rdpcap(pcap)
+        or
+        .sniff()
+    '''
+    def __init__(self):
+        self.ssl_session_map = {}
+        
+    def _create_context(self, target, keyfile=None):
+        self.target = target
+        self.keyfile = keyfile
+        
+        session = ssl_tls_crypto.TLSSessionCtx()
+        if keyfile:
+            print "* load servers privatekey for ciphertext decryption (RSA key only): %s"%keyfile
+            session.rsa_load_keys_from_file(keyfile)
+            
+        session.printed=False
+        self.ssl_session_map[target]=session
+
+    def process_ssl(self, p):
+            if not p.haslayer(SSL):
+                return
+            session = self.ssl_session_map.get((p[IP].dst,p[TCP].dport)) or self.ssl_session_map.get((p[IP].src,p[TCP].sport))
+            if not session:
+                return
+            p_ssl = p[SSL]
+            source = (p[IP].src,p[TCP].sport)
+            
+            if p_ssl.haslayer(SSLv2Record):
+                print "SSLv2 not supported - skipping..",repr(p)
+                return
+            
+            if p_ssl.haslayer(TLSServerHello):
+                    session.printed=False
+                    session.crypto.session.master_secret=None
+                    session.match_server = source
+                    #reset the session and print it next time
+            if p_ssl.haslayer(TLSClientHello):
+                session.match_client = source
+                
+            session.insert(p_ssl) 
+            
+            if session.crypto.session.master_secret and session.printed==False:
+                print repr(session)
+                session.printed = True
+            
+            print "|   %-16s:%-5d => %-16s:%-5d | %s"%(p[IP].src,p[TCP].sport,p[IP].dst,p[TCP].dport,repr(p_ssl))            
+            if p.haslayer(TLSCiphertext):
+                if source == session.match_client:
+                    session.set_mode(server=True)
+                elif source == session.match_server:
+                    session.set_mode(client=True)
+                else:
+                    Exception("src packet mismatch: %s"%repr(source))
+                p = SSL(str(p_ssl),ctx=session)
+                print "|-> %-48s | %s"%("decrypted record",repr(p_ssl))
+            #p.show()
+            #raw_input()
+    
+    def sniff(self, target, keyfile=None, iface=None):
+        if iface:
+            conf.iface=iface
+        self._create_context(target=target,keyfile=keyfile)
+        while True:
+            sniff(filter="host %s and tcp port %d"%(target[0],target[1]),prn=self.process_ssl,store=0,timeout=3)
+            
+    def rdpcap(self, target, keyfile, pcap):
+        self._create_context(target=target,keyfile=keyfile)
+        for p in (pkt for pkt in rdpcap(pcap) if pkt.haslayer(SSL)):
+            self.process_ssl(p)
+
+
+def main(target,pcap=None, iface=None, keyfile=None):
+    sniffer = Sniffer()
+    if pcap:
+        print "* pcap ready!"
+        # pcap mainloop
+        sniffer.rdpcap(target=target, keyfile=keyfile, pcap=pcap)
+    else:
+        print "* sniffer ready!"
+        # sniffer mainloop
+        sniffer.sniff(target=target, keyfile=keyfile, iface=iface)
+
 if __name__=="__main__":
     if len(sys.argv)<=3:
-        print "USAGE: <host> <port> <inteface>"
+        print "USAGE: <host> <port> <inteface or pcap>"
         print "\navailable interfaces:"
         for i in get_if_list():
             print "   * %s"%i
         print "* default"
         exit(1)
-    
-    if len(sys.argv)>3:
-        conf.iface = sys.argv[3]
         
-    target = (sys.argv[1],int(sys.argv[2]))
-    
-    ssl_session_map = {}
-    
-    def process_ssl(p):
-        # force SSL evaluation
-        if p.haslayer(SSL):
-            # get session for server or client tuple
-            session = ssl_session_map.get((p[IP].dst,p[TCP].dport)) or ssl_session_map.get((p[IP].src,p[TCP].sport))
-            
-            if not session:
-                # session not found
-                return
-            
-            if p.haslayer(TLSServerHello):
-                session.printed=False
-                session.crypto.session.master_secret=None
-                #reset the session and print it next time
-
-            for p in p[SSL].records:
-                if p.haslayer(SSLv2Record):
-                    print "not supported - skipping..",repr(p)
-                    continue
-                print "processing..",repr(p)
-                
-                session.insert(p)            
-                if session.crypto.session.master_secret and session.printed==False:
-                    print repr(session)
-                    session.printed = True
-                
-                if p[TLSRecord].content_type==0x17:
-                    # TODO: FIXME - add decryption code
-                    pp = to_raw(TLSPlaintext(),session)
-                    #pp = session.tlsciphertext_decrypt(p,session.crypto.client.dec)
-                    pp.show()
-
-
-    print "* load servers privatekey for auto master-key decryption (RSA key only)"
-    #session.rsa_load_privkey(open('polarssl.key','r').read())
-    # openssl/apps/server.pem privkey
-    privkey="""-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEA84TzkjbcskbKZnrlKcXzSSgi07n+4N7kOM7uIhzpkTuU0HIv
-h4VZS2axxfV6hV3CD9MuKVg2zEhroqK1Js5n4ke230nSP/qiELfCl0R+hzRtbfKL
-tFUr1iHeU0uQ6v3q+Tg1K/Tmmg72uxKrhyHDL7z0BriPjhAHJ5XlQsvR1RCMkqzu
-D9wjSInJxpMMIgLndOclAKv4D1wQtYU7ZpTw+01XBlUhIiXb86qpYL9NqnnRq5JI
-uhmOEuxo2ca63+xaHNhD/udSyc8C0Md/yX6wlONTRFgLLv0pdLUGm1xEjfsydaQ6
-qGd7hzIKUI3hohNKJa/mHLElv7SZolPTogK/EQIDAQABAoIBAADq9FwNtuE5IRQn
-zGtO4q7Y5uCzZ8GDNYr9RKp+P2cbuWDbvVAecYq2NV9QoIiWJOAYZKklOvekIju3
-r0UZLA0PRiIrTg6NrESx3JrjWDK8QNlUO7CPTZ39/K+FrmMkV9lem9yxjJjyC34D
-AQB+YRTx+l14HppjdxNwHjAVQpIx/uO2F5xAMuk32+3K+pq9CZUtrofe1q4Agj9R
-5s8mSy9pbRo9kW9wl5xdEotz1LivFOEiqPUJTUq5J5PeMKao3vdK726XI4Z455Nm
-W2/MA0YV0ug2FYinHcZdvKM6dimH8GLfa3X8xKRfzjGjTiMSwsdjgMa4awY3tEHH
-674jhAECgYEA/zqMrc0zsbNk83sjgaYIug5kzEpN4ic020rSZsmQxSCerJTgNhmg
-utKSCt0Re09Jt3LqG48msahX8ycqDsHNvlEGPQSbMu9IYeO3Wr3fAm75GEtFWePY
-BhM73I7gkRt4s8bUiUepMG/wY45c5tRF23xi8foReHFFe9MDzh8fJFECgYEA9EFX
-4qAik1pOJGNei9BMwmx0I0gfVEIgu0tzeVqT45vcxbxr7RkTEaDoAG6PlbWP6D9a
-WQNLp4gsgRM90ZXOJ4up5DsAWDluvaF4/omabMA+MJJ5kGZ0gCj5rbZbKqUws7x8
-bp+6iBfUPJUbcqNqFmi/08Yt7vrDnMnyMw2A/sECgYEAiiuRMxnuzVm34hQcsbhH
-6ymVqf7j0PW2qK0F4H1ocT9qhzWFd+RB3kHWrCjnqODQoI6GbGr/4JepHUpre1ex
-4UEN5oSS3G0ru0rC3U4C59dZ5KwDHFm7ffZ1pr52ljfQDUsrjjIMRtuiwNK2OoRa
-WSsqiaL+SDzSB+nBmpnAizECgYBdt/y6rerWUx4MhDwwtTnel7JwHyo2MDFS6/5g
-n8qC2Lj6/fMDRE22w+CA2esp7EJNQJGv+b27iFpbJEDh+/Lf5YzIT4MwVskQ5bYB
-JFcmRxUVmf4e09D7o705U/DjCgMH09iCsbLmqQ38ONIRSHZaJtMDtNTHD1yi+jF+
-OT43gQKBgQC/2OHZoko6iRlNOAQ/tMVFNq7fL81GivoQ9F1U0Qr+DH3ZfaH8eIkX
-xT0ToMPJUzWAn8pZv0snA0um6SIgvkCuxO84OkANCVbttzXImIsL7pFzfcwV/ERK
-UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
------END RSA PRIVATE KEY-----
-"""
-    session = ssl_tls_crypto.TLSSessionCtx()
-    session.rsa_load_keys(privkey)
-    session.printed=False
-    
-    ssl_session_map[target]=session
-    
-    print "* ready!"
-    while True:
-        sniff(filter="tcp port %d"%target[1],prn=process_ssl,store=0,timeout=3)
-
-    s.close()
+    pcap=None
+    iface=None
+    keyfile=None
+    if len(sys.argv)>3:
+        if os.path.isfile(sys.argv[3]):
+            pcap=sys.argv[3]
+        elif sys.argv[3] in get_if_list():
+            iface=sys.argv[3]
+        else:
+            raise Exception("Unknown interface or invalid path to pcap.")
+    if len(sys.argv)>4:
+        if not os.path.isfile(sys.argv[4]):
+            raise Exception("PrivateKey File not Found! %s"%sys.argv[4])
+        keyfile = sys.argv[4]
+        
+    main((sys.argv[1],int(sys.argv[2])), iface=iface, pcap=pcap, keyfile=keyfile)
