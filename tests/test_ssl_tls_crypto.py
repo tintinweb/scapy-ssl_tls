@@ -134,7 +134,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         epms = tls_ctx.get_encrypted_pms()
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello()
         tls_ctx.insert(pkt)
-        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/epms
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange(data=epms)
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.crypto.session.encrypted_premaster_secret, epms)
         self.assertEqual(tls_ctx.crypto.session.premaster_secret, self.priv_key.decrypt(epms, None))
@@ -149,9 +149,19 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         epms = "C"*256
         server_hello = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSServerHello(gmt_unix_time=1234, random_bytes="A"*28)
         tls_ctx.insert(server_hello)
-        client_kex = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange()/epms
+        client_kex = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientKeyExchange(data=epms)
         tls_ctx.insert(client_kex)
         self.assertEqual(binascii.hexlify(tls_ctx.get_verify_data()), verify_data)
+
+    def test_client_dh_parameters_generateion_matches_fixed_data(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.crypto.server.dh.p = "\xdaX<\x16\xd9\x85\"\x89\xd0\xe4\xafuoL\xca\x92\xddK\xe53\xb8\x04\xfb\x0f\xed\x94\xef\x9c\x8aD\x03\xedWFP\xd3i\x99\xdb)\xd7v\'k\xa2\xd3\xd4\x12\xe2\x18\xf4\xdd\x1e\x08L\xf6\xd8\x00>|Gt\xe83"
+        tls_ctx.crypto.server.dh.g = "\x02"
+        tls_ctx.crypto.server.dh.y_s = "b\x1bF\xd4\xbe\xc6\x83d\x80\x1e\xeam\x86^\xcc!\xb2\x1b\x85+\xbd$j\xc9\x05\xf4\x14\x82 7\x8f_\x13\xcb\xef\xabyd\xb4\xc8\xda\xde\xac\xe8Zr\x8f\xb5\xfc\n\x16\xb0b\xf7\xd9!\x8d\x03\xef\n\r9\xd8\x87"
+        client_privkey = 5398526532442504864680398257365369432058147704829279760748758494328728516319L
+        client_pubkey = tls_ctx.get_client_dh_pubkey(client_privkey)
+        self.assertEqual("/T\xdc;\xc49\xa6\x8cD\xd4\xc1\x07I|\xb6\xc8\xaf\xb5\x04\xe9\xfb\t\x0e}\x14~\xa4\x1f\xdfo\x08u)Z\xb3\x0e\x1c^\xa3x0\x90\xa1\xd7\x82\x9dLT\xa6^\xcc\xf7\xae\x87\x97\x86vi\x02s\x10\xb3\xdbo", client_pubkey)
+        self.assertEqual("}\xcae\xd2y\xd7F$\xde\"\xa9s\xfbNR9v\x19t9\x87\xa8\xa3\x9c\xccb]\x13\xb7\x8a\x8f\xdf\x7fv\x05\xa6\xf1\xa7\xc8\xf4X\xe3\xd4\xac\xd6\x1e4\xb4\x1cc\xbb\xce\xbe\x94lQ\x91\xb9\xde\xb7\xa6gu_", tls_ctx.crypto.session.premaster_secret)
 
 class TestTLSSecurityParameters(unittest.TestCase):
 
@@ -163,7 +173,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
         unittest.TestCase.setUp(self)
 
     def test_unsupported_cipher_suite_throws_exception(self):
-        with self.assertRaises(tlsc.UnsupportedCipherError):
+        with self.assertRaises(RuntimeError):
             tlsc.TLSSecurityParameters(0xffff, self.pre_master_secret, self.client_random, self.server_random)
 
     def test_building_with_supported_cipher_sets_lengths(self):
@@ -306,7 +316,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.server_hello = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSServerHello(version=version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSClientKeyExchange()/self.tls_ctx.get_encrypted_pms()
+        self.client_kex = tls.TLSRecord(version=self.version)/tls.TLSHandshake()/tls.TLSClientKeyExchange(data=self.tls_ctx.get_encrypted_pms())
         self.tls_ctx.insert(self.client_kex)
 
     def test_crypto_container_increments_sequence_number(self):

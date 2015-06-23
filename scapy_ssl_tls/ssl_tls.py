@@ -143,6 +143,7 @@ class PacketNoPadding(Packet):
 class StackedLenPacket(Packet):
     ''' Allows stacked packets. Tries to chop layers by layer.length
     '''
+
     def do_dissect_payload(self, s):
         # prototype for this layer. only layers of same type can be stacked
         cls = self.guess_payload_class(s)
@@ -251,12 +252,25 @@ TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
 TLS_ELLIPTIC_CURVES = registry.EC_NAMED_CURVE_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
+class TLSKexNames(object):
+    RSA = "RSA"
+    DHE = "DHE"
+    ECDHE = "ECDHE"
+
 class TLSRecord(StackedLenPacket):
     name = "TLS Record"
     fields_desc = [ByteEnumField("content_type", TLSContentType.APPLICATION_DATA, TLS_CONTENT_TYPES),
                    XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
-    
+
+    def __init__(self, *args, **fields):
+        try:
+            self.tls_ctx = fields["ctx"]
+            del(fields["ctx"])
+        except KeyError:
+            self.tls_ctx = None
+        StackedLenPacket.__init__(self, *args, **fields)
+
     def guess_payload_class(self, payload):
         ''' Sense for ciphertext
         '''
@@ -410,31 +424,62 @@ class TLSHeartBeat(Packet):
 
 class TLSClientKeyExchange(Packet):
     name = "TLS Client Key Exchange"
-    fields_desc = [ XBLenField("length", None, fmt="!H",) ]
-    
-class TLSServerKeyExchange(Packet):
-    name = "TLS Server Key Exchange"
-    fields_desc = [ XBLenField("length", None, fmt="!H") ]
+    # Length field needs to be removed for SSL3 compatibility. I don't care for now
+    fields_desc = [ XFieldLenField("length", None, length_of="data", fmt="!H"),
+                    StrLenField("data", "", length_from=lambda x:x.length) ]
 
-class TLSKexParamDH(Packet):
-    name = "TLS Kex DH Params"
-    fields_desc = [ StrLenField("data", None) ]
-
-class TLSFinished(Packet):
-    name = "TLS Handshake Finished"
-    fields_desc = [ StrLenField("data", None) ]
-
-class TLSDHServerParams(Packet):
+class TLSServerDHParams(Packet):
     name = "TLS Diffie-Hellman Server Params"
     fields_desc = [XFieldLenField("p_length", None, length_of="p", fmt="!H"),
                    StrLenField("p", '', length_from=lambda x:x.p_length),
                    XFieldLenField("g_length", None, length_of="g", fmt="!H"),
                    StrLenField("g", '', length_from=lambda x:x.g_length),
-                   XFieldLenField("pubkey_length", None, length_of="pubkey", fmt="!H"),
-                   StrLenField("pubkey", '', length_from=lambda x:x.pubkey_length),
-                   XFieldLenField("signature_length", None, length_of="signature", fmt="!H"),
-                   StrLenField("signature", '', length_from=lambda x:x.signature_length), ]
-                   
+                   XFieldLenField("ys_length", None, length_of="y_s", fmt="!H"),
+                   StrLenField("y_s", "", length_from=lambda x:x.ys_length),
+                   XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
+                   StrLenField("sig", '', length_from=lambda x:x.sig_length) ]
+
+class TLSServerKeyExchange(Packet):
+    name = "TLS Server Key Exchange"
+
+    kex_payload_table = { TLSKexNames.DHE: TLSServerDHParams,
+                          #Add ECDHE, and ERSA in the future
+                         }
+
+    def __init__(self, *args, **fields):
+        try:
+            self.tls_ctx = fields["ctx"]
+            del(fields["ctx"])
+        except KeyError:
+            self.tls_ctx = None
+        Packet.__init__(self, *args, **fields)
+
+    def pre_dissect(self, s):
+        if self.firstlayer().name == TLSRecord.name:
+            # Go get the underlaying records context
+            # Will allow us to differentiate Ephemeral RSA (Freak)
+            # From DHE (Logjam) and ECDHE
+            try:
+                self.tls_ctx = self.firstlayer().tls_ctx
+            except AttributeError:
+                self.tls_ctx = None
+        return Packet.pre_dissect(self, s)
+
+    def guess_payload_class(self, raw_bytes):
+        next_layer = Raw
+        if self.tls_ctx is not None:
+            kex = self.tls_ctx.params.negotiated.key_exchange
+            if kex is not None:
+                try:
+                    next_layer = self.kex_payload_table[kex]
+                except KeyError:
+                    pass
+        return next_layer
+
+class TLSFinished(Packet):
+    name = "TLS Handshake Finished"
+    fields_desc = [ StrLenField("data", None) ]
+
 class TLSServerHelloDone(Packet):
     name = "TLS Server Hello Done"
     fields_desc = [ XBLenField("length", None, fmt="!I", numbytes=3),
@@ -500,7 +545,7 @@ class TLSDecryptablePacket(Packet):
 
 class TLSPlaintext(TLSDecryptablePacket):
     name = "TLS Plaintext"
-    fields_desc = [ StrField("data", None, fmt="H") ]
+    fields_desc = [ StrField("data", "", fmt="H") ]
 
 class TLSChangeCipherSpec(TLSDecryptablePacket):
     name = "TLS ChangeCipherSpec"
@@ -692,10 +737,7 @@ class TLSSocket(object):
                 break
         self._s.settimeout(prev_timeout)
         records = TLS("".join(resp), ctx=self.tls_ctx)
-        self.tls_ctx.insert(records)
         return records
-
-
 
 # entry class
 class SSL(Packet):
@@ -714,9 +756,9 @@ class SSL(Packet):
         Packet.__init__(self, *args, **fields)
 
     @classmethod
-    def from_records(cls, records):
+    def from_records(cls, records, ctx=None):
         pkt_str = "".join(list(map(str, records)))
-        return cls(pkt_str)
+        return cls(pkt_str, ctx)
 
     def pre_dissect(self, raw_bytes):
         # figure out if we're UDP or TCP
@@ -740,7 +782,11 @@ class SSL(Packet):
         # We will incorrectly parse it
         while pos < len(raw_bytes)-record_header_len:
             payload_len = record(raw_bytes[pos:pos+record_header_len]).length
-            payload = record(raw_bytes[pos:pos+record_header_len+payload_len])
+            if self.tls_ctx is not None:
+                payload = record(raw_bytes[pos:pos+record_header_len+payload_len], ctx=self.tls_ctx)
+                self.tls_ctx.insert(payload)
+            else:
+                payload = record(raw_bytes[pos:pos+record_header_len+payload_len])
             # Populate our list of found records
             records.append(payload)
             # Move to the next record
@@ -780,7 +826,12 @@ class SSL(Packet):
                         else:
                             cleartext = self.tls_ctx.crypto.client.dec.decrypt(encrypted_payload)
                         pkt = layer(cleartext, ctx=self.tls_ctx)
+                        original_record = record
                         record[self.guessed_next_layer].payload = pkt
+                        # If the encrypted is in the history packet list, update it with the unencrypted version
+                        if original_record in self.tls_ctx.packets.history:
+                            record_index = self.tls_ctx.packets.history.index(original_record)
+                            self.tls_ctx.packets.history[record_index] = record
                     # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
                     except ValueError as ve:
                         raise ValueError("Decryption failed: %s" % ve)
@@ -859,9 +910,6 @@ bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':TLSHandshakeType.CLIENT_
 bind_layers(TLSHandshake, TLSFinished, {'type':TLSHandshakeType.FINISHED})
 bind_layers(TLSHandshake, TLSSessionTicket, {'type':TLSHandshakeType.NEWSESSIONTICKET})
 # <---
-
-bind_layers(TLSServerKeyExchange, TLSKexParamDH)
-bind_layers(TLSClientKeyExchange, TLSKexParamDH)
 
 # --> extensions
 bind_layers(TLSExtension, TLSExtServerNameIndication, {'type': TLSExtensionType.SERVER_NAME})
