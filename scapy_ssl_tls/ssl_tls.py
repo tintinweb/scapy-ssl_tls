@@ -545,7 +545,7 @@ class TLSDecryptablePacket(Packet):
 
 class TLSPlaintext(TLSDecryptablePacket):
     name = "TLS Plaintext"
-    fields_desc = [ StrField("data", None, fmt="H") ]
+    fields_desc = [ StrField("data", "", fmt="H") ]
 
 class TLSChangeCipherSpec(TLSDecryptablePacket):
     name = "TLS ChangeCipherSpec"

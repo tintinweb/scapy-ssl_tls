@@ -757,7 +757,9 @@ class TLSSecurityParameters(object):
         self.server_random = server_random
         self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
         self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
-        self.iv_length = self.negotiated_crypto_param["cipher"]["type"].block_size
+        block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
+        # Stream ciphers have a block size of one, but IV should be 0
+        self.iv_length = 0 if block_size == 1 else block_size
         self.explicit_iv = explicit_iv
         self.prf = TLSPRF(SHA256)
         self.__init_crypto(pms, client_random, server_random, explicit_iv)
