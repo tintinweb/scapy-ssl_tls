@@ -878,6 +878,30 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
         tls_ciphertext = ciphertext
     return tls_ciphertext
 
+tls_to_raw = to_raw
+
+class TLSProtocolError(Exception):
+
+    def __init__(self, *args, **kwargs):
+        try:
+            self.pkt = kwargs["pkt"]
+        except KeyError:
+            self.pkt = None
+        Exception.__init__(self, *args, **kwargs)
+
+def tls_do_handshake(tls_socket, version, ciphers):
+    client_hello = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, compression_methods=(TLSCompressionMethod.NULL),
+                                                                            cipher_suites=ciphers)
+    tls_socket.sendall(client_hello)
+    r = tls_socket.recvall()
+    if r.haslayer(TLSAlert):
+        raise TLSProtocolError("Alert returned by server", r)
+    client_key_exchange = TLSRecord(version=version)/TLSHandshake()/TLSClientKeyExchange(data=tls_socket.tls_ctx.get_client_kex_data())
+    client_ccs = TLSRecord(version=version)/TLSChangeCipherSpec()
+    tls_socket.sendall(TLS.from_records([client_key_exchange, client_ccs]))
+    tls_socket.sendall(to_raw(TLSFinished(), tls_socket.tls_ctx))
+    tls_socket.recvall()
+
 # bind magic
 bind_layers(TCP, SSL, dport=443)
 bind_layers(TCP, SSL, sport=443)
