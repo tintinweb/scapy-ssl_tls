@@ -11,6 +11,5 @@ fi
 script_dir="$(dirname "$(${readlink} -f "${0}")")"
 cd "${script_dir}"
 
-#openssl s_server -accept 8443 -www -debug -msg -key keys/key.pem -cert keys/cert.pem -tls1 -no_ssl3
-openssl s_server -accept 8443 -www -debug -msg -key keys/key.pem -cert keys/cert.pem -tls1_1 -no_ssl3
-#openssl s_server -accept 8443 -www -debug -msg -key keys/key.pem -cert keys/cert.pem -tls1_2 -no_ssl3
+# possible values tls1, tls1_1, tls1_2
+openssl s_server -accept 8443 -www -debug -msg -key keys/key.pem -cert keys/cert.pem -${1} -no_ssl3
