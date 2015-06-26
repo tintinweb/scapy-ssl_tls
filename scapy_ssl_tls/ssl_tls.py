@@ -863,19 +863,12 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
     else:
         post_compress_data = comp_method.compress(data)
 
+    crypto_container = tlsc.CryptoContainer(tls_ctx, post_compress_data, content_type)
     if pre_encrypt_hook is not None:
-        cleartext, mac, padding = pre_encrypt_hook(post_compress_data)
-        crypto_container = tlsc.CryptoContainer(tls_ctx, cleartext, content_type)
-        crypto_container.mac = mac
-        crypto_container.padding = padding
-    else:
-        cleartext = post_compress_data
-        crypto_container = tlsc.CryptoContainer(tls_ctx, cleartext, content_type)
-        mac = crypto_container.mac
-        padding = crypto_container.padding
+        crypto_container = pre_encrypt_hook(crypto_container)
 
     if encrypt_hook is not None:
-        ciphertext = encrypt_hook(cleartext, mac, padding)
+        ciphertext = encrypt_hook(crypto_container)
     else:
         ciphertext = crypto_container.encrypt()
 
