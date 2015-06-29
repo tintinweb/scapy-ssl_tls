@@ -469,9 +469,12 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         def custom_compress(comp_method, pre_compress_data):
             return pre_compress_data * 2
         # Return cleartext, null mac, null padding
-        pre_encrypt = lambda x: (x, b"", b"")
+        def pre_encrypt(crypto_container):
+            crypto_container.mac = b""
+            crypto_container.padding = b""
+            return crypto_container
         # Return cleartext
-        encrypt = lambda x, y, z: x
+        encrypt = lambda x: str(x)
         data = b"ABCD"
         pkt = tls.TLSPlaintext(data=data)
         raw = tls.to_raw(pkt, self.tls_ctx, include_record=False, compress_hook=custom_compress, pre_encrypt_hook=pre_encrypt, encrypt_hook=encrypt)
@@ -489,11 +492,11 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(record.version, self.tls_ctx.params.negotiated.version)
 
     def test_format_of_tls_finished_is_as_specified_in_rfc(self):
-        def encrypt(cleartext, mac, padding):       
-            self.assertEqual(cleartext, "\x14\x00\x00\x0c%s" % self.tls_ctx.get_verify_data()) 
-            self.assertEqual(len(mac), SHA.digest_size)
-            self.assertEqual(len(padding), 11)   
-            self.assertTrue(all(map(lambda x: True if x == chr(11) else False, padding)))
+        def encrypt(crypto_container):
+            self.assertEqual(crypto_container.data, "\x14\x00\x00\x0c%s" % self.tls_ctx.get_verify_data())
+            self.assertEqual(len(crypto_container.mac), SHA.digest_size)
+            self.assertEqual(len(crypto_container.padding), 11)
+            self.assertTrue(all(map(lambda x: True if x == chr(11) else False, crypto_container.padding)))
             return "A"*48
         client_finished = tls.TLSRecord(content_type=0x16)/tls.to_raw(tls.TLSFinished(), self.tls_ctx, include_record=False, encrypt_hook=encrypt)
         pkt = tls.TLS(str(client_finished))
