@@ -291,11 +291,6 @@ class TLSRecord(StackedLenPacket):
             pass
         return cls
 
-class TLSHandshake(Packet):
-    name = "TLS Handshake"
-    fields_desc = [ByteEnumField("type", TLSHandshakeType.CLIENT_HELLO, TLS_HANDSHAKE_TYPES),
-                   XBLenField("length", None, fmt="!I", numbytes=3), ]
-
 class TLSServerName(PacketNoPadding):
     name = "TLS Servername"
     fields_desc = [ByteEnumField("type", 0x00, {0x00:"host"}),
@@ -522,7 +517,7 @@ class TLSDecryptablePacket(Packet):
     explicit_iv_field = StrField("explicit_iv", "", fmt="H")
     mac_field = StrField("mac", "", fmt="H")
     padding_field = StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len)
-    padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False )
+    padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt and hasattr(pkt,"padding") and pkt.padding != "" else False )
     decryptable_fields = [mac_field, padding_field, padding_len_field]
 
     def __init__(self, *args, **fields):
@@ -562,6 +557,11 @@ class TLSDecryptablePacket(Packet):
                 data = raw_bytes[:-hash_size]
         # Return plaintext without mac and padding
         return data
+
+class TLSHandshake(TLSDecryptablePacket):
+    name = "TLS Handshake"
+    fields_desc = [ByteEnumField("type", TLSHandshakeType.CLIENT_HELLO, TLS_HANDSHAKE_TYPES),
+                   XBLenField("length", None, fmt="!I", numbytes=3), ]
 
 class TLSPlaintext(TLSDecryptablePacket):
     name = "TLS Plaintext"
@@ -818,8 +818,12 @@ class SSL(Packet):
     def _get_encrypted_payload(self, record):
         encrypted_payload = None
         decrypted_type = None
+        # TLSFinished, encrypted
+        if record.haslayer(TLSRecord) and record[TLSRecord].content_type==TLSContentType.HANDSHAKE and record.haslayer(TLSCiphertext):
+            encrypted_payload = record[TLSCiphertext].data
+            decrypted_type = TLSHandshake
         # Application data
-        if record.haslayer(TLSCiphertext):
+        elif record.haslayer(TLSCiphertext):
             encrypted_payload = record[TLSCiphertext].data
             decrypted_type = TLSPlaintext
         # Handshake with no recognized upper layer = TLSFinished
