@@ -86,7 +86,7 @@ class Sniffer(object):
                 else:
                     Exception("src packet mismatch: %s"%repr(source))
                 p = SSL(str(p_ssl),ctx=session)
-                print "|-> %-48s | %s"%("decrypted record",repr(p_ssl))
+                print "|-> %-48s | %s"%("decrypted record",repr(p))
             #p.show()
             #raw_input()
     
