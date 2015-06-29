@@ -78,15 +78,19 @@ class Sniffer(object):
                 session.printed = True
             
             print "|   %-16s:%-5d => %-16s:%-5d | %s"%(p[IP].src,p[TCP].sport,p[IP].dst,p[TCP].dport,repr(p_ssl))            
-            if p.haslayer(TLSCiphertext):
+            if p.haslayer(TLSCiphertext) or (p.haslayer(TLSAlert) and p.haslayer(Raw)):
                 if source == session.match_client:
                     session.set_mode(server=True)
                 elif source == session.match_server:
+                    pass
                     session.set_mode(client=True)
                 else:
                     Exception("src packet mismatch: %s"%repr(source))
-                p = SSL(str(p_ssl),ctx=session)
-                print "|-> %-48s | %s"%("decrypted record",repr(p))
+                try:
+                    p = SSL(str(p_ssl),ctx=session)
+                    print "|-> %-48s | %s"%("decrypted record",repr(p))
+                except ValueError, ve:
+                    print "Exception:", repr(ve)
             #p.show()
             #raw_input()
     
