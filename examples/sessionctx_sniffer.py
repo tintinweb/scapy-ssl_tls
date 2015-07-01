@@ -29,6 +29,99 @@ except ImportError:
     
 import socket
 
+class L4TcpReassembler(object):
+    ''' WARNING - this is not a valid TCP Stream Reassembler.
+                  It is not L5+ aware and only operates at L4
+                  Only works for the assumption that a consequtive stream will be split in segments of the max segment size (mss). It will concat segments == mss until a segment < mss is found. it will then spit out a reassembled (fake) TCP packet with the full payload. 
+    '''
+    class TCPFlags:
+        FIN = 0x01
+        SYN = 0x02
+        RST = 0x04
+        PSH = 0x08
+        ACK = 0x10
+        URG = 0x20
+        ECE = 0x40
+        CWR = 0x80
+    
+    class TCPStream(object):
+        def __init__(self, pkt):
+            self.pktlist = []
+            self.stream_id = L4TcpReassembler.TCPStream.stream_id(pkt)
+            
+            if not pkt[TCP].flags & L4TcpReassembler.TCPFlags.SYN:
+                raise Exception("NOT THE BEGINNING OF A STREAM: %s"%repr(self.stream_id))
+            
+            self.syn = pkt[TCP]
+            self.syn.payload=None   # strip payload
+            self.initial_seq = pkt[TCP].seq
+            
+            self.last_seq = self.initial_seq
+            self.relative_seq = 0
+            
+            self.mss = ( option[1] for option in pkt[TCP].options if option[0]=="MSS").next()
+            
+        @staticmethod
+        def stream_id(pkt):
+            return (pkt[IP].src, pkt[TCP].sport, pkt[IP].dst, pkt[TCP].dport)
+        
+        def process(self, pkt):
+            self.last_seq = pkt[TCP].seq
+            payload_size = len(pkt[TCP].payload)
+            
+            if payload_size < self.mss:
+                # flush pktlist as [pkt stack, current_pkt]
+                if len(self.pktlist)>1:
+                    # create fake packet
+                    p_reassembled = pkt
+                    del(p_reassembled[IP].len)
+                    del(p_reassembled[IP].chksum)
+                    del(p_reassembled[TCP].chksum)
+                    #p_reassembled.name = "TCPReassembled"
+                    p_reassembled[TCP].payload = ''.join(str(p[TCP].payload) for p in self.pktlist) + str(p_reassembled[TCP].payload)
+                    p_reassembled[TCP] = TCP(str(p_reassembled[TCP]))       # force re-dissect
+
+                    self.pktlist=[]
+                    return p_reassembled
+                # otherwise just return current pkt 
+                return pkt
+            # segment size > track it
+            self.pktlist.append(pkt)
+            return None
+        
+        def __repr__(self, *args, **kwargs):
+            return "<<TCPSTream: %s | mss=%s seq_init=%s seq_last=%s seq_diff=%s pktlist=%s>>"%(repr(self.stream_id),self.mss,self.initial_seq, self.last_seq, self.last_seq-self.initial_seq,self.pktlist )
+        
+    def __init__(self):
+        # track streams
+        self.streams = {}
+        
+    def get_stream(self, pkt):
+        stream_id = L4TcpReassembler.TCPStream.stream_id(pkt)
+        stream_obj = self.streams.get(stream_id)                # get stream tracker
+        if not stream_obj:
+            stream_obj = L4TcpReassembler.TCPStream(pkt)
+            self.streams[stream_id]=stream_obj
+        return stream_obj
+        
+    def reassemble(self, pktlist):
+        '''Defragment and Reassemble Streams
+        '''
+        # defragment L3
+        for pkt in defragment(pktlist):
+            if not pkt.haslayer(TCP):
+                # Not TCP, return
+                yield pkt
+                continue
+            # get Stream object
+            stream = self.get_stream(pkt)
+            p = stream.process(pkt)
+            if not p:
+                # assume stream not complete 
+                continue
+            # assume stream complete
+            yield p
+
 class Sniffer(object):
     ''' Sniffer()
         .rdpcap(pcap)
@@ -82,7 +175,6 @@ class Sniffer(object):
                 if source == session.match_client:
                     session.set_mode(server=True)
                 elif source == session.match_server:
-                    pass
                     session.set_mode(client=True)
                 else:
                     Exception("src packet mismatch: %s"%repr(source))
@@ -91,8 +183,6 @@ class Sniffer(object):
                     print "|-> %-48s | %s"%("decrypted record",repr(p))
                 except ValueError, ve:
                     print "Exception:", repr(ve)
-            #p.show()
-            #raw_input()
     
     def sniff(self, target, keyfile=None, iface=None):
         if iface:
@@ -103,7 +193,7 @@ class Sniffer(object):
             
     def rdpcap(self, target, keyfile, pcap):
         self._create_context(target=target,keyfile=keyfile)
-        for p in (pkt for pkt in rdpcap(pcap) if pkt.haslayer(SSL)):
+        for p in (pkt for pkt in L4TcpReassembler().reassemble(rdpcap(pcap)) if pkt.haslayer(SSL)):
             self.process_ssl(p)
 
 
