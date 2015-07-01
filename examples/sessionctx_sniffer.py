@@ -32,7 +32,7 @@ import socket
 class L4TcpReassembler(object):
     ''' WARNING - this is not a valid TCP Stream Reassembler.
                   It is not L5+ aware and only operates at L4
-                  Only works for the assumption that a consequtive stream will be split in segments of the max segment size (mss). It will concat segments == mss until a segment < mss is found. it will then spit out a reassembled (fake) TCP packet with the full payload. 
+                  Only works for the assumption that a consecutive stream will be split in segments of the max segment size (mss). It will concat segments == mss until a segment < mss is found. it will then spit out a reassembled (fake) TCP packet with the full payload. 
     '''
     class TCPFlags:
         FIN = 0x01
@@ -140,14 +140,17 @@ class Sniffer(object):
             print "* load servers privatekey for ciphertext decryption (RSA key only): %s"%keyfile
             session.rsa_load_keys_from_file(keyfile)
             
-        session.printed=False
-        self.ssl_session_map[target]=session
+            session.printed=False
+            self.ssl_session_map[target]=session
+        else:
+            print "!! missing private key"
 
     def process_ssl(self, p):
             if not p.haslayer(SSL):
                 return
             session = self.ssl_session_map.get((p[IP].dst,p[TCP].dport)) or self.ssl_session_map.get((p[IP].src,p[TCP].sport))
             if not session:
+                print "|   %-16s:%-5d => %-16s:%-5d | %s"%(p[IP].src,p[TCP].sport,p[IP].dst,p[TCP].dport,repr(p[SSL]))     
                 return
             p_ssl = p[SSL]
             source = (p[IP].src,p[TCP].sport)
@@ -185,11 +188,15 @@ class Sniffer(object):
                     print "Exception:", repr(ve)
     
     def sniff(self, target, keyfile=None, iface=None):
+        self._tcp_reassembler = L4TcpReassembler()
+        def reassemble(p):
+            for rp in (pkt for pkt in self._tcp_reassembler.reassemble([p]) if pkt.haslayer(SSL)):
+                self.process_ssl(p)
         if iface:
             conf.iface=iface
         self._create_context(target=target,keyfile=keyfile)
         while True:
-            sniff(filter="host %s and tcp port %d"%(target[0],target[1]),prn=self.process_ssl,store=0,timeout=3)
+            sniff(filter="host %s and tcp port %d"%(target[0],target[1]),prn=reassemble,store=0,timeout=3)
             
     def rdpcap(self, target, keyfile, pcap):
         self._create_context(target=target,keyfile=keyfile)
