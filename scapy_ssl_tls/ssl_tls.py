@@ -819,11 +819,11 @@ class SSL(Packet):
         encrypted_payload = None
         decrypted_type = None
         # TLSFinished, encrypted
-        if record.haslayer(TLSRecord) and record[TLSRecord].content_type==TLSContentType.HANDSHAKE and record.haslayer(TLSCiphertext):
-            encrypted_payload = record[TLSCiphertext].data
-            decrypted_type = TLSHandshake
+        #if record.haslayer(TLSRecord) and record[TLSRecord].content_type==TLSContentType.HANDSHAKE and record.haslayer(TLSCiphertext):
+        #    encrypted_payload = record[TLSCiphertext].data
+        #    decrypted_type = TLSHandshake
         # Application data
-        elif record.haslayer(TLSCiphertext):
+        if record.haslayer(TLSCiphertext):
             encrypted_payload = record[TLSCiphertext].data
             decrypted_type = TLSPlaintext
         # Handshake with no recognized upper layer = TLSFinished
