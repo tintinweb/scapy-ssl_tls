@@ -252,6 +252,12 @@ TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
 TLS_ELLIPTIC_CURVES = registry.EC_NAMED_CURVE_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
+TLS_HASH_ALGORITHMS = registry.TLS_HASHALGORITHM_REGISTRY
+TLSHashAlgorithm = EnumStruct(TLS_HASH_ALGORITHMS)
+
+TLS_SIGNATURE_ALGORITHMS = registry.TLS_SIGNATUREALGORITHM_REGISTRY
+TLSSignatureAlgorithm = EnumStruct(TLS_SIGNATURE_ALGORITHMS)
+
 class TLSKexNames(object):
     RSA = "RSA"
     DHE = "DHE"
@@ -284,11 +290,6 @@ class TLSRecord(StackedLenPacket):
             # e.g. TLSChangeCipherSpec might land here
             pass
         return cls
-
-class TLSHandshake(Packet):
-    name = "TLS Handshake"
-    fields_desc = [ByteEnumField("type", TLSHandshakeType.CLIENT_HELLO, TLS_HANDSHAKE_TYPES),
-                   XBLenField("length", None, fmt="!I", numbytes=3), ]
 
 class TLSServerName(PacketNoPadding):
     name = "TLS Servername"
@@ -357,6 +358,20 @@ class TLSExtEllipticCurves(PacketNoPadding):
                    FieldListField("elliptic_curves", None, ShortEnumField("elliptic_curve", None, TLS_ELLIPTIC_CURVES), length_from=lambda x:x.length),
                   ]
     
+class TLSSignatureHashAlgorithm(PacketNoPadding):
+    name = "TLS Signature Hash Algorithm Pair"
+    fields_desc = [
+                   ByteEnumField("hash_algorithm", None, TLS_HASH_ALGORITHMS),
+                   ByteEnumField("signature_algorithm", None, TLS_SIGNATURE_ALGORITHMS),
+                  ]  
+    
+class TLSExtSignatureAndHashAlgorithm(PacketNoPadding):
+    name = "TLS Extension Signature And Hash Algorithm"
+    fields_desc = [
+                   XFieldLenField("length", None, length_of="algorithms", fmt="H"),
+                   PacketListField("algorithms", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length),
+                  ]  
+
 class TLSExtHeartbeat(PacketNoPadding):
     name = "TLS Extension HeartBeat"
     fields_desc = [ByteEnumField("mode", TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND, TLS_HEARTBEAT_MODE)]
@@ -388,7 +403,7 @@ class TLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ] 
  
@@ -403,7 +418,7 @@ class TLSServerHello(Packet):
                    XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
-                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]
 
@@ -502,7 +517,7 @@ class TLSDecryptablePacket(Packet):
     explicit_iv_field = StrField("explicit_iv", "", fmt="H")
     mac_field = StrField("mac", "", fmt="H")
     padding_field = StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len)
-    padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt.padding != "" else False )
+    padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt and hasattr(pkt,"padding") and pkt.padding != "" else False )
     decryptable_fields = [mac_field, padding_field, padding_len_field]
 
     def __init__(self, *args, **fields):
@@ -542,6 +557,11 @@ class TLSDecryptablePacket(Packet):
                 data = raw_bytes[:-hash_size]
         # Return plaintext without mac and padding
         return data
+
+class TLSHandshake(TLSDecryptablePacket):
+    name = "TLS Handshake"
+    fields_desc = [ByteEnumField("type", TLSHandshakeType.CLIENT_HELLO, TLS_HANDSHAKE_TYPES),
+                   XBLenField("length", None, fmt="!I", numbytes=3), ]
 
 class TLSPlaintext(TLSDecryptablePacket):
     name = "TLS Plaintext"
@@ -798,6 +818,10 @@ class SSL(Packet):
     def _get_encrypted_payload(self, record):
         encrypted_payload = None
         decrypted_type = None
+        # TLSFinished, encrypted
+        #if record.haslayer(TLSRecord) and record[TLSRecord].content_type==TLSContentType.HANDSHAKE and record.haslayer(TLSCiphertext):
+        #    encrypted_payload = record[TLSCiphertext].data
+        #    decrypted_type = TLSHandshake
         # Application data
         if record.haslayer(TLSCiphertext):
             encrypted_payload = record[TLSCiphertext].data
@@ -939,6 +963,7 @@ bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYE
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
 bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSIONTICKET_TLS})
 bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type':TLSExtensionType.RENEGOTIATION_INFO})
+bind_layers(TLSExtension, TLSExtSignatureAndHashAlgorithm, {'type':TLSExtensionType.SIGNATURE_ALGORITHMS})
 # <--
 
 # DTLSRecord

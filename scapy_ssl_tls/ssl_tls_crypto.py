@@ -486,6 +486,10 @@ class TLSSessionCtx(object):
                                                                numbytes=12)
         return prf_verify_data
 
+    def set_mode(self, client=None, server=None):
+        self.client=client if client else not server
+        self.server= not self.client
+        
 class TLSPRF(object):
     TLS_MD_CLIENT_FINISH_CONST = "client finished"
     TLS_MD_SERVER_FINISH_CONST = "server finished"
