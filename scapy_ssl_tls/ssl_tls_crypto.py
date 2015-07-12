@@ -419,8 +419,14 @@ class TLSSessionCtx(object):
     def rsa_load_keys_from_file(self, priv_key_file):
         with open(priv_key_file,'r') as f:
             # _rsa_load_keys expects one pem/der key per file.
-            privkey = pem_get_objects(f.read()).get("RSA PRIVATE KEY",{}).get("full")
-            self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(privkey)
+            pemo = pem_get_objects(f.read())
+            for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
+                try:
+                    self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(pemo[key_pk].get("full"))
+                    return
+                except ValueError, ve:
+                    pass
+        raise ValueError("Unable to load PRIVATE key from pem file: %s"%priv_key_file)
 
     def rsa_load_keys(self, priv_key):
         self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(priv_key)

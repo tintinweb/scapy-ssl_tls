@@ -1,5 +1,6 @@
 #! -*- coding: utf-8 -*-
 
+import os
 import binascii
 import unittest
 import scapy_ssl_tls.ssl_tls as tls
@@ -7,6 +8,9 @@ import scapy_ssl_tls.ssl_tls_crypto as tlsc
 from Crypto.Hash import HMAC, MD5, SHA
 from Crypto.Cipher import AES, DES3, PKCS1_v1_5
 from Crypto.PublicKey import RSA
+
+def env_local_file(file):
+    return os.path.join(os.path.dirname(__file__),'files',file)
 
 class TestNullCiper(unittest.TestCase):
 
@@ -233,6 +237,13 @@ class TestTLSSecurityParameters(unittest.TestCase):
         sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random, self.server_random, explicit_iv=True)
         self.assertEqual(sec_params.client_write_IV, "\x00"*16)
         self.assertEqual(sec_params.server_write_IV, "\x00"*16)
+
+    def test_load_rsa_privkey_from_pem_file(self):
+        pem_file = env_local_file("openssl_1_0_1_f_server.pem")
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.rsa_load_keys_from_file(pem_file)
+        self.assertTrue(tls_ctx.crypto.server.rsa.privkey)
+        self.assertTrue(tls_ctx.crypto.server.rsa.pubkey)
 
 class TestNullCompression(unittest.TestCase):
 
