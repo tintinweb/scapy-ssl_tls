@@ -44,8 +44,8 @@ class TCPConnection(object):
         if not self._s:
             raise se
         if starttls:
-            self._s.sendall(starttls.replace("\\r","\r").replace("\\n","\n"))
-            self._s.recvall(timeout=2)
+            self.sendall(starttls.replace("\\r","\r").replace("\\n","\n"))
+            self.recvall(timeout=2)
 
     def sendall(self, pkt, timeout=None):
         if timeout:
@@ -58,7 +58,7 @@ class TCPConnection(object):
             self._s.settimeout(timeout)
         while True:
             try:
-                data = self._s.recv(size)
+                data = self._s.recv(size)t
                 if not data:
                     break
                 resp.append(data)
@@ -229,7 +229,7 @@ class TLSScanner(object):
             pkt = TLSRecord()/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_1, cipher_suites=range(0xfe)[::-1], compression_methods=comp)
             # connect
             try:
-                t = TCPConnection(target)
+                t = TCPConnection(target, starttls=starttls)
                 t.sendall(pkt)
                 resp = t.recvall(timeout=0.5)
                 self.capabilities.insert(resp, client=False)
@@ -240,7 +240,7 @@ class TLSScanner(object):
     def _check_cipher(self, target,  cipher_id, starttls=None,version=TLSVersion.TLS_1_0):
         pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, cipher_suites=[cipher_id])
         try:
-            t = TCPConnection(target)
+            t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
         except socket.error, se:
@@ -262,7 +262,7 @@ class TLSScanner(object):
                                                                          extensions=[TLSExtension()/TLSExtHeartbeat(mode=TLSHeartbeatMode.PEER_ALLOWED_TO_SEND)])
             try:
                 # connect
-                t = TCPConnection(target)
+                t = TCPConnection(target, starttls=starttls)
                 t.sendall(pkt)
                 resp = t.recvall(timeout=0.5)
                 self.capabilities.insert(resp, client=False)
@@ -273,7 +273,7 @@ class TLSScanner(object):
         pkt = TLSRecord(version=TLSVersion.TLS_1_1)/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_0, cipher_suites=[TLSCipherSuite.FALLBACK_SCSV]+range(0xfe)[::-1])
         # connect
         try:
-            t = TCPConnection(target)
+            t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
             resp = t.recvall(timeout=2)
             self.capabilities.insert(resp, client=False)
