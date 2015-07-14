@@ -58,7 +58,7 @@ class TCPConnection(object):
             self._s.settimeout(timeout)
         while True:
             try:
-                data = self._s.recv(size)t
+                data = self._s.recv(size)
                 if not data:
                     break
                 resp.append(data)
