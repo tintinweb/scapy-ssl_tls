@@ -85,6 +85,7 @@ class TLSInfo(object):
         self.info.server.sessions_established = 0
         self.info.server.fallback_scsv = False
         self.info.server.heartbeat = None
+        self.info.server.certificates = set([])
     
     def __str__(self):
         return """<TLSInfo
@@ -103,6 +104,8 @@ class TLSInfo(object):
         server.sessions_established: %s
         server.fallback_scsv: %s
         server.heartbeat: %s
+        
+        server.certificates: %s
 >
         """%(len(self.history),
              self.info.client.versions,
@@ -116,7 +119,8 @@ class TLSInfo(object):
              self.info.server.compressions,
              self.info.server.sessions_established,
              self.info.server.fallback_scsv,
-             self.info.server.heartbeat)
+             self.info.server.heartbeat,
+             repr(self.info.server.certificates))
         
     def get_events(self):
         events=[]
@@ -189,7 +193,8 @@ class TLSInfo(object):
             elif not client or record.haslayer(TLSServerHello):
                 tlsinfo = self.info.server
                 
-            tlsinfo.versions.add(pkt[TLSRecord].version)
+            if not pkt.haslayer(TLSAlert):
+                tlsinfo.versions.add(pkt[TLSRecord].version)
         
             if record.haslayer(TLSClientHello):
                 tlsinfo.ciphers.update(record[TLSClientHello].cipher_suites)
@@ -202,6 +207,8 @@ class TLSInfo(object):
                 tlsinfo.compressions.add(record[TLSServerHello].compression_method)
                 if record.haslayer(TLSExtHeartbeat):
                     tlsinfo.heartbeat = record[TLSExtHeartbeat].mode
+            if record.haslayer(TLSCertificateList):
+                tlsinfo.certificates.add(record[TLSCertificateList])
     
             if record.haslayer(TLSFinished):
                 tlsinfo.session.established +=1
@@ -222,7 +229,7 @@ class TLSScanner(object):
         for scan_method in (f for f in dir(self) if f.startswith("_scan_")):
             print "=> %s"%(scan_method.replace("_scan_",""))
             getattr(self, scan_method)(target, starttls=starttls)
-            
+    
     def _scan_compressions(self, target, starttls=None, compression_list=TLS_COMPRESSION_METHODS.keys()): 
         for comp in compression_list:
             # prepare pkt
@@ -235,7 +242,6 @@ class TLSScanner(object):
                 self.capabilities.insert(resp, client=False)
             except socket.error, se:
                 print repr(se)
-
     
     def _check_cipher(self, target,  cipher_id, starttls=None,version=TLSVersion.TLS_1_0):
         pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, cipher_suites=[cipher_id])
