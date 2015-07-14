@@ -124,6 +124,7 @@ class TLSInfo(object):
         
     def get_events(self):
         events=[]
+        events.extend(self.events)
         for tlsinfo in (self.info.client, self.info.server):
             # test CRIME - compressions offered?
             tmp = tlsinfo.compressions.copy()
@@ -167,10 +168,10 @@ class TLSInfo(object):
                 
             if TLSHeartbeatMode.PEER_ALLOWED_TO_SEND == tlsinfo.heartbeat:
                 events.append(("HEARTBEAT - enabled (non conclusive heartbleed) ",tlsinfo.versions))
-                
+
         if not self.info.server.fallback_scsv:
             events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",self.info.server.fallback_scsv))
-        
+
         return events
         
     def insert(self, pkt, client=None):
@@ -230,6 +231,32 @@ class TLSScanner(object):
             print "=> %s"%(scan_method.replace("_scan_",""))
             getattr(self, scan_method)(target, starttls=starttls)
     
+    def _scan_poodle2(self, target, starttls=None, version=TLSVersion.TLS_1_0):
+        '''taken from poodle2_padding_check'''
+        def modify_padding(crypto_container):
+            padding = crypto_container.padding
+            crypto_container.padding = "\xff%s" % padding[1:]
+            return crypto_container
+
+        try:
+            t = TCPConnection(target, starttls=starttls)
+            ts = TLSSocket(t._s, client=True)
+            tls_do_handshake(ts, version, TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA)
+            ts.sendall(to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: %s\r\n\r\n" % target[0]), ts.tls_ctx, pre_encrypt_hook=modify_padding))
+ 
+            r = ts.recvall()
+            if len(r.records) == 0:
+                self.capabilities.events.append(("Poodle2 - not vulnerable, but implementation does not send a BAD_RECORD_MAC alert",r))
+            elif r.haslayer(TLSAlert) and r[TLSAlert].description == TLSAlertDescription.BAD_RECORD_MAC:
+                # not vulnerable
+                pass
+            else:
+                self.capabilities.events.append(("Poodle2 - vulnerable",r))
+            
+        except socket.error, se:
+            print repr(se)
+            return None
+
     def _scan_compressions(self, target, starttls=None, compression_list=TLS_COMPRESSION_METHODS.keys()): 
         for comp in compression_list:
             # prepare pkt
@@ -286,19 +313,33 @@ class TLSScanner(object):
         except socket.error, se:
             print repr(se)
     
-    def disabled_scan_heartbleed(self, target, starttls=None):
-        TLSRecord(version="TLS_1_1")/TLSHeartBeat(length=2**14-1,data='bleed...')
+    def _scan_heartbleed(self, target, starttls=None, version=TLSVersion.TLS_1_0, payload_length=20):
+        try:
+            t = TCPConnection(target, starttls=starttls)
+            pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version)
+            t.sendall(pkt)
+            resp = t.recvall(timeout=0.5)
+            pkt = TLSRecord(version=version)/TLSHeartBeat(length=2**14-1,data='bleed...')
+            t.sendall(str(pkt))
+            resp = t.recvall(timeout=0.5)
+            if resp.haslayer(TLSHeartBeat) and resp[TLSHeartBeat].length>8:
+                self.capabilities.events.append(("HEARTBLEED - vulnerable",resp))
+        except socket.error, se:
+            print repr(se)
+            return None
+        return resp
+
         
 if __name__=="__main__":
     print __doc__
     if len(sys.argv)<=1:
-        print "USAGE: <host> <port> [starttls]"
+        print "USAGE: <host> <port> [starttls] [workers]"
         print "   starttls ... starttls keyword e.g. 'starttls\n' or 'ssl\n'"
         exit(1)
     starttls = sys.argv[3] if len(sys.argv)>3 else None
     host = sys.argv[1]
     port = int(sys.argv[2])
-    workers = 10
+    workers = 10 if not len(sys.argv)>4 else int(sys.argv[4])
     print "Scanning with %s parallel threads..."%workers
     scanner = TLSScanner(workers=workers)
     t_start = time.time()
