@@ -249,7 +249,7 @@ TLSTypeBoolean = EnumStruct(TLS_TYPE_BOOLEAN)
 TLS_EC_POINT_FORMATS = registry.EC_POINT_FORMAT_REGISTRY
 TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
     
-TLS_ELLIPTIC_CURVES = registry.EC_NAMED_CURVE_REGISTRY
+TLS_ELLIPTIC_CURVES = registry.SUPPORTED_GROUPS_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
 TLS_HASH_ALGORITHMS = registry.TLS_HASHALGORITHM_REGISTRY
@@ -957,7 +957,7 @@ bind_layers(TLSExtension, TLSExtServerNameIndication, {'type': TLSExtensionType.
 bind_layers(TLSExtension, TLSExtMaxFragmentLength, {'type': TLSExtensionType.MAX_FRAGMENT_LENGTH})
 bind_layers(TLSExtension, TLSExtCertificateURL, {'type': TLSExtensionType.CLIENT_CERTIFICATE_URL})
 bind_layers(TLSExtension, TLSExtECPointsFormat, {'type': TLSExtensionType.EC_POINT_FORMATS})
-bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.ELLIPTIC_CURVES})
+bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.SUPPORTED_GROUPS})
 bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
 # bind_layers(TLSExtension,Raw,{'type': 0x0023})
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
