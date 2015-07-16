@@ -117,7 +117,8 @@ setup(
     keywords=["scapy", "ssl", "tls", "layer", "network", "dissect", "packets", "decrypt"],
     url="https://github.com/tintinweb/scapy-ssl_tls/",
     download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.2",
-    long_description=read("README.md"),
+    # generate rst from .md:  pandoc --from=markdown --to=rst README.md -o README.rst (fix diff section and footer)
+    long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=["scapy", "pycrypto"],
     test_suite="nose.collector",
     tests_require=["nose", "scapy", "pycrypto"],
