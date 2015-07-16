@@ -1,6 +1,6 @@
 [![Build Status](https://buildhive.cloudbees.com/job/tintinweb/job/scapy-ssl_tls/badge/icon)](https://buildhive.cloudbees.com/job/tintinweb/job/scapy-ssl_tls/)
 
-An SSL/TLS layer for scapy the interactive packet manipulation tool.
+SSL/TLS layers for scapy the interactive packet manipulation tool.
 
 Scapy-SSL/TLS
 =============
@@ -40,13 +40,14 @@ Installation
 2) copy scapy_ssl_tls/* to *scapy_installation*/scapy/layers
 
 2) modify *scapy_installation*/scapy/config.py to autoload SSL/TLS
-```diff
-@@ -373,3 +373,3 @@
-     load_layers = ["l2", "inet", "dhcp", "dns", "dot11", "gprs", "hsrp", "inet6", "ir", "isakmp", "l2tp",
--                   "mgcp", "mobileip", "netbios", "netflow", "ntp", "ppp", "radius", "rip", "rtp",
-+                   "mgcp", "mobileip", "netbios", "netflow", "ntp", "ppp", "radius", "rip", "rtp","ssl_tls",
-                    "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp" ]
 
+```diff
+
+	@@ -373,3 +373,3 @@
+	load_layers = ["l2", "inet", "dhcp", "dns", "dot11", "gprs", "hsrp", "inet6", "ir", "isakmp", "l2tp",
+	-                   "mgcp", "mobileip", "netbios", "netflow", "ntp", "ppp", "radius", "rip", "rtp",
+	+                   "mgcp", "mobileip", "netbios", "netflow", "ntp", "ppp", "radius", "rip", "rtp","ssl_tls",
+		                "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp" ]
  ```
 
 ##### verify installation:
@@ -103,6 +104,7 @@ s.close()
 ##### Full Handshake with Application Data (DHE_RSA_WITH_AES_128_CBC_SHA)
 
 see /examples/full_rsa_connection_with_application_data.py
+
 ```python
 # python examples/full_rsa_connection_with_application_data.py localhost 443
 Connected to server: ('localhost', 443)
@@ -295,6 +297,7 @@ overall:
 ##### TLS Sniffer / PCAP decryption
 
 TLS1.0 Session Context based decryption of RSA_WITH_AES_128_CBC_SHA for known private key 
+
 ```python
 
 # python examples/sessionctx_sniffer.py 192.168.220.131 443 tests/files/RSA_WITH_AES_128_CBC_SHA_w_key.pcap tests/files/openssl_1_0_1_f_server.pem
