@@ -37,9 +37,9 @@ Installation
 
 1) install requirements from requirements.txt
 
-2) copy scapy_ssl_tls/* to *scapy_installation*/scapy/layers
+2) copy scapy_ssl_tls/* to *scapy_installation*/scapy/layers 
 
-2) modify *scapy_installation*/scapy/config.py to autoload SSL/TLS
+3) modify *scapy_installation*/scapy/config.py to autoload SSL/TLS 
 
 ```diff
 
