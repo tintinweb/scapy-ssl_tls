@@ -5,6 +5,7 @@ from __future__ import print_function
 from __future__ import with_statement
 import fileinput
 import os
+import platform
 import sys
 from setuptools import setup
 from setuptools.command.install import install as _install
@@ -101,6 +102,12 @@ def _post_install(dir_):
                 else:
                     print(line, end="")
 
+def os_install_requires():
+    dependencies = ["scapy", "pycrypto"]
+    # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
+    if platform.system() == "Darwin":
+        dependencies.extend(("dnet", "pcapy"))
+    return dependencies
 
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
@@ -119,7 +126,7 @@ setup(
     download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.2",
     # generate rst from .md:  pandoc --from=markdown --to=rst README.md -o README.rst (fix diff section and footer)
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
-    install_requires=["scapy", "pycrypto"],
+    install_requires=os_install_requires(),
     test_suite="nose.collector",
     tests_require=["nose", "scapy", "pycrypto"],
     # Change once virtualenv bug is fixed
