@@ -54,8 +54,35 @@ class TestTLSRecord(unittest.TestCase):
         # check TLS layers one by one
         self.assertEqual(re.findall(r'<(TLS[\w]+)',str(repr(self.stacked_handshake))), ['TLSRecord', 'TLSHandshake', 'TLSServerHello',
                                                                                         'TLSHandshake', 'TLSCertificateList', 'TLSCertificate',
-                                                                                        'TLSHandshake', 'TLSServerHelloDone'])    
-    
+                                                                                        'TLSHandshake', 'TLSServerHelloDone'])
+
+    def test_fragmentation_fails_on_non_aligned_boundary_for_handshakes(self):
+        pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientHello()
+        with self.assertRaises(ValueError):
+            pkt.fragment(7)
+        self.assertIsInstance(pkt.fragment(8), tls.TLS)
+
+    def test_fragmenting_a_record_returns_a_list_of_records_when_fragment_size_is_smaller_than_record(self):
+        frag_size = 3
+        app_data = "A"*7
+        pkt = tls.TLSRecord(version=tls.TLSVersion.TLS_1_1, content_type=tls.TLSContentType.APPLICATION_DATA)/app_data
+        fragments = pkt.fragment(frag_size)
+        self.assertEqual(len(fragments.records), len(app_data) / frag_size + len(app_data) % frag_size)
+        record_length = len(tls.TLSRecord())
+        self.assertTrue(all(list(map(lambda x: x.haslayer(tls.TLSRecord), fragments.records))))
+        self.assertEqual(len(fragments.records[0]), record_length + frag_size)
+        self.assertEqual(len(fragments.records[1]), record_length + frag_size)
+        self.assertEqual(len(fragments.records[2]), record_length + (len(app_data) % frag_size))
+
+    def test_fragmenting_a_record_does_nothing_when_fragment_size_is_larger_than_record(self):
+        app_data = "A"*7
+        frag_size = len(app_data)
+        pkt = tls.TLSRecord(version=tls.TLSVersion.TLS_1_1, content_type=tls.TLSContentType.APPLICATION_DATA)/app_data
+        self.assertEqual(str(pkt), str(pkt.fragment(frag_size)))
+        frag_size = len(app_data) * 2
+        self.assertEqual(str(pkt), str(pkt.fragment(frag_size)))
+
+
 class TestTLSDissector(unittest.TestCase):
 
     def setUp(self):

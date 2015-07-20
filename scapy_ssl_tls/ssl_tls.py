@@ -291,6 +291,19 @@ class TLSRecord(StackedLenPacket):
             pass
         return cls
 
+    def fragment(self, size=2**14):
+        payload = str(self.payload)
+        payloads = [payload[i: i+size] for i in range(0, len(self.payload), size)]
+        fragments = []
+        for payload in payloads:
+            fragments.append(TLSRecord(content_type=self.content_type, version=self.version, length=len(payload)) /
+                             payload)
+        try:
+            stack = TLS.from_records(fragments, ctx=self.tls_ctx)
+        except struct.error as se:
+            raise ValueError("Fragment offset must be block aligned: %s" % se)
+        return stack
+
 class TLSServerName(PacketNoPadding):
     name = "TLS Servername"
     fields_desc = [ByteEnumField("type", 0x00, {0x00:"host"}),
