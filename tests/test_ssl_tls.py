@@ -276,6 +276,11 @@ class TestTLSClientHello(unittest.TestCase):
         self.assertEquals(ext[tls.TLSExtServerNameIndication].server_names[1].data,"github.com") 
         self.assertEquals(ext[tls.TLSExtServerNameIndication].server_names[0].data,"www.github.com")
 
+    def test_dissect_client_hello_conditional_extensions_length(self):
+        hello = tls.SSL(str(self.pkt))[tls.TLSClientHello]
+        self.assertTrue("extensions_length=" in repr(hello))
+        self.assertEqual(hello.extensions_length, len(''.join(str(e) for e in hello.extensions)))
+
 class TestTLSPlaintext(unittest.TestCase):
 
     def test_built_plaintext_has_no_mac_and_padding_when_unspecified(self):
@@ -301,7 +306,12 @@ class TestPCAP(unittest.TestCase):
         for p in (pkt for pkt in self.pkts):
             self.records += p.records
         unittest.TestCase.setUp(self)
-          
+    
+    def test_pcap_hello_conditional_extensions_length(self):
+        for r in (rec for rec in self.records if rec.haslayer(tls.TLSServerHello) or rec.haslayer(tls.TLSClientHello)):
+            self.assertTrue("extensions_length=" in repr(r))
+            self.assertEqual(r.extensions_length, len(''.join(str(e) for e in r.extensions)))
+      
     def test_pcap_record_order(self):
         pkts = self.records
         pkts.reverse()
