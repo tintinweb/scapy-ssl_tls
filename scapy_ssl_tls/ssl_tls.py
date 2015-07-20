@@ -144,7 +144,16 @@ class PacketNoPadding(Packet):
     '''
     def extract_padding(self, s):
         return '', s
-    
+   
+class LengthFieldPacket(Packet):
+    '''
+    This type of packet provides only up to .length bytes to the next layer (payload)
+    '''
+    def extract_padding(self, s):
+        pay = s[:self.length]
+        pad = s[self.length:]
+        return pay, pad
+ 
 class StackedLenPacket(Packet):
     ''' Allows stacked packets. Tries to chop layers by layer.length
     '''
@@ -347,7 +356,7 @@ class TLSExtALPN(PacketNoPadding):
                    PacketListField("protocol_name_list", None, TLSALPNProtocol, length_from=lambda x:x.length),
                   ]
 
-class TLSExtension(Packet):
+class TLSExtension(LengthFieldPacket):
     name = "TLS Extension"
     fields_desc = [XShortEnumField("type", TLSExtensionType.SERVER_NAME, TLS_EXTENSION_TYPES),
                    XLenField("length", None, fmt="!H"),
@@ -1007,7 +1016,6 @@ bind_layers(TLSExtension, TLSExtCertificateURL, {'type': TLSExtensionType.CLIENT
 bind_layers(TLSExtension, TLSExtECPointsFormat, {'type': TLSExtensionType.EC_POINT_FORMATS})
 bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.SUPPORTED_GROUPS})
 bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
-# bind_layers(TLSExtension,Raw,{'type': 0x0023})
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
 bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSIONTICKET_TLS})
 bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type':TLSExtensionType.RENEGOTIATION_INFO})
