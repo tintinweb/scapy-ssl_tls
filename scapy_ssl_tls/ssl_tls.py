@@ -403,7 +403,7 @@ class TLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ] 
  
@@ -418,7 +418,7 @@ class TLSServerHello(Packet):
                    XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
-                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]
 
@@ -614,7 +614,7 @@ class DTLSClientHello(Packet):
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    FieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
-                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val else False),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ]   
     
