@@ -96,9 +96,156 @@ s.sendall(str(p))
 s.recv(8192)
 p = TLSRecord(version="TLS_1_1")/TLSHeartBeat(length=2**14-1,data='bleed...')
 s.sendall(str(p))
-resp = s.recv(1024)
+resp = s.recv(8192)
 print "resp: %s"%repr(resp)
 s.close()
+```
+
+##### Dissect TLSClientHello (pcap)
+
+```python
+>>> rdpcap("a.cap")[3].show()
+###[ Ethernet ]###
+  dst= d0:ae:ec:c3:6e:d4
+  src= f0:1f:af:1c:b6:01
+  type= 0x800
+###[ IP ]###
+     version= 4L
+     ihl= 5L
+     tos= 0x0
+     len= 257
+     id= 12457
+     flags= DF
+     frag= 0L
+     ttl= 128
+     proto= tcp
+     chksum= 0x5b97
+     src= 192.168.2.45
+     dst= 216.58.210.166
+     \options\
+###[ TCP ]###
+        sport= 54988
+        dport= https
+        seq= 2403802801L
+        ack= 3671968520L
+        dataofs= 5L
+        reserved= 0L
+        flags= PA
+        window= 64350
+        chksum= 0x210e
+        urgptr= 0
+        options= []
+###[ SSL/TLS ]###
+           \records\
+            |###[ TLS Record ]###
+            |  content_type= handshake
+            |  version= TLS_1_0
+            |  length= 0xd4
+            |###[ TLS Handshake ]###
+            |     type= client_hello
+            |     length= 0xd0
+            |###[ TLS Client Hello ]###
+            |        version= TLS_1_2
+            |        gmt_unix_time= 3242904930L
+            |        random_bytes= 'x"W\xe6\xfd\x97\xb7\xaf \xda\x12c\x8c\x07 o\xe3\th\xc3\xc1\xe0\xe3C\xe4\x00\xc6\xc7'
+            |        session_id_length= 0x0
+            |        session_id= ''
+            |        cipher_suites_length= 0x28
+            |        cipher_suites= [49195, 49199, 158, 52244, 52243, 49162, 49161, 49171, 49172, 49159, 49169, 51, 50, 57, 156, 47, 53, 10, 5, 4]
+            |        compression_methods_length= 0x1
+            |        compression_methods= [0]
+            |        extensions_length= 0x7f
+            |        \extensions\
+            |         |###[ TLS Extension ]###
+            |         |  type= server_name
+            |         |  length= 0x17
+            |         |###[ TLS Extension Servername Indication ]###
+            |         |     length= 0x15
+            |         |     \server_names\
+            |         |      |###[ TLS Servername ]###
+            |         |      |  type= host
+            |         |      |  length= 0x12
+            |         |      |  data= 'ad.doubleclick.net'
+            |         |###[ TLS Extension ]###
+            |         |  type= renegotiation_info
+            |         |  length= 0x1
+            |         |###[ TLS Extension Renegotiation Info ]###
+            |         |     length= 0x0
+            |         |     data= ''
+            |         |###[ TLS Extension ]###
+            |         |  type= supported_groups
+            |         |  length= 0x8
+            |         |###[ TLS Extension Elliptic Curves ]###
+            |         |     length= 0x6
+            |         |     elliptic_curves= [23, 24, 25]
+            |         |###[ TLS Extension ]###
+            |         |  type= ec_point_formats
+            |         |  length= 0x2
+            |         |###[ TLS Extension EC Points Format ]###
+            |         |     length= 0x1
+            |         |     ec_point_formats= [0]
+            |         |###[ TLS Extension ]###
+            |         |  type= SessionTicket TLS
+            |         |  length= 0x0
+            |         |###[ TLS Extension ]###
+            |         |  type= next_protocol_negotiation
+            |         |  length= 0x0
+            |         |###[ TLS Extension ]###
+            |         |  type= application_layer_protocol_negotiation
+            |         |  length= 0x1a
+            |         |###[ TLS Extension Application-Layer Protocol Negotiation ]###
+            |         |     length= 0x18
+            |         |     \protocol_name_list\
+            |         |      |###[ TLS ALPN Protocol ]###
+            |         |      |  length= 0x8
+            |         |      |  data= 'spdy/3.1'
+            |         |      |###[ TLS ALPN Protocol ]###
+            |         |      |  length= 0x5
+            |         |      |  data= 'h2-14'
+            |         |      |###[ TLS ALPN Protocol ]###
+            |         |      |  length= 0x8
+            |         |      |  data= 'http/1.1'
+            |         |###[ TLS Extension ]###
+            |         |  type= 0x7550
+            |         |  length= 0x0
+            |         |###[ TLS Extension ]###
+            |         |  type= status_request
+            |         |  length= 0x5
+            |         |###[ Raw ]###
+            |         |     load= '\x01\x00\x00\x00\x00'
+            |         |###[ TLS Extension ]###
+            |         |  type= signed_certificate_timestamp
+            |         |  length= 0x0
+            |         |###[ TLS Extension ]###
+            |         |  type= signature_algorithms
+            |         |  length= 0x12
+            |         |###[ TLS Extension Signature And Hash Algorithm ]###
+            |         |     length= 0x10
+            |         |     \algorithms\
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha256
+            |         |      |  signature_algorithm= rsa
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha384
+            |         |      |  signature_algorithm= rsa
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha1
+            |         |      |  signature_algorithm= rsa
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha256
+            |         |      |  signature_algorithm= ecdsa
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha384
+            |         |      |  signature_algorithm= ecdsa
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha1
+            |         |      |  signature_algorithm= ecdsa
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha256
+            |         |      |  signature_algorithm= dsa
+            |         |      |###[ TLS Signature Hash Algorithm Pair ]###
+            |         |      |  hash_algorithm= sha1
+            |         |      |  signature_algorithm= dsa
 ```
 
 ##### Full Handshake with Application Data (DHE_RSA_WITH_AES_128_CBC_SHA)
