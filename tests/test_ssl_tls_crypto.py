@@ -182,6 +182,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
 class TestTLSSecurityParameters(unittest.TestCase):
     def setUp(self):
+        self.prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_0)
         self.pre_master_secret = "\x03\x01aaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb"
         self.client_random = "a" * 32
         self.server_random = "z" * 32
@@ -191,12 +192,12 @@ class TestTLSSecurityParameters(unittest.TestCase):
 
     def test_unsupported_cipher_suite_throws_exception(self):
         with self.assertRaises(RuntimeError):
-            tlsc.TLSSecurityParameters(0xffff, self.pre_master_secret, self.client_random, self.server_random)
+            tlsc.TLSSecurityParameters(self.prf, 0xffff, self.pre_master_secret, self.client_random, self.server_random)
 
     def test_building_with_supported_cipher_sets_lengths(self):
         # RSA_WITH_AES_128_CBC_SHA
         cipher_suite = 0x2f
-        sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random,
+        sec_params = tlsc.TLSSecurityParameters(self.prf, cipher_suite, self.pre_master_secret, self.client_random,
                                                 self.server_random)
         self.assertEqual(sec_params.cipher_key_length, 16)
         self.assertEqual(sec_params.mac_key_length, SHA.digest_size)
@@ -205,7 +206,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
     def test_building_with_null_cipher_sets_lengths(self):
         # RSA_WITH_NULL_MD5
         cipher_suite = 0x1
-        sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random,
+        sec_params = tlsc.TLSSecurityParameters(self.prf, cipher_suite, self.pre_master_secret, self.client_random,
                                                 self.server_random)
         self.assertEqual(sec_params.cipher_key_length, 0)
         self.assertEqual(sec_params.mac_key_length, MD5.digest_size)
@@ -214,7 +215,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
     def test_cleartext_message_matches_decrypted_message_with_block_cipher(self):
         # RSA_WITH_AES_128_CBC_SHA
         cipher_suite = 0x2f
-        sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random,
+        sec_params = tlsc.TLSSecurityParameters(self.prf, cipher_suite, self.pre_master_secret, self.client_random,
                                                 self.server_random)
         self.assertEqual(sec_params.master_secret, self.master_secret)
         client_enc_cipher = sec_params.get_client_enc_cipher()
@@ -226,7 +227,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
     def test_cleartext_message_matches_decrypted_message_with_stream_cipher(self):
         # RSA_WITH_RC4_128_SHA
         cipher_suite = 0x5
-        sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random,
+        sec_params = tlsc.TLSSecurityParameters(self.prf, cipher_suite, self.pre_master_secret, self.client_random,
                                                 self.server_random)
         self.assertEqual(sec_params.master_secret, self.master_secret)
         client_enc_cipher = sec_params.get_client_enc_cipher()
@@ -237,7 +238,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
     def test_hmac_used_matches_selected_ciphersuite(self):
         # RSA_WITH_3DES_EDE_CBC_SHA
         cipher_suite = 0xa
-        sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random,
+        sec_params = tlsc.TLSSecurityParameters(self.prf, cipher_suite, self.pre_master_secret, self.client_random,
                                                 self.server_random)
         self.assertEqual(sec_params.master_secret, self.master_secret)
         client_enc_cipher = sec_params.get_client_enc_cipher()
@@ -253,7 +254,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
     def test_tls_1_1_and_above_iv_is_null(self):
         # RSA_WITH_AES_128_CBC_SHA
         cipher_suite = 0x2f
-        sec_params = tlsc.TLSSecurityParameters(cipher_suite, self.pre_master_secret, self.client_random,
+        sec_params = tlsc.TLSSecurityParameters(self.prf, cipher_suite, self.pre_master_secret, self.client_random,
                                                 self.server_random, explicit_iv=True)
         self.assertEqual(sec_params.client_write_IV, "\x00" * 16)
         self.assertEqual(sec_params.server_write_IV, "\x00" * 16)
@@ -429,11 +430,11 @@ class TestTLSPRF(unittest.TestCase):
 
     def test_tls1_1_prf_against_static_data(self):
         self._initialize_tls1_known_params()
-        prf = tlsc.TLSPRF(SHA256)
-        self.assertEqual(prf.prf_numbytes(self.pms, tlsc.TLSPRF.TLS_MD_MASTER_SECRET_CONST,
+        prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_1)
+        self.assertEqual(prf.get_bytes(self.pms, tlsc.TLSPRF.TLS_MD_MASTER_SECRET_CONST,
                                           "%s%s" % (self.client_random, self.server_random), 48), self.ms)
         crypto_material_len = len(self.client_mac) + len(self.client_key) + len(self.client_iv)
-        crypto_material = prf.prf_numbytes(self.ms, tlsc.TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
+        crypto_material = prf.get_bytes(self.ms, tlsc.TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
                                            "%s%s" % (self.server_random, self.client_random), 2 * crypto_material_len)
         i = 0
         self.assertEqual(self.client_mac, crypto_material[i:len(self.client_mac)])
