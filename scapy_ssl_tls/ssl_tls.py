@@ -764,7 +764,12 @@ class TLSSocket(object):
     def sendall(self, pkt, timeout=2):
         prev_timeout = self._s.gettimeout()
         self._s.settimeout(timeout)
-        self._s.sendall(str(pkt))
+        try:
+            pkt_bytes = str(pkt)
+        except TLSFragmentationError:
+            pkt = tls_fragment_payload(pkt.payload, pkt)
+            pkt_bytes = str(pkt)
+        self._s.sendall(pkt_bytes)
         self.tls_ctx.insert(pkt)
         self._s.settimeout(prev_timeout)
 
