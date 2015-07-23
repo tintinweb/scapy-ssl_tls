@@ -479,21 +479,28 @@ class TLSSessionCtx(object):
             label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
         else:
             label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
-        verify_data = []
-        for pkt in self.packets.history:
-            for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
-                if not handshake.haslayer(tls.TLSFinished) and not handshake.haslayer(tls.TLSHelloRequest):
-                    verify_data.append(str(handshake))
-
-        prf_verify_data = self.crypto.session.prf.get_bytes(self.crypto.session.master_secret, label,
-                                                               "%s%s" % (MD5.new("".join(verify_data)).digest(),
-                                                                         SHA.new("".join(verify_data)).digest()),
-                                                               num_bytes=12)
+        if data is None:
+            verify_data = []
+            for pkt in self.packets.history:
+                for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
+                    if not handshake.haslayer(tls.TLSFinished) and not handshake.haslayer(tls.TLSHelloRequest):
+                        verify_data.append(str(handshake))
+        else:
+            verify_data = [data]
+        if self.params.negotiated.version == tls.TLSVersion.TLS_1_2:
+            prf_verify_data = self.crypto.session.prf.get_bytes(self.crypto.session.master_secret, label,
+                                                                SHA256.new("".join(verify_data)).digest(),
+                                                                num_bytes=12)
+        else:
+            prf_verify_data = self.crypto.session.prf.get_bytes(self.crypto.session.master_secret, label,
+                                                                "%s%s" % (MD5.new("".join(verify_data)).digest(),
+                                                                          SHA.new("".join(verify_data)).digest()),
+                                                                num_bytes=12)
         return prf_verify_data
 
     def set_mode(self, client=None, server=None):
-        self.client=client if client else not server
-        self.server= not self.client
+        self.client = client if client else not server
+        self.server = not self.client
 
 
 class TLSPRF(object):
@@ -511,8 +518,9 @@ class TLSPRF(object):
         self.tls_version = tls_version
 
     def get_bytes(self, key, label, random, num_bytes):
-        bytes_ = ""
-        if self.tls_version <= tls.TLSVersion.TLS_1_1:
+        if self.tls_version == tls.TLSVersion.TLS_1_2:
+            bytes_ = self._get_bytes(SHA256, key, label, random, num_bytes)
+        else:
             key_len = (len(key) + 1) // 2
             key_left = key[:key_len]
             key_right = key[-key_len:]

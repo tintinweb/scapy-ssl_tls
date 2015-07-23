@@ -181,6 +181,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
 
 class TestTLSSecurityParameters(unittest.TestCase):
+
     def setUp(self):
         self.prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_0)
         self.pre_master_secret = "\x03\x01aaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb"
@@ -428,14 +429,30 @@ class TestTLSPRF(unittest.TestCase):
         self.server_key = binascii.unhexlify("95c4ee054377d9e7006a8da970e95630")
         self.server_iv = binascii.unhexlify("4f4f168ced384533cb47cfdf3ecaf3ef")
 
-    def test_tls1_1_prf_against_static_data(self):
+    def _initialize_tls1_2_known_params(self):
+        self.pms = binascii.unhexlify(
+            "0303e29757f8ab24ebb42c52fb866b28a188860b726cff663456e8f37d563ae006b167df5d984acba621bd65c583ac32")
+        self.ms = binascii.unhexlify(
+            "05a7e4735508e45f8870bc27bb0e69f3ea4e41a54c1de0a7d30ac73daf90dbd0cf9f6d182a6b69b6365b4c9cc7112b6c")
+        self.client_random = binascii.unhexlify("55b1698489a180cfc3360aff54c31d90accbaf12b53b3e84ec71b8895c524e8e")
+        self.server_random = binascii.unhexlify("38d34ea6e7cd7d9e76a3cff629421ef32274bd40b7483e879be2e81c3c344997")
+        # SHA1 - 20 bytes
+        self.client_mac = binascii.unhexlify("8dad197710c3b8c29121ec833556cf1cfdeb5e67")
+        # AES - 16 bytes
+        self.client_key = binascii.unhexlify("91e0f55dc0c6661dbf33b91187fc84b7")
+        # SHA1 - 20 bytes
+        self.server_mac = binascii.unhexlify("e076da857da6a750ee72b690afe70b6cff32c8ef")
+        # AES - 16 bytes
+        self.server_key = binascii.unhexlify("ef99d0b6f1316163c2a82f585ab2670b")
+
+    def test_tls1_0_prf_against_static_data(self):
         self._initialize_tls1_known_params()
-        prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_1)
+        prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_0)
         self.assertEqual(prf.get_bytes(self.pms, tlsc.TLSPRF.TLS_MD_MASTER_SECRET_CONST,
-                                          "%s%s" % (self.client_random, self.server_random), 48), self.ms)
+                                       "%s%s" % (self.client_random, self.server_random), 48), self.ms)
         crypto_material_len = len(self.client_mac) + len(self.client_key) + len(self.client_iv)
         crypto_material = prf.get_bytes(self.ms, tlsc.TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
-                                           "%s%s" % (self.server_random, self.client_random), 2 * crypto_material_len)
+                                        "%s%s" % (self.server_random, self.client_random), 2 * crypto_material_len)
         i = 0
         self.assertEqual(self.client_mac, crypto_material[i:len(self.client_mac)])
         i += len(self.client_mac)
@@ -449,6 +466,26 @@ class TestTLSPRF(unittest.TestCase):
         i += len(self.client_iv)
         self.assertEqual(self.server_iv, crypto_material[i:i + len(self.server_iv)])
         i += len(self.server_iv)
+
+    def test_tls1_2_prf_against_static_data(self):
+        self._initialize_tls1_2_known_params()
+        prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_2)
+        self.assertEqual(prf.get_bytes(self.pms, tlsc.TLSPRF.TLS_MD_MASTER_SECRET_CONST,
+                                       "%s%s" % (self.client_random, self.server_random), 48), self.ms)
+        crypto_material_len = len(self.client_mac) + len(self.client_key)
+        crypto_material = prf.get_bytes(self.ms, tlsc.TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
+                                        "%s%s" % (self.server_random, self.client_random), 2 * crypto_material_len)
+        i = 0
+        self.assertEqual(self.client_mac, crypto_material[i:len(self.client_mac)])
+        i += len(self.client_mac)
+        self.assertEqual(self.server_mac, crypto_material[i:i + len(self.server_mac)])
+        i += len(self.server_mac)
+        self.assertEqual(self.client_key, crypto_material[i:i + len(self.client_key)])
+        i += len(self.client_key)
+        self.assertEqual(self.server_key, crypto_material[i:i + len(self.server_key)])
+        i += len(self.server_key)
+        # No IVs for TLS1.2
+
 
 if __name__ == "__main__":
     unittest.main()
