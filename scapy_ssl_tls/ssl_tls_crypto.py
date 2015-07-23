@@ -33,8 +33,6 @@ https://tools.ietf.org/html/rfc4346#section-6.3
        client_write_key[SecurityParameters.key_material_length]
        server_write_key[SecurityParameters.key_material_length]
 '''
-def prf(master_secret, label, data):
-    pass
 
 REX_PEM = re.compile(r'(\-+BEGIN\s*([^\-]+)\-+(.*?)\-+END[^\-]+\-+)', re.DOTALL)
 def pem_get_objects(data):
@@ -495,7 +493,8 @@ class TLSSessionCtx(object):
     def set_mode(self, client=None, server=None):
         self.client=client if client else not server
         self.server= not self.client
-        
+
+
 class TLSPRF(object):
     TLS_MD_CLIENT_FINISH_CONST = "client finished"
     TLS_MD_SERVER_FINISH_CONST = "server finished"
@@ -505,8 +504,7 @@ class TLSPRF(object):
     TLS_MD_SERVER_WRITE_KEY_CONST = "server write key"
     TLS_MD_IV_BLOCK_CONST = "IV block"
     TLS_MD_MASTER_SECRET_CONST = "master secret"
-    
-    
+
     def __init__(self, algorithm):
         self.algorithm = algorithm
     
@@ -803,7 +801,7 @@ class TLSSecurityParameters(object):
             return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
         else:
             return self.__client_dec_cipher
-#         
+
     def __init_key_material(self, data, explicit_iv):
         i = 0
         self.client_write_MAC_key = data[i:i+self.mac_key_length]
