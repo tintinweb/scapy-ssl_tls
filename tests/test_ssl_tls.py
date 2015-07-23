@@ -58,7 +58,7 @@ class TestTLSRecord(unittest.TestCase):
 
     def test_fragmentation_fails_on_non_aligned_boundary_for_handshakes(self):
         pkt = tls.TLSRecord()/tls.TLSHandshake()/tls.TLSClientHello()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(tls.TLSFragmentationError):
             pkt.fragment(7)
         self.assertIsInstance(pkt.fragment(8), tls.TLS)
 
@@ -82,6 +82,19 @@ class TestTLSRecord(unittest.TestCase):
         frag_size = len(app_data) * 2
         self.assertEqual(str(pkt), str(pkt.fragment(frag_size)))
 
+    def test_large_record_payload_is_not_fragmented_when_smaller_then_max_ushort(self):
+        app_data = "A"*tls.TLSRecord.MAX_LEN
+        pkt = tls.TLSRecord(version=tls.TLSVersion.TLS_1_1, content_type=tls.TLSContentType.APPLICATION_DATA)/app_data
+        try:
+            str(pkt)
+        except tls.TLSFragmentationError:
+            self.fail()
+
+    def test_large_record_payload_is_fragmented_when_above_max_ushort(self):
+        app_data = "A"*(tls.TLSRecord.MAX_LEN + 1)
+        pkt = tls.TLSRecord(version=tls.TLSVersion.TLS_1_1, content_type=tls.TLSContentType.APPLICATION_DATA)/app_data
+        with self.assertRaises(tls.TLSFragmentationError):
+            str(pkt)
 
 class TestTLSDissector(unittest.TestCase):
 
@@ -259,7 +272,6 @@ class TestTLSClientHello(unittest.TestCase):
                                 ],)
         unittest.TestCase.setUp(self)
         
-        
     def test_dissect_contains_client_hello(self):
         p = tls.SSL(str(self.pkt))
         self.assertEqual(len(p.records),1)
@@ -434,7 +446,8 @@ class TestPCAP(unittest.TestCase):
         # check if there are any more pakets?
         with self.assertRaises(IndexError):
             record = pkts.pop() 
-   
+
+
 class TestToRaw(unittest.TestCase):
 
     def setUp(self):
@@ -679,8 +692,13 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertTrue(len(ciphertext))
         self.assertEqual(ciphertext,ciphertext_2)
 
-class TestTLSKeyExchange(unittest.TestCase):
-    pass
+
+class TestTLSTopLevelFunctions(unittest.TestCase):
+
+    def test_tls_payload_fragmentation_raises_error_with_negative_size(self):
+        with self.assertRaises(ValueError):
+            tls.tls_fragment_payload("AAAA", size=-1)
+
 
 if __name__ == "__main__":
     unittest.main()
