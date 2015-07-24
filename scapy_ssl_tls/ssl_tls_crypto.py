@@ -3,7 +3,6 @@
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 # http://www.secdev.org/projects/scapy/doc/build_dissect.html
 
-import array
 import binascii
 import copy
 import os
@@ -33,8 +32,6 @@ https://tools.ietf.org/html/rfc4346#section-6.3
        client_write_key[SecurityParameters.key_material_length]
        server_write_key[SecurityParameters.key_material_length]
 '''
-def prf(master_secret, label, data):
-    pass
 
 REX_PEM = re.compile(r'(\-+BEGIN\s*([^\-]+)\-+(.*?)\-+END[^\-]+\-+)', re.DOTALL)
 def pem_get_objects(data):
@@ -163,13 +160,13 @@ class TLSSessionCtx(object):
                                                      'master_secret',
                                                      "prf"])
         
-        self.crypto.session.encrypted_premaster_secret=None
-        self.crypto.session.premaster_secret=None
-        self.crypto.session.master_secret=None
-        self.crypto.session.prf = TLSPRF(SHA256)
+        self.crypto.session.encrypted_premaster_secret = None
+        self.crypto.session.premaster_secret = None
+        self.crypto.session.master_secret = None
+        self.crypto.session.prf = None
         self.crypto.session.randombytes = namedtuple('randombytes',['client','server'])
-        self.crypto.session.randombytes.client=None
-        self.crypto.session.randombytes.server=None
+        self.crypto.session.randombytes.client = None
+        self.crypto.session.randombytes.server = None
         
         self.crypto.session.key = namedtuple('key',['client','server'])
         self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv', "seq_num"])
@@ -325,6 +322,7 @@ class TLSSessionCtx(object):
                 if not self.params.handshake.server:
                     self.params.handshake.server = p[tls.TLSServerHello]
                     self.params.negotiated.version = p[tls.TLSServerHello].version
+                    self.crypto.session.prf = TLSPRF(self.params.negotiated.version)
                     #fetch randombytes
                     if not self.crypto.session.randombytes.server:
                         self.crypto.session.randombytes.server = struct.pack("!I", p[tls.TLSServerHello].gmt_unix_time) + p[tls.TLSServerHello].random_bytes
@@ -381,7 +379,8 @@ class TLSSessionCtx(object):
                     self.crypto.client.dh.y_c = p[tls.TLSClientKeyExchange].data
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
-                self.sec_params = TLSSecurityParameters(self.params.negotiated.ciphersuite,
+                self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
+                                                        self.params.negotiated.ciphersuite,
                                                         self.crypto.session.premaster_secret,
                                                         self.crypto.session.randombytes.client,
                                                         self.crypto.session.randombytes.server,
@@ -480,118 +479,71 @@ class TLSSessionCtx(object):
             label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
         else:
             label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
-        verify_data = []
-        for pkt in self.packets.history:
-            for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
-                if not handshake.haslayer(tls.TLSFinished) and not handshake.haslayer(tls.TLSHelloRequest):
-                    verify_data.append(str(handshake))
-
-        prf_verify_data = self.crypto.session.prf.prf_numbytes(self.crypto.session.master_secret,
-                                                               label,
-                                                               "%s%s" % (MD5.new("".join(verify_data)).digest(), SHA.new("".join(verify_data)).digest()),
-                                                               numbytes=12)
+        if data is None:
+            verify_data = []
+            for pkt in self.packets.history:
+                for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
+                    if not handshake.haslayer(tls.TLSFinished) and not handshake.haslayer(tls.TLSHelloRequest):
+                        verify_data.append(str(handshake))
+        else:
+            verify_data = [data]
+        if self.params.negotiated.version == tls.TLSVersion.TLS_1_2:
+            prf_verify_data = self.crypto.session.prf.get_bytes(self.crypto.session.master_secret, label,
+                                                                SHA256.new("".join(verify_data)).digest(),
+                                                                num_bytes=12)
+        else:
+            prf_verify_data = self.crypto.session.prf.get_bytes(self.crypto.session.master_secret, label,
+                                                                "%s%s" % (MD5.new("".join(verify_data)).digest(),
+                                                                          SHA.new("".join(verify_data)).digest()),
+                                                                num_bytes=12)
         return prf_verify_data
 
     def set_mode(self, client=None, server=None):
-        self.client=client if client else not server
-        self.server= not self.client
-        
+        self.client = client if client else not server
+        self.server = not self.client
+
+
 class TLSPRF(object):
     TLS_MD_CLIENT_FINISH_CONST = "client finished"
     TLS_MD_SERVER_FINISH_CONST = "server finished"
-    TLS_MD_SERVER_WRITE_KEY_CONST = "server write key"
     TLS_MD_KEY_EXPANSION_CONST = "key expansion"
     TLS_MD_CLIENT_WRITE_KEY_CONST = "client write key"
     TLS_MD_SERVER_WRITE_KEY_CONST = "server write key"
     TLS_MD_IV_BLOCK_CONST = "IV block"
     TLS_MD_MASTER_SECRET_CONST = "master secret"
-    
-    
-    def __init__(self, algorithm):
-        self.algorithm = algorithm
-    
-    def p_hash(self, secret, seed):
-        a_i = seed              # i=0
-        ''' 1) 
-        ##############i=0    hmac_hash(secret, seed+seed) +
-        i=1    hmac_hash(secret, hmac_hash(secret, seed) +seed) +
-        i=2    hmac_hash(secret, hmac_hash(secret, 
-        '''
-        
-        #start at i=1
-        while True:
-            a_i = HMAC.new(key=secret, msg=a_i, digestmod=self.algorithm).digest()      # i=1
-            yield HMAC.new(key=secret, msg=a_i+seed, digestmod=self.algorithm).digest()
-        
-    def prf(self, secret, label, seed):
-        for block in self.p_hash(secret, label+seed):
-            yield block
-            
-    def prf_numbytes(self, secret, label, random, numbytes):
-        hs = (len(secret)+1)/2
-        s1 = secret[:hs]
-        s2 = secret[-hs:]
-        
-        #print "randlen=",len(random)
-        #print "hs=",hs
-        #print "s1=",s1
-        #print "s2=",s2
-        #print "label+random=",label+random
-        #print "label=",label
-        #1) compute P_md5(secret_part_1, label+random)   
-        md5_hmac=''
-        block=HMAC.new(key=s1, 
-                       msg=label+random,
-                       digestmod=MD5).digest() 
-        while len(md5_hmac)<numbytes:
-            md5_hmac += HMAC.new(key=s1, 
-                             msg=block+label+random,
-                             digestmod=MD5).digest()
-            
-            block = HMAC.new(key=s1, 
-                             msg=block,
-                             digestmod=MD5).digest()
-            #print [ "%.2x"%ord(i) for i in md5_hmac]
-            
-        md5_hmac=md5_hmac[:numbytes]
-        # sha stuff
-        sha_hmac=''
-        block=HMAC.new(key=s2, 
-                       msg=label+random,
-                       digestmod=SHA).digest() 
-        while len(sha_hmac)<numbytes:
-            sha_hmac += HMAC.new(key=s2, 
-                             msg=block+label+random,
-                             digestmod=SHA).digest()
-            
-            block = HMAC.new(key=s2, 
-                             msg=block,
-                             digestmod=SHA).digest()
-            #print [ "%.2x"%ord(i) for i in sha_hmac]
-        # XOR both strings
-        sha_hmac=sha_hmac[:numbytes]              
-        
-        m = array.array("B",md5_hmac)
-        s = array.array("B",sha_hmac)
 
-        for i in xrange(numbytes):
-            m[i] ^= s[i]
-            #print "%0.2x"%m[i],
-            
-        return m.tostring()
-        
-        '''
-        data  = ''
-        for block in self.prf(secret,label,seed):
-            data +=block
-            if len(data)>=numbytes:
-                return data[:numbytes]
-        '''    
-    def hmac(self, key, msg):
-        return HMAC.new(key=key, msg=msg, digestmod=self.algorithm).digest()
-    
-    def hash(self, msg):
-        return self.algorithm.new(msg).digest()
+    def __init__(self, tls_version):
+        if tls_version not in tls.TLS_VERSIONS.keys():
+            raise ValueError("Unknown TLS version: %d" % tls_version)
+        self.tls_version = tls_version
+
+    def get_bytes(self, key, label, random, num_bytes):
+        if self.tls_version == tls.TLSVersion.TLS_1_2:
+            bytes_ = self._get_bytes(SHA256, key, label, random, num_bytes)
+        else:
+            key_len = (len(key) + 1) // 2
+            key_left = key[:key_len]
+            key_right = key[-key_len:]
+
+            # Get bytes from MD5
+            md5_bytes = self._get_bytes(MD5, key_left, label, random, num_bytes)
+            # Get bytes from SHA1
+            sha1_bytes = self._get_bytes(SHA, key_right, label, random, num_bytes)
+
+            xored = []
+            for i in range(num_bytes):
+                xored.append(chr(ord(md5_bytes[i]) ^ ord(sha1_bytes[i])))
+            bytes_ = "".join(xored)
+        return bytes_
+
+    def _get_bytes(self, digest, key, label, random, num_bytes):
+        bytes_ = ""
+        block = HMAC.new(key=key, msg="%s%s" % (label, random), digestmod=digest).digest()
+        while len(bytes_) < num_bytes:
+            bytes_ += HMAC.new(key=key, msg="%s%s%s" % (block, label, random), digestmod=digest).digest()
+            block = HMAC.new(key=key, msg=block, digestmod=digest).digest()
+        return bytes_[:num_bytes]
+
 
 class CryptoContainer(object):
     
@@ -750,7 +702,7 @@ class TLSSecurityParameters(object):
 #         SRP_SHA_DSS_WITH_AES_256_CBC_SHA = 0xc022
 #         TLS_FALLBACK_SCSV = 0x5600
 
-    def __init__(self, cipher_suite, pms, client_random, server_random, explicit_iv=False):
+    def __init__(self, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
         """ /!\ This class is not thread safe
         """
         try:
@@ -771,7 +723,7 @@ class TLSSecurityParameters(object):
         # Stream ciphers have a block size of one, but IV should be 0
         self.iv_length = 0 if block_size == 1 else block_size
         self.explicit_iv = explicit_iv
-        self.prf = TLSPRF(SHA256)
+        self.prf = prf
         self.__init_crypto(pms, client_random, server_random, explicit_iv)
     
     def get_client_hmac(self):
@@ -803,7 +755,7 @@ class TLSSecurityParameters(object):
             return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
         else:
             return self.__client_dec_cipher
-#         
+
     def __init_key_material(self, data, explicit_iv):
         i = 0
         self.client_write_MAC_key = data[i:i+self.mac_key_length]
@@ -824,14 +776,14 @@ class TLSSecurityParameters(object):
             i += self.iv_length
         
     def __init_crypto(self, pms, client_random, server_random, explicit_iv):
-        self.master_secret = self.prf.prf_numbytes(pms,
+        self.master_secret = self.prf.get_bytes(pms,
                                                    TLSPRF.TLS_MD_MASTER_SECRET_CONST,
                                                    client_random + server_random, 
-                                                   numbytes=48)
-        key_block = self.prf.prf_numbytes(self.master_secret,
+                                                   num_bytes=48)
+        key_block = self.prf.get_bytes(self.master_secret,
                                           TLSPRF.TLS_MD_KEY_EXPANSION_CONST, 
                                           server_random + client_random, 
-                                          numbytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
+                                          num_bytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
         self.__init_key_material(key_block, explicit_iv)
         self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
         self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
