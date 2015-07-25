@@ -574,7 +574,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
                     self.fields_desc.append(field)
         except KeyError:
             self.tls_ctx = None
-        Packet.__init__(self, *args, **fields)
+        PacketLengthFieldPayload.__init__(self, *args, **fields)
 
     def pre_dissect(self, raw_bytes):
         data = raw_bytes
