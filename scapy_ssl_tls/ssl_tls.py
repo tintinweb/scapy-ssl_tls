@@ -263,13 +263,18 @@ class TLSKexNames(object):
     DHE = "DHE"
     ECDHE = "ECDHE"
 
+class TLSFragmentationError(Exception):
+    pass
+
 class TLSRecord(StackedLenPacket):
+    MAX_LEN = 2**16 - 1
     name = "TLS Record"
     fields_desc = [ByteEnumField("content_type", TLSContentType.APPLICATION_DATA, TLS_CONTENT_TYPES),
                    XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
                    XLenField("length", None, fmt="!H"), ]
 
     def __init__(self, *args, **fields):
+        self.fragments = []
         try:
             self.tls_ctx = fields["ctx"]
             del(fields["ctx"])
@@ -290,6 +295,25 @@ class TLSRecord(StackedLenPacket):
             # e.g. TLSChangeCipherSpec might land here
             pass
         return cls
+
+    def do_build(self):
+        """
+        Taken as is from superclass. Just raises exception when payload can't fit in a TLSRecord
+        """
+        if not self.explicit:
+            self = self.__iter__().next()
+        if len(self.payload) > TLSRecord.MAX_LEN:
+            raise TLSFragmentationError()
+        pkt = self.self_build()
+        for t in self.post_transforms:
+            pkt = t(pkt)
+        pay = self.do_build_payload()
+        p = self.post_build(pkt,pay)
+        return p
+
+    def fragment(self, size=2**14):
+        return tls_fragment_payload(self.payload, self, size)
+
 
 class TLSServerName(PacketNoPadding):
     name = "TLS Servername"
@@ -725,7 +749,8 @@ class TLSSocket(object):
         except socket.error as se:
             # OSX and BSDs do not support ENOPROTOOPT. Linux and Windows seem to
             if se.errno == errno.ENOPROTOOPT:
-                raise RuntimeError("OS does not support SO_ACCEPTCONN, cannot determine socket state. Please supply an explicit client value (True for client, False for server)")
+                raise RuntimeError("OS does not support SO_ACCEPTCONN, cannot determine socket state. Please supply an"
+                                   "explicit client value (True for client, False for server)")
             else:
                 raise
         return True if is_listening != 0 else False
@@ -758,6 +783,7 @@ class TLSSocket(object):
         self._s.settimeout(prev_timeout)
         records = TLS("".join(resp), ctx=self.tls_ctx)
         return records
+
 
 # entry class
 class SSL(Packet):
@@ -926,6 +952,24 @@ def tls_do_handshake(tls_socket, version, ciphers):
     tls_socket.sendall(to_raw(TLSFinished(), tls_socket.tls_ctx))
     tls_socket.recvall()
 
+def tls_fragment_payload(pkt, record=None, size=2**14):
+    if size <= 0:
+        raise ValueError("Fragment size must be strictly positive")
+    payload = str(pkt)
+    payloads = [payload[i: i+size] for i in range(0, len(payload), size)]
+    if record is None:
+        return payloads
+    else:
+        fragments = []
+        for payload in payloads:
+            fragments.append(TLSRecord(content_type=record.content_type, version=record.version, length=len(payload)) /
+                             payload)
+            try:
+                stack = TLS.from_records(fragments, ctx=record.tls_ctx)
+            except struct.error as se:
+                raise TLSFragmentationError("Fragment size must be a power of 2: %s" % se)
+        return stack
+
 # bind magic
 bind_layers(TCP, SSL, dport=443)
 bind_layers(TCP, SSL, sport=443)
@@ -937,7 +981,6 @@ bind_layers(TLSRecord, TLSChangeCipherSpec, {'content_type':TLSContentType.CHANG
 bind_layers(TLSRecord, TLSCiphertext, {"content_type":TLSContentType.APPLICATION_DATA})
 bind_layers(TLSRecord, TLSHeartBeat, {'content_type':TLSContentType.HEARTBEAT})
 bind_layers(TLSRecord, TLSAlert, {'content_type':TLSContentType.ALERT})
-
 bind_layers(TLSRecord, TLSHandshake, {'content_type':TLSContentType.HANDSHAKE})
 
 # --> handshake proto
