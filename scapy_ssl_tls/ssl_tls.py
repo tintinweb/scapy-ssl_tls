@@ -312,7 +312,7 @@ class TLSRecord(StackedLenPacket):
         return p
 
     def fragment(self, size=2**14):
-        return tls_fragment_payload(str(self.payload), self, size)
+        return tls_fragment_payload(self.payload, self, size)
 
 
 class TLSServerName(PacketNoPadding):
@@ -952,9 +952,10 @@ def tls_do_handshake(tls_socket, version, ciphers):
     tls_socket.sendall(to_raw(TLSFinished(), tls_socket.tls_ctx))
     tls_socket.recvall()
 
-def tls_fragment_payload(payload, record=None, size=2**14):
+def tls_fragment_payload(pkt, record=None, size=2**14):
     if size <= 0:
         raise ValueError("Fragment size must be strictly positive")
+    payload = str(pkt)
     payloads = [payload[i: i+size] for i in range(0, len(payload), size)]
     if record is None:
         return payloads
