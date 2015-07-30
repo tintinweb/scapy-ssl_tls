@@ -112,6 +112,11 @@ class XBEnumField(BEnumField):
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))   
 
+class ReprFieldListField(FieldListField):
+    ''' Human Readable FieldListField for Enum type list entries '''
+    def i2repr(self, pkt, x):
+        return self.field.i2repr(pkt,x)
+
 class StrConditionalField(ConditionalField):
     '''
     Base conditional field that is not restricted to pkt checks
@@ -372,14 +377,14 @@ class TLSExtECPointsFormat(PacketNoPadding):
     name = "TLS Extension EC Points Format"
     fields_desc = [
                    XFieldLenField("length", None, length_of="ec_point_formats", fmt="B"),
-                   FieldListField("ec_point_formats", None, ByteEnumField("ec_point_format", None, TLS_EC_POINT_FORMATS), length_from=lambda x:x.length),
+                   ReprFieldListField("ec_point_formats", None, ByteEnumField("ec_point_format", None, TLS_EC_POINT_FORMATS), length_from=lambda x:x.length),
                   ]
 
 class TLSExtEllipticCurves(PacketNoPadding):
     name = "TLS Extension Elliptic Curves"
     fields_desc = [
                    XFieldLenField("length", None, length_of="elliptic_curves", fmt="H"),
-                   FieldListField("elliptic_curves", None, ShortEnumField("elliptic_curve", None, TLS_ELLIPTIC_CURVES), length_from=lambda x:x.length),
+                   ReprFieldListField("elliptic_curves", None, ShortEnumField("elliptic_curve", None, TLS_ELLIPTIC_CURVES), length_from=lambda x:x.length),
                   ]
     
 class TLSSignatureHashAlgorithm(PacketNoPadding):
@@ -422,10 +427,10 @@ class TLSClientHello(Packet):
                    StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
     
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
-                   FieldListField("cipher_suites", [TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA], XShortEnumField("cipher", None, TLS_CIPHER_SUITES), length_from=lambda x:x.cipher_suites_length),
+                   ReprFieldListField("cipher_suites", [TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA], XShortEnumField("cipher", None, TLS_CIPHER_SUITES), length_from=lambda x:x.cipher_suites_length),
                    
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
-                   FieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
+                   ReprFieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
@@ -633,10 +638,10 @@ class DTLSClientHello(Packet):
                    StrLenField("cookie", '', length_from=lambda x:x.cookie_length),
                    
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
-                   FieldListField("cipher_suites", None, XShortEnumField("cipher", None, TLS_CIPHER_SUITES), length_from=lambda x:x.cipher_suites_length),
+                   ReprFieldListField("cipher_suites", None, XShortEnumField("cipher", None, TLS_CIPHER_SUITES), length_from=lambda x:x.cipher_suites_length),
                    
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
-                   FieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
+                   ReprFieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
                    
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
@@ -687,7 +692,7 @@ class SSLv2ClientHello(Packet):
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="H"),
                    XFieldLenField("challenge_length", None, length_of="challenge", fmt="H"),
                    
-                   FieldListField("cipher_suites", None, XBEnumField("cipher", None, SSLv2_CIPHER_SUITES, fmt="!I", numbytes=3), length_from=lambda x:x.cipher_suites_length),
+                   ReprFieldListField("cipher_suites", None, XBEnumField("cipher", None, SSLv2_CIPHER_SUITES, fmt="!I", numbytes=3), length_from=lambda x:x.cipher_suites_length),
                    StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
                    StrLenField("challenge", '', length_from=lambda x:x.challenge_length),
                    ]
@@ -704,7 +709,7 @@ class SSLv2ServerHello(Packet):
                    XFieldLenField("connection_id_length", None, length_of="connection_id", fmt="H"),
                    
                    StrLenField("certificates", '', length_from=lambda x:x.certificates_length),
-                   FieldListField("cipher_suites", None, XBEnumField("cipher", None, SSLv2_CIPHER_SUITES, fmt="!I", numbytes=3), length_from=lambda x:x.cipher_suites_length),
+                   ReprFieldListField("cipher_suites", None, XBEnumField("cipher", None, SSLv2_CIPHER_SUITES, fmt="!I", numbytes=3), length_from=lambda x:x.cipher_suites_length),
                    StrLenField("connection_id", '', length_from=lambda x:x.connection_id_length),
                    ]
 
