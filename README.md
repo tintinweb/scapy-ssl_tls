@@ -12,9 +12,11 @@ An offensive stack for SSLv2, SSLv3 (TLS), TLS, DTLS penetration testing providi
 
 Features
 ---------
-* SSLv2 handshake
+* TLS 1.2
+* TLS 1.1
+* TLS 1.0
 * SSLv3/TLS records
-* TLS 1.0, 1.1
+* SSLv2 handshake
 * DTLS records
 * TLS Session Context / Session Tracking
  * Key sniffing (master_key, ...)
