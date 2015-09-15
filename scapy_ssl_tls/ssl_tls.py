@@ -266,7 +266,10 @@ TLSTypeBoolean = EnumStruct(TLS_TYPE_BOOLEAN)
 
 TLS_EC_POINT_FORMATS = registry.EC_POINT_FORMAT_REGISTRY
 TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
-    
+
+TLS_EC_CURVE_TYPES = registry.EC_CURVE_TYPE_REGISTRY
+TLSECCurveTypes = EnumStruct(TLS_EC_CURVE_TYPES)
+
 TLS_ELLIPTIC_CURVES = registry.SUPPORTED_GROUPS_REGISTRY
 TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
 
@@ -485,6 +488,7 @@ class TLSClientKeyExchange(PacketNoPayload):
     fields_desc = [ XFieldLenField("length", None, length_of="data", fmt="!H"),
                     StrLenField("data", "", length_from=lambda x:x.length) ]
 
+
 class TLSServerDHParams(PacketNoPayload):
     name = "TLS Diffie-Hellman Server Params"
     fields_desc = [XFieldLenField("p_length", None, length_of="p", fmt="!H"),
@@ -494,14 +498,27 @@ class TLSServerDHParams(PacketNoPayload):
                    XFieldLenField("ys_length", None, length_of="y_s", fmt="!H"),
                    StrLenField("y_s", "", length_from=lambda x:x.ys_length),
                    XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
-                   StrLenField("sig", '', length_from=lambda x:x.sig_length) ]
+                   StrLenField("sig", '', length_from=lambda x:x.sig_length)]
+
+
+class TLSServerECDHParams(PacketNoPayload):
+    name = "TLS EC Diffie-Hellman Server Params"
+    fields_desc = [ByteEnumField("curve_type", TLSECCurveTypes.NAMED_CURVE, TLS_EC_CURVE_TYPES),
+                   ShortEnumField("curve_name", TLSEllipticCurve.SECP256R1, TLS_ELLIPTIC_CURVES),
+                   XFieldLenField("p_length", None, length_of="p", fmt="!B"),
+                   StrLenField("p", '', length_from=lambda x:x.p_length),
+                   ByteEnumField("hash_type", TLSHashAlgorithm.SHA256, TLS_HASH_ALGORITHMS),
+                   ByteEnumField("sig_type", TLSSignatureAlgorithm.RSA, TLS_SIGNATURE_ALGORITHMS),
+                   XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
+                   StrLenField("sig", '', length_from=lambda x:x.sig_length)]
+
 
 class TLSServerKeyExchange(Packet):
     name = "TLS Server Key Exchange"
 
-    kex_payload_table = { TLSKexNames.DHE: TLSServerDHParams,
-                          #Add ECDHE, and ERSA in the future
-                         }
+    kex_payload_table = {TLSKexNames.DHE: TLSServerDHParams,
+                         TLSKexNames.ECDHE: TLSServerECDHParams}
+                          #Add ERSA in the future
 
     def __init__(self, *args, **fields):
         try:

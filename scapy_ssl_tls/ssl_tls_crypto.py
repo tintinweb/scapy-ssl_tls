@@ -9,6 +9,7 @@ import os
 import struct
 import zlib
 import re
+import warnings
 import pkcs7
 import ssl_tls as tls
 
@@ -334,7 +335,8 @@ class TLSSessionCtx(object):
                         self.params.negotiated.compression_algo = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["name"]
                         self.compression.method = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["type"]
                     except KeyError:
-                        raise KeyError("Compression method 0x%02x not supported" % self.params.negotiated.compression)
+                        warnings.warn("Compression method 0x%02x not supported. Compression operations will fail" %
+                                      self.params.negotiated.compression)
                     # Raises RuntimeError if we do not handle the cipher
                     try:
                         self.params.negotiated.key_exchange = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["key_exchange"]["name"]
@@ -344,7 +346,8 @@ class TLSSessionCtx(object):
                                                          TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["mode_name"])
                         self.params.negotiated.mac = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["hash"]["name"]
                     except KeyError:
-                        raise RuntimeError("Cipher 0x%04x not supported" % self.params.negotiated.ciphersuite)
+                        warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" %
+                                      self.params.negotiated.ciphersuite)
 
             if p.haslayer(tls.TLSCertificateList):
                 # TODO: Probably don't want to do that if rsa_load_priv*() is called 
@@ -652,9 +655,19 @@ class NullHash(object):
     def copy(self):
         return copy.deepcopy(self)
 
-class DHE(object):
+
+class DH(object):
     pass
- 
+
+
+class DHE(DH):
+    pass
+
+
+class ECDHE(DH):
+    pass
+
+
 class TLSSecurityParameters(object):
     
     crypto_params = {
@@ -690,6 +703,7 @@ class TLSSecurityParameters(object):
             tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA: {"name":tls.TLS_CIPHER_SUITES[0x0063], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
             tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_RC4_56_SHA:  {"name":tls.TLS_CIPHER_SUITES[0x0065], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
             tls.TLSCipherSuite.DHE_DSS_WITH_RC4_128_SHA:            {"name":tls.TLS_CIPHER_SUITES[0x0066], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256:   {"name":tls.TLS_CIPHER_SUITES[0xc027], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA256, "name":"SHA256"}},
             # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
             # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
             }
@@ -708,23 +722,24 @@ class TLSSecurityParameters(object):
         try:
             self.negotiated_crypto_param = self.crypto_params[cipher_suite]
         except KeyError:
-            raise RuntimeError("Cipher 0x%04x not supported" % cipher_suite)
-        # Not validating lengths here, since sending a longuer PMS might be interesting
-        self.pms = pms
-        if len(client_random) != 32:
-            raise ValueError("Client random must be 32 bytes")
-        self.client_random = client_random
-        if len(server_random) != 32:
-            raise ValueError("Server random must be 32 bytes")
-        self.server_random = server_random
-        self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
-        self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
-        block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
-        # Stream ciphers have a block size of one, but IV should be 0
-        self.iv_length = 0 if block_size == 1 else block_size
-        self.explicit_iv = explicit_iv
-        self.prf = prf
-        self.__init_crypto(pms, client_random, server_random, explicit_iv)
+            warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % cipher_suite)
+        else:
+            # Not validating lengths here, since sending a longuer PMS might be interesting
+            self.pms = pms
+            if len(client_random) != 32:
+                raise ValueError("Client random must be 32 bytes")
+            self.client_random = client_random
+            if len(server_random) != 32:
+                raise ValueError("Server random must be 32 bytes")
+            self.server_random = server_random
+            self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
+            self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
+            block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
+            # Stream ciphers have a block size of one, but IV should be 0
+            self.iv_length = 0 if block_size == 1 else block_size
+            self.explicit_iv = explicit_iv
+            self.prf = prf
+            self.__init_crypto(pms, client_random, server_random, explicit_iv)
     
     def get_client_hmac(self):
         return self.__client_hmac
