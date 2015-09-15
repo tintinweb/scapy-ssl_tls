@@ -165,7 +165,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         tls_ctx.insert(client_kex)
         self.assertEqual(binascii.hexlify(tls_ctx.get_verify_data()), verify_data)
 
-    def test_client_dh_parameters_generateion_matches_fixed_data(self):
+    def test_client_dh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.crypto.server.dh.p = "\xdaX<\x16\xd9\x85\"\x89\xd0\xe4\xafuoL\xca\x92\xddK\xe53\xb8\x04\xfb\x0f\xed\x94\xef\x9c\x8aD\x03\xedWFP\xd3i\x99\xdb)\xd7v\'k\xa2\xd3\xd4\x12\xe2\x18\xf4\xdd\x1e\x08L\xf6\xd8\x00>|Gt\xe83"
         tls_ctx.crypto.server.dh.g = "\x02"

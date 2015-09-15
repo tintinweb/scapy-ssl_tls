@@ -141,6 +141,10 @@ class TLSSessionCtx(object):
         self.crypto.client.dh = namedtuple("dh", ["x", "y_c"])
         self.crypto.client.dh.x = None
         self.crypto.client.dh.y_c = None
+        self.crypto.client.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
+        self.crypto.client.ecdh.curve_name = None
+        self.crypto.client.ecdh.priv = None
+        self.crypto.client.ecdh.pub = None
         self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
@@ -156,6 +160,10 @@ class TLSSessionCtx(object):
         self.crypto.server.dh.g = None
         self.crypto.server.dh.x = None
         self.crypto.server.dh.y_s = None
+        self.crypto.server.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
+        self.crypto.server.ecdh.curve_name = None
+        self.crypto.server.ecdh.priv = None
+        self.crypto.server.ecdh.pub = None
         self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
                                                      'premaster_secret',
                                                      'master_secret',
@@ -209,12 +217,19 @@ class TLSSessionCtx(object):
                   "crypto-server-dsa-pubkey":repr(self.crypto.server.dsa.pubkey),
                   "crypto-server-dsa-privkey":repr(self.crypto.server.dsa.privkey),
 
-                  "crypto-client-dh-x":repr(self.crypto.client.dh.x),
-                  "crypto-client-dh-y_c":repr(self.crypto.client.dh.y_c),
-                  "crypto-server-dh-p":repr(self.crypto.server.dh.p),
-                  "crypto-server-dh-g":repr(self.crypto.server.dh.g),
-                  "crypto-server-dh-x":repr(self.crypto.server.dh.x),
-                  "crypto-server-dh-y_s":repr(self.crypto.server.dh.y_s),
+                  "crypto-client-dh-x": repr(self.crypto.client.dh.x),
+                  "crypto-client-dh-y_c": repr(self.crypto.client.dh.y_c),
+                  "crypto-server-dh-p": repr(self.crypto.server.dh.p),
+                  "crypto-server-dh-g": repr(self.crypto.server.dh.g),
+                  "crypto-server-dh-x": repr(self.crypto.server.dh.x),
+                  "crypto-server-dh-y_s": repr(self.crypto.server.dh.y_s),
+
+                  "crypto-client-ecdh-curve_name": repr(self.crypto.client.ecdh.curve_name),
+                  "crypto-client-ecdh-priv": repr(self.crypto.client.ecdh.priv),
+                  "crypto-client-ecdh-pub": repr(self.crypto.client.ecdh.pub),
+                  "crypto-server-ecdh-curve_name": repr(self.crypto.server.ecdh.curve_name),
+                  "crypto-server-ecdh-priv": repr(self.crypto.server.ecdh.priv),
+                  "crypto-server-ecdh-pub": repr(self.crypto.server.ecdh.pub),
 
                   'crypto-session-encrypted_premaster_secret':repr(self.crypto.session.encrypted_premaster_secret),
                   'crypto-session-premaster_secret':repr(self.crypto.session.premaster_secret),
@@ -259,12 +274,19 @@ class TLSSessionCtx(object):
         str_ +="\n\t crypto.server.dsa.privkey=%(crypto-server-dsa-privkey)s"
         str_ +="\n\t crypto.server.dsa.pubkey=%(crypto-server-dsa-pubkey)s"
 
-        str_ +="\n\t crypto.client.dh.x=%(crypto-client-dh-x)s"
-        str_ +="\n\t crypto.client.dh.y_c=%(crypto-client-dh-y_c)s"
-        str_ +="\n\t crypto.server.dh.p=%(crypto-server-dh-p)s"
-        str_ +="\n\t crypto.server.dh.g=%(crypto-server-dh-g)s"
-        str_ +="\n\t crypto.server.dh.x=%(crypto-server-dh-x)s"
-        str_ +="\n\t crypto.server.dh.y_s=%(crypto-server-dh-y_s)s"
+        str_ += "\n\t crypto.client.dh.x=%(crypto-client-dh-x)s"
+        str_ += "\n\t crypto.client.dh.y_c=%(crypto-client-dh-y_c)s"
+        str_ += "\n\t crypto.server.dh.p=%(crypto-server-dh-p)s"
+        str_ += "\n\t crypto.server.dh.g=%(crypto-server-dh-g)s"
+        str_ += "\n\t crypto.server.dh.x=%(crypto-server-dh-x)s"
+        str_ += "\n\t crypto.server.dh.y_s=%(crypto-server-dh-y_s)s"
+
+        str_ += "\n\t crypto.client.ecdh.curve_name=%(crypto-client-ecdh-curve_name)s"
+        str_ += "\n\t crypto.client.ecdh.priv=%(crypto-client-ecdh-priv)s"
+        str_ += "\n\t crypto.client.ecdh.pub=%(crypto-client-ecdh-pub)s"
+        str_ += "\n\t crypto.server.ecdh.curve_name=%(crypto-server-ecdh-curve_name)s"
+        str_ += "\n\t crypto.server.ecdh.priv=%(crypto-server-ecdh-priv)s"
+        str_ += "\n\t crypto.server.ecdh.pub=%(crypto-server-ecdh-pub)s"
 
         str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
         str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
@@ -370,6 +392,9 @@ class TLSSessionCtx(object):
                     self.crypto.server.dh.p = p[tls.TLSServerDHParams].p
                     self.crypto.server.dh.g = p[tls.TLSServerDHParams].g
                     self.crypto.server.dh.y_s = p[tls.TLSServerDHParams].y_s
+                if p.haslayer(tls.TLSServerECDHParams):
+                    self.crypto.server.ecdh.curve_name = p[tls.TLSServerECDHParams].curve_name
+                    self.crypto.server.ecdh.pub = p[tls.TLSServerECDHParams].p
 
             # calculate key material
             if p.haslayer(tls.TLSClientKeyExchange):
@@ -380,6 +405,9 @@ class TLSSessionCtx(object):
                         self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
                 elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
                     self.crypto.client.dh.y_c = p[tls.TLSClientKeyExchange].data
+                elif self.params.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
+                    # Skip the length byte
+                    self.crypto.client.ecdh.pub = p[tls.TLSClientKeyExchange].data[1:]
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
                 self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
@@ -444,7 +472,7 @@ class TLSSessionCtx(object):
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.crypto.session.encrypted_premaster_secret
 
-    def get_client_dh_pubkey(self, x=None):
+    def get_client_dh_pubkey(self, priv_key=None):
         # ValueError is propagated to caller both if hex or int conversion fail
         import math
         import random
@@ -460,7 +488,7 @@ class TLSSessionCtx(object):
         # Long story short, this provides 128bits of key space (sqrt(2**256)). TLS leaves this up to the implementation.
         # Another option is to gather random.randint(0, 2**nb_bits(p) - 1), but has little added security
         # In our case, since we don't care about security, it really doesn't matter what we pick
-        a = x or random.randint(0, 2**256 - 1)
+        a = priv_key or random.randint(0, 2**256 - 1)
         self.crypto.client.dh.x = int_to_str(a)
         self.crypto.client.dh.y_c = int_to_str(pow(g, a, p))
         # Per RFC 4346 section 8.1.2
@@ -469,11 +497,16 @@ class TLSSessionCtx(object):
         self.crypto.session.premaster_secret = int_to_str(pow(y_s, a, p)).lstrip("\x00")
         return self.crypto.client.dh.y_c
 
+    def get_client_ecdh_pubkey(self, priv_key=None):
+        raise NotImplementedError("EC key exchange not fully supported yet")
+
     def get_client_kex_data(self, val=None):
         if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:
             return self.get_encrypted_pms(val)
         elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
             return self.get_client_dh_pubkey(val)
+        elif self.params.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
+            return self.get_client_ecdh_pubkey(val)
         else:
             raise NotImplementedError("Key exchange unknown or currently not supported")
 
