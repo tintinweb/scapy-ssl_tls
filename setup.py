@@ -103,7 +103,7 @@ def _post_install(dir_):
                     print(line, end="")
 
 def os_install_requires():
-    dependencies = ["scapy", "pycrypto"]
+    dependencies = ["scapy", "pycrypto", "tinyec"]
     # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
     if platform.system() == "Darwin":
         dependencies.extend(("dnet", "pcapy"))

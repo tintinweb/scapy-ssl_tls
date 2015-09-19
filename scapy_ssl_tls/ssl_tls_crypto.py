@@ -12,6 +12,8 @@ import re
 import warnings
 import pkcs7
 import ssl_tls as tls
+import tinyec.ec as ec
+import tinyec.registry as ec_reg
 
 from collections import namedtuple
 from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
@@ -323,7 +325,17 @@ class TLSSessionCtx(object):
         for p in ps:
             self.packets.history.append(p)
             self._process(p)    # fill structs
-         
+
+    def __str_to_ec_point(self, ansi_str, ec_curve):
+        if not ansi_str.startswith("\x04"):
+            raise ValueError("ANSI octet string missing point prefix (0x04)")
+        ansi_str = ansi_str[1:]
+        if len(ansi_str) % 2 != 0:
+            raise ValueError("Can't parse curve point. Odd ANSI string length")
+        str_to_int = lambda x: int(binascii.hexlify(x), 16)
+        x, y = str_to_int(ansi_str[:len(ansi_str) // 2]), str_to_int(ansi_str[len(ansi_str) // 2:])
+        return ec.Point(ec_curve, x, y)
+
     def _process(self,p):
         '''
         fill context
@@ -393,8 +405,23 @@ class TLSSessionCtx(object):
                     self.crypto.server.dh.g = p[tls.TLSServerDHParams].g
                     self.crypto.server.dh.y_s = p[tls.TLSServerDHParams].y_s
                 if p.haslayer(tls.TLSServerECDHParams):
-                    self.crypto.server.ecdh.curve_name = p[tls.TLSServerECDHParams].curve_name
-                    self.crypto.server.ecdh.pub = p[tls.TLSServerECDHParams].p
+                    try:
+                        self.crypto.server.ecdh.curve_name = tls.TLS_ELLIPTIC_CURVES[p[tls.TLSServerECDHParams].curve_name]
+                    # Unknown cuve case. Just record raw values, but do nothing with them
+                    except KeyError:
+                        self.crypto.server.ecdh.curve_name = p[tls.TLSServerECDHParams].curve_name
+                        self.crypto.server.ecdh.pub = p[tls.TLSServerECDHParams].p
+                        warnings.warn("Unknown elliptic curve. Client KEX calculation is up to you")
+                    # We are on a known curve
+                    else:
+                        # TODO: DO not assume uncompressed EC points!
+                        # Uncompressed EC points are recorded in ANSI format => \x04 + x_point + y_point
+                        ansi_ec_point_str = p[tls.TLSServerECDHParams].p
+                        try:
+                            ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
+                            self.crypto.server.ecdh.pub = self.__str_to_ec_point(ansi_ec_point_str, ec_curve)
+                        except ValueError:
+                            warnings.warn("Unsupported elliptic curve: %s" % self.crypto.server.ecdh.curve_name)
 
             # calculate key material
             if p.haslayer(tls.TLSClientKeyExchange):
@@ -406,8 +433,9 @@ class TLSSessionCtx(object):
                 elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
                     self.crypto.client.dh.y_c = p[tls.TLSClientKeyExchange].data
                 elif self.params.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
-                    # Skip the length byte
-                    self.crypto.client.ecdh.pub = p[tls.TLSClientKeyExchange].data[1:]
+                    ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
+                    # Skip the length byte, before ANSI parsing
+                    self.crypto.client.ecdh.pub = self.__str_to_ec_point(p[tls.TLSClientKeyExchange].data, ec_curve)
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
                 self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
@@ -472,14 +500,15 @@ class TLSSessionCtx(object):
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.crypto.session.encrypted_premaster_secret
 
+    def __int_to_str(self, int_):
+        hex_ = "%x" % int_
+        return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
+
     def get_client_dh_pubkey(self, priv_key=None):
         # ValueError is propagated to caller both if hex or int conversion fail
         import math
         import random
         str_to_int = lambda x: int(binascii.hexlify(x), 16)
-        def int_to_str(int_):
-            hex_ = "%x" % int_
-            return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
         nb_bits = lambda x: int(math.ceil(math.log(x) / math.log(2)))
         p = str_to_int(self.crypto.server.dh.p)
         g = str_to_int(self.crypto.server.dh.g)
@@ -489,16 +518,27 @@ class TLSSessionCtx(object):
         # Another option is to gather random.randint(0, 2**nb_bits(p) - 1), but has little added security
         # In our case, since we don't care about security, it really doesn't matter what we pick
         a = priv_key or random.randint(0, 2**256 - 1)
-        self.crypto.client.dh.x = int_to_str(a)
-        self.crypto.client.dh.y_c = int_to_str(pow(g, a, p))
+        self.crypto.client.dh.x = self.__int_to_str(a)
+        self.crypto.client.dh.y_c = self.__int_to_str(pow(g, a, p))
         # Per RFC 4346 section 8.1.2
         # Leading bytes of Z that contain all zero bits are stripped before it is used as the
         # pre_master_secret.
-        self.crypto.session.premaster_secret = int_to_str(pow(y_s, a, p)).lstrip("\x00")
+        self.crypto.session.premaster_secret = self.__int_to_str(pow(y_s, a, p)).lstrip("\x00")
         return self.crypto.client.dh.y_c
 
     def get_client_ecdh_pubkey(self, priv_key=None):
-        raise NotImplementedError("EC key exchange not fully supported yet")
+        # Will raise ValueError for unknown curves
+        ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
+        server_keypair = ec.Keypair(ec_curve, pub=self.crypto.server.ecdh.pub)
+        if priv_key is None:
+            client_keypair = ec.make_keypair(ec_curve)
+        else:
+            client_keypair = ec.Keypair(ec_curve, priv_key)
+        self.crypto.client.ecdh.priv = self.__int_to_str(client_keypair.priv)
+        self.crypto.client.ecdh.pub = client_keypair.pub
+        secret_point = ec.ECDH(client_keypair).get_secret(server_keypair)
+        self.crypto.session.premaster_secret = self.__int_to_str(secret_point.x)
+        return "\x04%s%s" % (self.__int_to_str(client_keypair.pub.x), self.__int_to_str(client_keypair.pub.y))
 
     def get_client_kex_data(self, val=None):
         if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:
@@ -755,7 +795,7 @@ class TLSSecurityParameters(object):
         try:
             self.negotiated_crypto_param = self.crypto_params[cipher_suite]
         except KeyError:
-            warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % cipher_suite)
+            raise RuntimeError("Cipher 0x%04x not supported" % cipher_suite)
         else:
             # Not validating lengths here, since sending a longuer PMS might be interesting
             self.pms = pms
