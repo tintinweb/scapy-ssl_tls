@@ -17,7 +17,7 @@ import tinyec.registry as ec_reg
 
 from collections import namedtuple
 from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
-from Crypto.Hash import HMAC, MD5, SHA, SHA256
+from Crypto.Hash import HMAC, MD5, SHA, SHA256, SHA384
 from Crypto.PublicKey import DSA, RSA
 from Crypto.Util.asn1 import DerSequence
 from scapy.asn1.asn1 import ASN1_SEQUENCE
@@ -745,6 +745,10 @@ class ECDHE(DH):
     pass
 
 
+class ECDSA(object):
+    pass
+
+
 class TLSSecurityParameters(object):
     
     crypto_params = {
@@ -780,18 +784,36 @@ class TLSSecurityParameters(object):
             tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA: {"name":tls.TLS_CIPHER_SUITES[0x0063], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
             tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_RC4_56_SHA:  {"name":tls.TLS_CIPHER_SUITES[0x0065], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
             tls.TLSCipherSuite.DHE_DSS_WITH_RC4_128_SHA:            {"name":tls.TLS_CIPHER_SUITES[0x0066], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_NULL_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc006], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_RC4_128_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc007], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc008], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":DES3, "name":"DES3", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc009], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc00a], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_NULL_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc010], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_RC4_128_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc011], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_3DES_EDE_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc012], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":DES3, "name":"DES3", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc013], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc014], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:   {"name":tls.TLS_CIPHER_SUITES[0xc023], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA256, "name":"SHA256"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:   {"name":tls.TLS_CIPHER_SUITES[0xc024], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA384, "name":"SHA384"}},
             tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256:   {"name":tls.TLS_CIPHER_SUITES[0xc027], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA256, "name":"SHA256"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA384:   {"name":tls.TLS_CIPHER_SUITES[0xc028], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA384, "name":"SHA384"}},
+
             # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
             # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
             }
-# Unsupported for now, until TLS1.2 and ECDHE support implemented
-#         ECDH_ECDSA_WITH_AES_256_CBC_SHA = 0xc005
-#         ECDHE_ECDSA_WITH_AES_256_CBC_SHA = 0xc00a
-#         ECDH_RSA_WITH_AES_256_CBC_SHA = 0xc00f    
-#         ECDHE_RSA_WITH_AES_256_CBC_SHA = 0xc014
+# Unsupported for now, until GCM/CCM and SRP are integrated
 #         SRP_SHA_RSA_WITH_AES_256_CBC_SHA = 0xc021
 #         SRP_SHA_DSS_WITH_AES_256_CBC_SHA = 0xc022
 #         TLS_FALLBACK_SCSV = 0x5600
+#     0xc02b: 'ECDHE_ECDSA_WITH_AES_128_GCM_SHA256',
+#     0xc02c: 'ECDHE_ECDSA_WITH_AES_256_GCM_SHA384',
+#     0xc02f: 'ECDHE_RSA_WITH_AES_128_GCM_SHA256',
+#     0xc030: 'ECDHE_RSA_WITH_AES_256_GCM_SHA384',
+#     0xc0ac: 'ECDHE_ECDSA_WITH_AES_128_CCM',
+#     0xc0ad: 'ECDHE_ECDSA_WITH_AES_256_CCM',
+#     0xc0ae: 'ECDHE_ECDSA_WITH_AES_128_CCM_8',
+#     0xc0af: 'ECDHE_ECDSA_WITH_AES_256_CCM_8',
 
     def __init__(self, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
         """ /!\ This class is not thread safe
