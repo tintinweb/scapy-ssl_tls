@@ -514,11 +514,32 @@ class TLSKeyExchange(Packet):
         return next_layer
 
 
-class TLSClientKeyExchange(TLSKeyExchange):
-    name = "TLS Client Key Exchange"
+class TLSClientRSAParams(PacketNoPayload):
+    name = "TLS RSA Client Params"
     # Length field needs to be removed for SSL3 compatibility. I don't care for now
     fields_desc = [XFieldLenField("length", None, length_of="data", fmt="!H"),
                    StrLenField("data", "", length_from=lambda x:x.length)]
+
+
+class TLSClientDHParams(PacketNoPayload):
+    name = "TLS Diffie-Hellman Client Params"
+    # Length field needs to be removed for SSL3 compatibility. I don't care for now
+    fields_desc = [XFieldLenField("length", None, length_of="data", fmt="!H"),
+                   StrLenField("data", "", length_from=lambda x:x.length)]
+
+
+class TLSClientECDHParams(PacketNoPayload):
+    name = "TLS EC Diffie-Hellman Client Params"
+    # Another brilliant TLS idea. Let's hold ECDHE param length on 1 byte instead of 2
+    fields_desc = [XFieldLenField("length", None, length_of="data", fmt="!B"),
+                   StrLenField("data", "", length_from=lambda x:x.length)]
+
+
+class TLSClientKeyExchange(TLSKeyExchange):
+    name = "TLS Client Key Exchange"
+    kex_payload_table = {TLSKexNames.RSA: TLSClientRSAParams,
+                         TLSKexNames.DHE: TLSClientDHParams,
+                         TLSKexNames.ECDHE: TLSClientECDHParams}
 
 
 class TLSServerDHParams(PacketNoPayload):

@@ -144,7 +144,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         epms = tls_ctx.get_encrypted_pms()
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello()
         tls_ctx.insert(pkt)
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange(data=epms)
+        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=epms)
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.crypto.session.encrypted_premaster_secret, epms)
         self.assertEqual(tls_ctx.crypto.session.premaster_secret, self.priv_key.decrypt(epms, None))
@@ -161,7 +161,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=1234,
                                                                                  random_bytes="A" * 28)
         tls_ctx.insert(server_hello)
-        client_kex = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange(data=epms)
+        client_kex = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange() /\
+                     tls.TLSClientRSAParams(data=epms)
         tls_ctx.insert(client_kex)
         self.assertEqual(binascii.hexlify(tls_ctx.get_verify_data()), verify_data)
 
@@ -351,8 +352,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
             version=version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.version) / tls.TLSHandshake() / tls.TLSClientKeyExchange(
-            data=self.tls_ctx.get_encrypted_pms())
+        self.client_kex = tls.TLSRecord(version=self.version) / tls.TLSHandshake() / tls.TLSClientKeyExchange() /\
+                          tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())
         self.tls_ctx.insert(self.client_kex)
 
     def test_crypto_container_increments_sequence_number(self):
