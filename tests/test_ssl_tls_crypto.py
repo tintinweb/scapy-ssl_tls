@@ -3,8 +3,11 @@
 import os
 import binascii
 import unittest
+import tinyec.ec as ec
+import tinyec.registry as reg
 import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
+
 from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.Cipher import AES, DES3, PKCS1_v1_5
 from Crypto.PublicKey import RSA
@@ -179,6 +182,24 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(
             "}\xcae\xd2y\xd7F$\xde\"\xa9s\xfbNR9v\x19t9\x87\xa8\xa3\x9c\xccb]\x13\xb7\x8a\x8f\xdf\x7fv\x05\xa6\xf1\xa7\xc8\xf4X\xe3\xd4\xac\xd6\x1e4\xb4\x1cc\xbb\xce\xbe\x94lQ\x91\xb9\xde\xb7\xa6gu_",
             tls_ctx.crypto.session.premaster_secret)
+
+    def test_client_ecdh_parameters_generation_matches_fixed_data(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.crypto.server.ecdh.curve_name = "secp256r1"
+        secp256r1 = reg.get_curve(tls_ctx.crypto.server.ecdh.curve_name)
+        tls_ctx.crypto.server.ecdh.pub = ec.Point(
+            secp256r1,
+            71312736565121892539464098105317518227531978702333415386264829982789952731614L,
+            108064706642599821618918248475955325719985341096102200103424860263181813987462L)
+        client_privkey = 15320484772785058360598040144348894600917526501829289880527760633524785596585L
+        client_keys = ec.Keypair(secp256r1, client_privkey)
+        client_pubkey = tls_ctx.get_client_ecdh_pubkey(client_privkey)
+        self.assertTrue(client_pubkey.startswith("\x04"))
+        self.assertEqual("\x04%s%s" % (tlsc.int_to_str(client_keys.pub.x), tlsc.int_to_str(client_keys.pub.y)),
+                         client_pubkey)
+        self.assertEqual(client_keys.pub, tls_ctx.crypto.client.ecdh.pub)
+        self.assertEqual("'(\x17\x94l\xd7AO\x03\xd4Fi\x05}mP\x1aX5C7\xf0_\xa9\xb0\xac\xba{r\x1f\x12\x8f",
+                         tls_ctx.crypto.session.premaster_secret)
 
 
 class TestTLSSecurityParameters(unittest.TestCase):

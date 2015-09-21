@@ -441,7 +441,6 @@ class TLSSessionCtx(object):
                     self.crypto.client.dh.y_c = p[tls.TLSClientDHParams].data
                 elif p.haslayer(tls.TLSClientECDHParams):
                     ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
-                    # Skip the length byte, before ANSI parsing
                     self.crypto.client.ecdh.pub = str_to_ec_point(p[tls.TLSClientECDHParams].data, ec_curve)
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
