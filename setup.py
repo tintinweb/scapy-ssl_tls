@@ -103,7 +103,7 @@ def _post_install(dir_):
                     print(line, end="")
 
 def os_install_requires():
-    dependencies = ["scapy", "pycrypto"]
+    dependencies = ["scapy", "pycrypto", "tinyec"]
     # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
     if platform.system() == "Darwin":
         dependencies.extend(("dnet", "pcapy"))
@@ -128,7 +128,7 @@ setup(
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=os_install_requires(),
     test_suite="nose.collector",
-    tests_require=["nose", "scapy", "pycrypto"],
+    tests_require=["nose", "scapy", "pycrypto", "tinyec"],
     # Change once virtualenv bug is fixed
     # data_files = get_layer_files_dst(sites=site.getsitepackages())
     data_files=get_layer_files_dst(get_site_packages()),

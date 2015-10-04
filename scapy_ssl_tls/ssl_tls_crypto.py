@@ -9,12 +9,15 @@ import os
 import struct
 import zlib
 import re
+import warnings
 import pkcs7
 import ssl_tls as tls
+import tinyec.ec as ec
+import tinyec.registry as ec_reg
 
 from collections import namedtuple
 from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
-from Crypto.Hash import HMAC, MD5, SHA, SHA256
+from Crypto.Hash import HMAC, MD5, SHA, SHA256, SHA384
 from Crypto.PublicKey import DSA, RSA
 from Crypto.Util.asn1 import DerSequence
 from scapy.asn1.asn1 import ASN1_SEQUENCE
@@ -95,6 +98,23 @@ def x509_extract_pubkey_from_pem(public_key_string):
 
     return x509_extract_pubkey_from_der(der)
 
+
+def int_to_str(int_):
+    hex_ = "%x" % int_
+    return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
+
+
+def str_to_ec_point(ansi_str, ec_curve):
+    if not ansi_str.startswith("\x04"):
+        raise ValueError("ANSI octet string missing point prefix (0x04)")
+    ansi_str = ansi_str[1:]
+    if len(ansi_str) % 2 != 0:
+        raise ValueError("Can't parse curve point. Odd ANSI string length")
+    str_to_int = lambda x: int(binascii.hexlify(x), 16)
+    x, y = str_to_int(ansi_str[:len(ansi_str) // 2]), str_to_int(ansi_str[len(ansi_str) // 2:])
+    return ec.Point(ec_curve, x, y)
+
+
 class TLSSessionCtx(object):
 
     def __init__(self, client=True):
@@ -140,6 +160,10 @@ class TLSSessionCtx(object):
         self.crypto.client.dh = namedtuple("dh", ["x", "y_c"])
         self.crypto.client.dh.x = None
         self.crypto.client.dh.y_c = None
+        self.crypto.client.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
+        self.crypto.client.ecdh.curve_name = None
+        self.crypto.client.ecdh.priv = None
+        self.crypto.client.ecdh.pub = None
         self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
@@ -155,6 +179,10 @@ class TLSSessionCtx(object):
         self.crypto.server.dh.g = None
         self.crypto.server.dh.x = None
         self.crypto.server.dh.y_s = None
+        self.crypto.server.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
+        self.crypto.server.ecdh.curve_name = None
+        self.crypto.server.ecdh.priv = None
+        self.crypto.server.ecdh.pub = None
         self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
                                                      'premaster_secret',
                                                      'master_secret',
@@ -208,12 +236,19 @@ class TLSSessionCtx(object):
                   "crypto-server-dsa-pubkey":repr(self.crypto.server.dsa.pubkey),
                   "crypto-server-dsa-privkey":repr(self.crypto.server.dsa.privkey),
 
-                  "crypto-client-dh-x":repr(self.crypto.client.dh.x),
-                  "crypto-client-dh-y_c":repr(self.crypto.client.dh.y_c),
-                  "crypto-server-dh-p":repr(self.crypto.server.dh.p),
-                  "crypto-server-dh-g":repr(self.crypto.server.dh.g),
-                  "crypto-server-dh-x":repr(self.crypto.server.dh.x),
-                  "crypto-server-dh-y_s":repr(self.crypto.server.dh.y_s),
+                  "crypto-client-dh-x": repr(self.crypto.client.dh.x),
+                  "crypto-client-dh-y_c": repr(self.crypto.client.dh.y_c),
+                  "crypto-server-dh-p": repr(self.crypto.server.dh.p),
+                  "crypto-server-dh-g": repr(self.crypto.server.dh.g),
+                  "crypto-server-dh-x": repr(self.crypto.server.dh.x),
+                  "crypto-server-dh-y_s": repr(self.crypto.server.dh.y_s),
+
+                  "crypto-client-ecdh-curve_name": repr(self.crypto.client.ecdh.curve_name),
+                  "crypto-client-ecdh-priv": repr(self.crypto.client.ecdh.priv),
+                  "crypto-client-ecdh-pub": repr(self.crypto.client.ecdh.pub),
+                  "crypto-server-ecdh-curve_name": repr(self.crypto.server.ecdh.curve_name),
+                  "crypto-server-ecdh-priv": repr(self.crypto.server.ecdh.priv),
+                  "crypto-server-ecdh-pub": repr(self.crypto.server.ecdh.pub),
 
                   'crypto-session-encrypted_premaster_secret':repr(self.crypto.session.encrypted_premaster_secret),
                   'crypto-session-premaster_secret':repr(self.crypto.session.premaster_secret),
@@ -258,12 +293,19 @@ class TLSSessionCtx(object):
         str_ +="\n\t crypto.server.dsa.privkey=%(crypto-server-dsa-privkey)s"
         str_ +="\n\t crypto.server.dsa.pubkey=%(crypto-server-dsa-pubkey)s"
 
-        str_ +="\n\t crypto.client.dh.x=%(crypto-client-dh-x)s"
-        str_ +="\n\t crypto.client.dh.y_c=%(crypto-client-dh-y_c)s"
-        str_ +="\n\t crypto.server.dh.p=%(crypto-server-dh-p)s"
-        str_ +="\n\t crypto.server.dh.g=%(crypto-server-dh-g)s"
-        str_ +="\n\t crypto.server.dh.x=%(crypto-server-dh-x)s"
-        str_ +="\n\t crypto.server.dh.y_s=%(crypto-server-dh-y_s)s"
+        str_ += "\n\t crypto.client.dh.x=%(crypto-client-dh-x)s"
+        str_ += "\n\t crypto.client.dh.y_c=%(crypto-client-dh-y_c)s"
+        str_ += "\n\t crypto.server.dh.p=%(crypto-server-dh-p)s"
+        str_ += "\n\t crypto.server.dh.g=%(crypto-server-dh-g)s"
+        str_ += "\n\t crypto.server.dh.x=%(crypto-server-dh-x)s"
+        str_ += "\n\t crypto.server.dh.y_s=%(crypto-server-dh-y_s)s"
+
+        str_ += "\n\t crypto.client.ecdh.curve_name=%(crypto-client-ecdh-curve_name)s"
+        str_ += "\n\t crypto.client.ecdh.priv=%(crypto-client-ecdh-priv)s"
+        str_ += "\n\t crypto.client.ecdh.pub=%(crypto-client-ecdh-pub)s"
+        str_ += "\n\t crypto.server.ecdh.curve_name=%(crypto-server-ecdh-curve_name)s"
+        str_ += "\n\t crypto.server.ecdh.priv=%(crypto-server-ecdh-priv)s"
+        str_ += "\n\t crypto.server.ecdh.pub=%(crypto-server-ecdh-pub)s"
 
         str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
         str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
@@ -300,7 +342,7 @@ class TLSSessionCtx(object):
         for p in ps:
             self.packets.history.append(p)
             self._process(p)    # fill structs
-         
+
     def _process(self,p):
         '''
         fill context
@@ -334,7 +376,8 @@ class TLSSessionCtx(object):
                         self.params.negotiated.compression_algo = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["name"]
                         self.compression.method = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["type"]
                     except KeyError:
-                        raise KeyError("Compression method 0x%02x not supported" % self.params.negotiated.compression)
+                        warnings.warn("Compression method 0x%02x not supported. Compression operations will fail" %
+                                      self.params.negotiated.compression)
                     # Raises RuntimeError if we do not handle the cipher
                     try:
                         self.params.negotiated.key_exchange = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["key_exchange"]["name"]
@@ -344,7 +387,8 @@ class TLSSessionCtx(object):
                                                          TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["mode_name"])
                         self.params.negotiated.mac = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["hash"]["name"]
                     except KeyError:
-                        raise RuntimeError("Cipher 0x%04x not supported" % self.params.negotiated.ciphersuite)
+                        warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" %
+                                      self.params.negotiated.ciphersuite)
 
             if p.haslayer(tls.TLSCertificateList):
                 # TODO: Probably don't want to do that if rsa_load_priv*() is called 
@@ -367,16 +411,37 @@ class TLSSessionCtx(object):
                     self.crypto.server.dh.p = p[tls.TLSServerDHParams].p
                     self.crypto.server.dh.g = p[tls.TLSServerDHParams].g
                     self.crypto.server.dh.y_s = p[tls.TLSServerDHParams].y_s
+                if p.haslayer(tls.TLSServerECDHParams):
+                    try:
+                        self.crypto.server.ecdh.curve_name = tls.TLS_ELLIPTIC_CURVES[p[tls.TLSServerECDHParams].curve_name]
+                    # Unknown cuve case. Just record raw values, but do nothing with them
+                    except KeyError:
+                        self.crypto.server.ecdh.curve_name = p[tls.TLSServerECDHParams].curve_name
+                        self.crypto.server.ecdh.pub = p[tls.TLSServerECDHParams].p
+                        warnings.warn("Unknown elliptic curve. Client KEX calculation is up to you")
+                    # We are on a known curve
+                    else:
+                        # TODO: DO not assume uncompressed EC points!
+                        # Uncompressed EC points are recorded in ANSI format => \x04 + x_point + y_point
+                        ansi_ec_point_str = p[tls.TLSServerECDHParams].p
+                        try:
+                            ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
+                            self.crypto.server.ecdh.pub = str_to_ec_point(ansi_ec_point_str, ec_curve)
+                        except ValueError:
+                            warnings.warn("Unsupported elliptic curve: %s" % self.crypto.server.ecdh.curve_name)
 
             # calculate key material
             if p.haslayer(tls.TLSClientKeyExchange):
-                if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:
-                    self.crypto.session.encrypted_premaster_secret = p[tls.TLSClientKeyExchange].data
+                if p.haslayer(tls.TLSClientRSAParams):
+                    self.crypto.session.encrypted_premaster_secret = p[tls.TLSClientRSAParams].data
                     # If we have the private key, let's decrypt the PMS
                     if self.crypto.server.rsa.privkey is not None:
                         self.crypto.session.premaster_secret = self.crypto.server.rsa.privkey.decrypt(self.crypto.session.encrypted_premaster_secret, None)
-                elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
-                    self.crypto.client.dh.y_c = p[tls.TLSClientKeyExchange].data
+                elif p.haslayer(tls.TLSClientDHParams):
+                    self.crypto.client.dh.y_c = p[tls.TLSClientDHParams].data
+                elif p.haslayer(tls.TLSClientECDHParams):
+                    ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
+                    self.crypto.client.ecdh.pub = str_to_ec_point(p[tls.TLSClientECDHParams].data, ec_curve)
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
                 self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
@@ -441,14 +506,11 @@ class TLSSessionCtx(object):
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.crypto.session.encrypted_premaster_secret
 
-    def get_client_dh_pubkey(self, x=None):
+    def get_client_dh_pubkey(self, priv_key=None):
         # ValueError is propagated to caller both if hex or int conversion fail
         import math
         import random
         str_to_int = lambda x: int(binascii.hexlify(x), 16)
-        def int_to_str(int_):
-            hex_ = "%x" % int_
-            return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
         nb_bits = lambda x: int(math.ceil(math.log(x) / math.log(2)))
         p = str_to_int(self.crypto.server.dh.p)
         g = str_to_int(self.crypto.server.dh.g)
@@ -457,7 +519,7 @@ class TLSSessionCtx(object):
         # Long story short, this provides 128bits of key space (sqrt(2**256)). TLS leaves this up to the implementation.
         # Another option is to gather random.randint(0, 2**nb_bits(p) - 1), but has little added security
         # In our case, since we don't care about security, it really doesn't matter what we pick
-        a = x or random.randint(0, 2**256 - 1)
+        a = priv_key or random.randint(0, 2**256 - 1)
         self.crypto.client.dh.x = int_to_str(a)
         self.crypto.client.dh.y_c = int_to_str(pow(g, a, p))
         # Per RFC 4346 section 8.1.2
@@ -466,11 +528,28 @@ class TLSSessionCtx(object):
         self.crypto.session.premaster_secret = int_to_str(pow(y_s, a, p)).lstrip("\x00")
         return self.crypto.client.dh.y_c
 
+    def get_client_ecdh_pubkey(self, priv_key=None):
+        # Will raise ValueError for unknown curves
+        ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
+        server_keypair = ec.Keypair(ec_curve, pub=self.crypto.server.ecdh.pub)
+        if priv_key is None:
+            client_keypair = ec.make_keypair(ec_curve)
+        else:
+            client_keypair = ec.Keypair(ec_curve, priv_key)
+        self.crypto.client.ecdh.priv = int_to_str(client_keypair.priv)
+        self.crypto.client.ecdh.pub = client_keypair.pub
+        secret_point = ec.ECDH(client_keypair).get_secret(server_keypair)
+        # PMS is x coordinate of secret
+        self.crypto.session.premaster_secret = int_to_str(secret_point.x)
+        return "\x04%s%s" % (int_to_str(client_keypair.pub.x), int_to_str(client_keypair.pub.y))
+
     def get_client_kex_data(self, val=None):
         if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:
-            return self.get_encrypted_pms(val)
+            return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientRSAParams(data=self.get_encrypted_pms(val))
         elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
-            return self.get_client_dh_pubkey(val)
+            return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientDHParams(data=self.get_client_dh_pubkey(val))
+        elif self.params.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
+            return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
         else:
             raise NotImplementedError("Key exchange unknown or currently not supported")
 
@@ -652,9 +731,23 @@ class NullHash(object):
     def copy(self):
         return copy.deepcopy(self)
 
-class DHE(object):
+
+class DH(object):
     pass
- 
+
+
+class DHE(DH):
+    pass
+
+
+class ECDHE(DH):
+    pass
+
+
+class ECDSA(object):
+    pass
+
+
 class TLSSecurityParameters(object):
     
     crypto_params = {
@@ -690,17 +783,36 @@ class TLSSecurityParameters(object):
             tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA: {"name":tls.TLS_CIPHER_SUITES[0x0063], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":DES, "name":"DES", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
             tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_RC4_56_SHA:  {"name":tls.TLS_CIPHER_SUITES[0x0065], "export":True, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":8, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
             tls.TLSCipherSuite.DHE_DSS_WITH_RC4_128_SHA:            {"name":tls.TLS_CIPHER_SUITES[0x0066], "export":False, "key_exchange":{"type":DHE, "name":tls.TLSKexNames.DHE, "sig":DSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_NULL_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc006], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_RC4_128_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc007], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc008], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":DES3, "name":"DES3", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc009], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc00a], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_NULL_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc010], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_RC4_128_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc011], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":ARC4, "name":"RC4", "key_len":16, "mode":None, "mode_name":"Stream"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_3DES_EDE_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc012], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":DES3, "name":"DES3", "key_len":8, "mode":DES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc013], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA:   {"name":tls.TLS_CIPHER_SUITES[0xc014], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA, "name":"SHA"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:   {"name":tls.TLS_CIPHER_SUITES[0xc023], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA256, "name":"SHA256"}},
+            tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:   {"name":tls.TLS_CIPHER_SUITES[0xc024], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":ECDSA}, "cipher":{"type":AES, "name":"AES", "key_len":32, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA384, "name":"SHA384"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256:   {"name":tls.TLS_CIPHER_SUITES[0xc027], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA256, "name":"SHA256"}},
+            tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA384:   {"name":tls.TLS_CIPHER_SUITES[0xc028], "export":False, "key_exchange":{"type":ECDHE, "name":tls.TLSKexNames.ECDHE, "sig":RSA}, "cipher":{"type":AES, "name":"AES", "key_len":16, "mode":AES.MODE_CBC, "mode_name":"CBC"}, "hash":{"type":SHA384, "name":"SHA384"}},
+
             # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
             # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
             }
-# Unsupported for now, until TLS1.2 and ECDHE support implemented
-#         ECDH_ECDSA_WITH_AES_256_CBC_SHA = 0xc005
-#         ECDHE_ECDSA_WITH_AES_256_CBC_SHA = 0xc00a
-#         ECDH_RSA_WITH_AES_256_CBC_SHA = 0xc00f    
-#         ECDHE_RSA_WITH_AES_256_CBC_SHA = 0xc014
+# Unsupported for now, until GCM/CCM and SRP are integrated
 #         SRP_SHA_RSA_WITH_AES_256_CBC_SHA = 0xc021
 #         SRP_SHA_DSS_WITH_AES_256_CBC_SHA = 0xc022
 #         TLS_FALLBACK_SCSV = 0x5600
+#     0xc02b: 'ECDHE_ECDSA_WITH_AES_128_GCM_SHA256',
+#     0xc02c: 'ECDHE_ECDSA_WITH_AES_256_GCM_SHA384',
+#     0xc02f: 'ECDHE_RSA_WITH_AES_128_GCM_SHA256',
+#     0xc030: 'ECDHE_RSA_WITH_AES_256_GCM_SHA384',
+#     0xc0ac: 'ECDHE_ECDSA_WITH_AES_128_CCM',
+#     0xc0ad: 'ECDHE_ECDSA_WITH_AES_256_CCM',
+#     0xc0ae: 'ECDHE_ECDSA_WITH_AES_128_CCM_8',
+#     0xc0af: 'ECDHE_ECDSA_WITH_AES_256_CCM_8',
 
     def __init__(self, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
         """ /!\ This class is not thread safe
@@ -709,22 +821,23 @@ class TLSSecurityParameters(object):
             self.negotiated_crypto_param = self.crypto_params[cipher_suite]
         except KeyError:
             raise RuntimeError("Cipher 0x%04x not supported" % cipher_suite)
-        # Not validating lengths here, since sending a longuer PMS might be interesting
-        self.pms = pms
-        if len(client_random) != 32:
-            raise ValueError("Client random must be 32 bytes")
-        self.client_random = client_random
-        if len(server_random) != 32:
-            raise ValueError("Server random must be 32 bytes")
-        self.server_random = server_random
-        self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
-        self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
-        block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
-        # Stream ciphers have a block size of one, but IV should be 0
-        self.iv_length = 0 if block_size == 1 else block_size
-        self.explicit_iv = explicit_iv
-        self.prf = prf
-        self.__init_crypto(pms, client_random, server_random, explicit_iv)
+        else:
+            # Not validating lengths here, since sending a longuer PMS might be interesting
+            self.pms = pms
+            if len(client_random) != 32:
+                raise ValueError("Client random must be 32 bytes")
+            self.client_random = client_random
+            if len(server_random) != 32:
+                raise ValueError("Server random must be 32 bytes")
+            self.server_random = server_random
+            self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
+            self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
+            block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
+            # Stream ciphers have a block size of one, but IV should be 0
+            self.iv_length = 0 if block_size == 1 else block_size
+            self.explicit_iv = explicit_iv
+            self.prf = prf
+            self.__init_crypto(pms, client_random, server_random, explicit_iv)
     
     def get_client_hmac(self):
         return self.__client_hmac
