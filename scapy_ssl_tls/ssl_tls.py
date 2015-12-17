@@ -1004,7 +1004,7 @@ def tls_do_handshake(tls_socket, version, ciphers):
     r = tls_socket.recvall()
     if r.haslayer(TLSAlert):
         raise TLSProtocolError("Alert returned by server", r)
-    client_key_exchange = TLSRecord(version=version)/TLSHandshake()/TLSClientKeyExchange(data=tls_socket.tls_ctx.get_client_kex_data())
+    client_key_exchange = TLSRecord(version=version)/TLSHandshake()/tls_socket.tls_ctx.get_client_kex_data()
     client_ccs = TLSRecord(version=version)/TLSChangeCipherSpec()
     tls_socket.sendall(TLS.from_records([client_key_exchange, client_ccs]))
     tls_socket.sendall(to_raw(TLSFinished(), tls_socket.tls_ctx))
