@@ -41,9 +41,11 @@ Installation
 
 1) install requirements from requirements.txt
 
-2) copy scapy_ssl_tls/* to *scapy_installation*/scapy/layers 
+2) locate *< scapy >* installation directory: `python -c "import scapy; print scapy.__file__"`
 
-3) modify *scapy_installation*/scapy/config.py to autoload SSL/TLS 
+3) copy scapy_ssl_tls/* to *< scapy >*/layers/ 
+
+4) modify *< scapy >*/config.py to autoload SSL/TLS 
 
 ```diff
 
@@ -56,7 +58,15 @@ Installation
 
 ##### verify installation:
 ```python
-#> scapy
+#> python
+	>>> from scapy_ssl_tls.ssl_tls import TLS
+	>>> TLS
+	<class 'scapy_ssl_tls.ssl_tls.SSL'>
+#> scapy  # via site-packages
+	>>> from scapy_ssl_tls.ssl_tls import TLS
+	>>> TLS
+	<class 'scapy_ssl_tls.ssl_tls.SSL'>
+#> scapy  # with layers autoloaded via config.py
 	>>> SSL
 	<class 'scapy.layers.ssl_tls.SSL'>
 	>>> TLS
