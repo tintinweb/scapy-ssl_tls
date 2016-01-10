@@ -9,7 +9,7 @@ import platform
 import sys
 from setuptools import setup
 from setuptools.command.install import install as _install
-
+import site as _site
 
 def get_site_packages():
     """
@@ -25,7 +25,11 @@ def get_site_packages():
         site_path = os.path.join(os_location, site)
         if os.path.isdir(site_path):
             site_packages.append(site_path)
-    return site_packages
+    try:
+        site_packages += _site.getsitepackages()
+    except AttributeError:
+        print("WARNING: Error trying to call site.getsitepackages(). This is probably virtualenv issue#355")
+    return list(set(site_packages))
 
 
 def get_scapy_locations(sites):
@@ -48,6 +52,7 @@ def get_scapy_locations(sites):
                             for dir_ in dirs:
                                 if dir_ == "layers":
                                     scapy_locations.append(root)
+    print("INFO: Installing scapy-ssl_tls layers to: %s"%repr(scapy_locations))
     return scapy_locations
 
 
