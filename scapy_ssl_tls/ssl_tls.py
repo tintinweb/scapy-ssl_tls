@@ -451,7 +451,8 @@ class TLSClientHello(PacketNoPayload):
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ] 
- 
+
+
 class TLSServerHello(PacketNoPayload):
     name = "TLS Server Hello"
     fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
@@ -460,7 +461,7 @@ class TLSServerHello(PacketNoPayload):
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
                    StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
 
-                   XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
+                   XShortEnumField("cipher_suite", TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
@@ -854,6 +855,10 @@ class TLSSocket(object):
         self._s.settimeout(prev_timeout)
         records = TLS("".join(resp), ctx=self.tls_ctx)
         return records
+
+    def accept(self):
+        client_socket, peer = self._s.accept()
+        return TLSSocket(client_socket, client=True), peer
 
 
 # entry class
