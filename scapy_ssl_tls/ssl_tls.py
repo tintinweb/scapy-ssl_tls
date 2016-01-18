@@ -459,7 +459,7 @@ class TLSServerHello(PacketNoPayload):
                    IntField("gmt_unix_time", int(time.time())),
                    StrFixedLenField("random_bytes", os.urandom(28), 28),
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
-                   StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
+                   StrLenField("session_id", os.urandom(20), length_from=lambda x:x.session_id_length),
 
                    XShortEnumField("cipher_suite", TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
@@ -576,13 +576,15 @@ class TLSServerKeyExchange(TLSKeyExchange):
 
 class TLSFinished(PacketNoPayload):
     name = "TLS Handshake Finished"
-    fields_desc = [ StrLenField("data", '', length_from=lambda x:x.underlayer.length)]
+    fields_desc = [StrLenField("data", '', length_from=lambda x:x.underlayer.length)]
+
 
 class TLSServerHelloDone(PacketNoPayload):
     name = "TLS Server Hello Done"
-    fields_desc = [ XBLenField("length", None, fmt="!I", numbytes=3),
-                    StrLenField("data", "", length_from=lambda x:x.length), ]
-    
+    fields_desc = [XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
+                   StrLenField("data", "", length_from=lambda x:x.length)]
+
+
 class TLSCertificate(PacketNoPayload):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
@@ -858,7 +860,7 @@ class TLSSocket(object):
 
     def accept(self):
         client_socket, peer = self._s.accept()
-        return TLSSocket(client_socket, client=True), peer
+        return TLSSocket(client_socket, client=False, tls_ctx=copy.deepcopy(self.tls_ctx)), peer
 
 
 # entry class

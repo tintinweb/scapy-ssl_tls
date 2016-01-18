@@ -553,8 +553,8 @@ class TLSSessionCtx(object):
         else:
             raise NotImplementedError("Key exchange unknown or currently not supported")
 
-    def get_verify_data(self, client=True, data=None):
-        if client:
+    def get_verify_data(self, data=None):
+        if self.client:
             label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
         else:
             label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
@@ -562,7 +562,7 @@ class TLSSessionCtx(object):
             verify_data = []
             for pkt in self.packets.history:
                 for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
-                    if not handshake.haslayer(tls.TLSFinished) and not handshake.haslayer(tls.TLSHelloRequest):
+                    if not handshake.haslayer(tls.TLSPlaintext) and not handshake.haslayer(tls.TLSHelloRequest):
                         verify_data.append(str(handshake))
         else:
             verify_data = [data]
