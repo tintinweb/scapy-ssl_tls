@@ -11,6 +11,7 @@ An example implementation of a passive TLS security scanner with custom starttls
 '''
 import sys, os
 import concurrent.futures
+
 try:
     import scapy.all as scapy
 except ImportError:
@@ -21,9 +22,11 @@ try:
     basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
     sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
+    from scapy_ssl_tls.ssl_tls_crypto import x509_extract_pubkey_from_der
 except ImportError:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
+    from scapy.layers.ssl_tls import x509_extract_pubkey_from_der
     
 import socket
 from collections import namedtuple
@@ -67,18 +70,40 @@ class TCPConnection(object):
         return SSL(''.join(resp))
 
 class TLSInfo(object):
+    # https://en.wikipedia.org/wiki/RSA_numbers
+    RSA_MODULI_KNOWN_FACTORED = (1522605027922533360535618378132637429718068114961380688657908494580122963258952897654000350692006139, # RSA-100
+                                 35794234179725868774991807832568455403003778024228226193532908190484670252364677411513516111204504060317568667, # RSA-110
+                                 227010481295437363334259960947493668895875336466084780038173258247009162675779735389791151574049166747880487470296548479, # RSA-120
+                                 114381625757888867669235779976146612010218296721242362562561842935706935245733897830597123563958705058989075147599290026879543541, #RSA-129
+                                 1807082088687404805951656164405905566278102516769401349170127021450056662540244048387341127590812303371781887966563182013214880557, #RSA-130
+                                 21290246318258757547497882016271517497806703963277216278233383215381949984056495911366573853021918316783107387995317230889569230873441936471, # RSA-140
+                                 155089812478348440509606754370011861770654545830995430655466945774312632703463465954363335027577729025391453996787414027003501631772186840890795964683, #RSA-150
+                                 10941738641570527421809707322040357612003732945449205990913842131476349984288934784717997257891267332497625752899781833797076537244027146743531593354333897, # RSA-155
+                                 2152741102718889701896015201312825429257773588845675980170497676778133145218859135673011059773491059602497907111585214302079314665202840140619946994927570407753, # RSA-160
+                                 26062623684139844921529879266674432197085925380486406416164785191859999628542069361450283931914514618683512198164805919882053057222974116478065095809832377336510711545759, # RSA-170
+                                 188198812920607963838697239461650439807163563379417382700763356422988859715234665485319060606504743045317388011303396716199692321205734031879550656996221305168759307650257059, # RSA-576
+                                 191147927718986609689229466631454649812986246276667354864188503638807260703436799058776201365135161278134258296128109200046702912984568752800330221777752773957404540495707851421041, # RSA-180
+                                 1907556405060696491061450432646028861081179759533184460647975622318915025587184175754054976155121593293492260464152630093238509246603207417124726121580858185985938946945490481721756401423481, # RSA-190
+                                 3107418240490043721350750035888567930037346022842727545720161948823206440518081504556346829671723286782437916272838033415471073108501919548529007337724822783525742386454014691736602477652346609, # RSA-640
+                                 27997833911221327870829467638722601621070446786955428537560009929326128400107609345671052955360856061822351910951365788637105954482006576775098580557613579098734950144178863178946295187237869221823983, # RSA-200
+                                 245246644900278211976517663573088018467026787678332759743414451715061600830038587216952208399332071549103626827191679864079776723243005600592035631246561218465817904100131859299619933817012149335034875870551067, # RSA-210
+                                 74037563479561712828046796097429573142593188889231289084936232638972765034028266276891996419625117843995894330502127585370118968098286733173273108930900552505116877063299072396380786710086096962537934650563796359, #R SA-704
+                                 1230186684530117755130494958384962720772853569595334792197322452151726400507263657518745202199786469389956474942774063845925192557326303453731548268507917026122142913461670429214311602221240479274737794080665351419597459856902143413, # RSA-768
+                                )
+                                
     def __init__(self):
         self.history = []
         self.events = []
         self.info = namedtuple("info", ['client','server'])
-        self.info.client = namedtuple("client", ['versions','ciphers','compressions', 'preferred_ciphers', 'sessions_established', 'heartbeat' ])
+        self.info.client = namedtuple("client", ['versions','ciphers','compressions', 'preferred_ciphers', 'sessions_established', 'heartbeat', 'extensions' ])
         self.info.client.versions = set([])
         self.info.client.ciphers = set([])
         self.info.client.compressions = set([])
         self.info.client.preferred_ciphers = set([])
         self.info.client.sessions_established = 0
         self.info.client.heartbeat = None
-        self.info.server = namedtuple("server", ['versions','ciphers','compressions','sessions_established', 'fallback_scsv', 'heartbeat'])
+        self.info.client.extensions = set([])
+        self.info.server = namedtuple("server", ['versions','ciphers','compressions','sessions_established', 'fallback_scsv', 'heartbeat', 'extensions'])
         self.info.server.versions = set([])
         self.info.server.ciphers = set([])
         self.info.server.compressions = set([])
@@ -86,6 +111,7 @@ class TLSInfo(object):
         self.info.server.fallback_scsv = False
         self.info.server.heartbeat = None
         self.info.server.certificates = set([])
+        self.info.server.extensions = set([])
     
     def __str__(self):
         return """<TLSInfo
@@ -160,6 +186,26 @@ class TLSInfo(object):
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
                 events.append(("LOGJAM - server supports weak DH-Group (512) (DHE_*_EXPORT) cipher suites",tmp))
                 
+            tmp = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAndHashAlgorithm) \
+                                                        and ext.signature_algorithm==TLSSignatureAlgorithm.RSA \
+                                                        and ext.hash_algorithm in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1)]
+            for sighash in tmp:
+                events.append(("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s"%(repr(tlsinfo),TLS_HASH_ALGORITHMS.get(sighash.hash_algorithm),tlsinfo.sighash)))
+                
+            try:
+                for certlist in tlsinfo.certificates:
+                    for cert in certlist.certificates:
+                        pubkey = x509_extract_pubkey_from_der(str(cert.data))
+                        pubkey_size = pubkey.size() + 1
+                        if pubkey_size < 2048:
+                            events.append(("INSUFFICIENT SERVER CERT PUBKEY SIZE - 2048 >= %d bits"%pubkey_size,cert))
+                        if pubkey_size % 2048 != 0:
+                            events.append(("SUSPICIOUS SERVER CERT PUBKEY SIZE - %d not a multiple of 2048 bits"%pubkey_size,cert))
+                        if pubkey.n in self.RSA_MODULI_KNOWN_FACTORED:
+                            events.append(("SERVER CERT PUBKEY FACTORED - trivial private_key recovery possible due to known factors n = p x q. See https://en.wikipedia.org/wiki/RSA_numbers | grep %s"%pubkey.n,cert))                  
+            except AttributeError:
+                pass        # tlsinfo.client has no attribute certificates
+                
             if TLSVersion.SSL_2_0 in tlsinfo.versions:
                 events.append(("PROTOCOL VERSION - SSLv2 supported ",tlsinfo.versions))
                 
@@ -200,14 +246,17 @@ class TLSInfo(object):
             if record.haslayer(TLSClientHello):
                 tlsinfo.ciphers.update(record[TLSClientHello].cipher_suites)
                 tlsinfo.compressions.update(record[TLSClientHello].compression_methods)
-                if precordkt[TLSClientHello].cipher_suites:
+                if record[TLSClientHello].cipher_suites:
                     tlsinfo.preferred_ciphers.add(pkt[TLSClientHello].cipher_suites[0])
-                    
+                tlsinfo.extensions.update(record[TLSServerHello].extensions)
+                 
             if record.haslayer(TLSServerHello):
                 tlsinfo.ciphers.add(record[TLSServerHello].cipher_suite)
                 tlsinfo.compressions.add(record[TLSServerHello].compression_method)
                 if record.haslayer(TLSExtHeartbeat):
-                    tlsinfo.heartbeat = record[TLSExtHeartbeat].mode
+                    tlsinfo.heartbeat = record[TLSExtHeartbeat].mode 
+                tlsinfo.extensions.update(record[TLSServerHello].extensions)
+                    
             if record.haslayer(TLSCertificateList):
                 tlsinfo.certificates.add(record[TLSCertificateList])
     
@@ -253,7 +302,7 @@ class TLSScanner(object):
             else:
                 self.capabilities.events.append(("Poodle2 - vulnerable",r))
             
-        except socket.error, se:
+        except (socket.error, NotImplementedError), se:
             print repr(se)
             return None
 
@@ -334,7 +383,7 @@ if __name__=="__main__":
     print __doc__
     if len(sys.argv)<=1:
         print "USAGE: <host> <port> [starttls] [workers]"
-        print "   starttls ... starttls keyword e.g. 'starttls\n' or 'ssl\n'"
+        print "       starttls ... starttls keyword e.g. 'starttls\\n' or 'ssl\\n'"
         exit(1)
     starttls = sys.argv[3] if len(sys.argv)>3 else None
     host = sys.argv[1]
