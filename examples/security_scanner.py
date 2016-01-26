@@ -189,9 +189,11 @@ class TLSInfo(object):
             tmp = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAndHashAlgorithm) \
                                                         and ext.signature_algorithm==TLSSignatureAlgorithm.RSA \
                                                         and ext.hash_algorithm in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1)]
+            # obvious SLOTH check, does not detect impl. errors that allow md5 even though not announced.
+            # makes only sense for client_hello
             for sighash in tmp:
-                events.append(("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s"%(repr(tlsinfo),TLS_HASH_ALGORITHMS.get(sighash.hash_algorithm),tlsinfo.sighash)))
-                
+                events.append(("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s"%(repr(tlsinfo),TLS_HASH_ALGORITHMS.get(sighash.hash_algorithm)),sighash))
+   
             try:
                 for certlist in tlsinfo.certificates:
                     for cert in certlist.certificates:
@@ -373,6 +375,20 @@ class TLSScanner(object):
             resp = t.recvall(timeout=0.5)
             if resp.haslayer(TLSHeartBeat) and resp[TLSHeartBeat].length>8:
                 self.capabilities.events.append(("HEARTBLEED - vulnerable",resp))
+        except socket.error, se:
+            print repr(se)
+            return None
+        return resp
+
+    def _scan_secure_renegotiation(self, target, starttls=None, version=TLSVersion.TLS_1_0, payload_length=20):
+        #todo: also test EMPTY_RENEGOTIATION_INFO_SCSV
+        try:
+            t = TCPConnection(target, starttls=starttls)
+            pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, extensions=TLSExtension()/TLSExtRenegotiationInfo())
+            t.sendall(pkt)
+            resp = t.recvall(timeout=0.5)
+            if resp.haslayer(TLSExtRenegotiationInfo):
+                self.capabilities.events.append(("TLS EXTENSION SECURE RENEGOTIATION - not supported",resp))
         except socket.error, se:
             print repr(se)
             return None
