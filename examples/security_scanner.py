@@ -12,10 +12,11 @@ An example implementation of a passive TLS security scanner with custom starttls
 import sys, os
 import concurrent.futures
 
+
 try:
-    import scapy.all as scapy
+    from scapy.all import get_if_list, sniff, IP, TCP
 except ImportError:
-    import scapy
+    from scapy import get_if_list, sniff, IP, TCP
 
 try:
     # This import works from the project directory
@@ -108,7 +109,7 @@ class TLSInfo(object):
         self.info.server.ciphers = set([])
         self.info.server.compressions = set([])
         self.info.server.sessions_established = 0
-        self.info.server.fallback_scsv = False
+        self.info.server.fallback_scsv = None
         self.info.server.heartbeat = None
         self.info.server.certificates = set([])
         self.info.server.extensions = set([])
@@ -157,42 +158,43 @@ class TLSInfo(object):
             if 0 in tmp:
                 tmp.remove(0)
             if len(tmp):
-                events.append(("CRIME - %s supports compression"%tlsinfo,tlsinfo.compressions))
+                events.append(("CRIME - %s supports compression"%tlsinfo.__name__,tlsinfo.compressions))
             # test RC4
             cipher_namelist = [TLS_CIPHER_SUITES.get(c,c) for c in tlsinfo.ciphers]
             
-            tmp = [c for c in cipher_namelist if "EXP" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "EXP" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - Export ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "RC4" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "RC4" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - RC4 ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "MD2" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "MD2" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - MD2 ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "MD4" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "MD4" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - MD4 ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "MD5" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "MD5" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - MD5 ciphers enabled",tmp))
                 
-            tmp = [c for c in cipher_namelist if "RSA_EXP" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "RSA_EXP" in c.upper()]
             if tmp:
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
                 events.append(("FREAK - server supports RSA_EXPORT cipher suites",tmp))
-            tmp = [c for c in cipher_namelist if "DHE_" in c.upper() and "EXPORT_" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "DHE_" in c.upper() and "EXPORT_" in c.upper()]
             if tmp:
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
                 events.append(("LOGJAM - server supports weak DH-Group (512) (DHE_*_EXPORT) cipher suites",tmp))
                 
-            tmp = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAndHashAlgorithm) \
-                                                        and ext.signature_algorithm==TLSSignatureAlgorithm.RSA \
-                                                        and ext.hash_algorithm in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1)]
+            tmp = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAndHashAlgorithm)]
             # obvious SLOTH check, does not detect impl. errors that allow md5 even though not announced.
             # makes only sense for client_hello
-            for sighash in tmp:
-                events.append(("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s"%(repr(tlsinfo),TLS_HASH_ALGORITHMS.get(sighash.hash_algorithm)),sighash))
+            for sighashext in tmp:
+                for alg in sighashext[TLSExtSignatureAndHashAlgorithm].algorithms:
+                    if alg.signature_algorithm==TLSSignatureAlgorithm.RSA \
+                         and alg.hash_algorithm in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1):
+                        events.append(("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s"%(tlsinfo.__name__,TLS_HASH_ALGORITHMS.get(alg.hash_algorithm)),alg))
    
             try:
                 for certlist in tlsinfo.certificates:
@@ -217,8 +219,8 @@ class TLSInfo(object):
             if TLSHeartbeatMode.PEER_ALLOWED_TO_SEND == tlsinfo.heartbeat:
                 events.append(("HEARTBEAT - enabled (non conclusive heartbleed) ",tlsinfo.versions))
 
-        if not self.info.server.fallback_scsv:
-            events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",self.info.server.fallback_scsv))
+        if self.info.server.fallback_scsv==True:
+            events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV honored (alert.inappropriate_fallback seen)",self.info.server.fallback_scsv))
 
         return events
         
@@ -250,7 +252,7 @@ class TLSInfo(object):
                 tlsinfo.compressions.update(record[TLSClientHello].compression_methods)
                 if record[TLSClientHello].cipher_suites:
                     tlsinfo.preferred_ciphers.add(pkt[TLSClientHello].cipher_suites[0])
-                tlsinfo.extensions.update(record[TLSServerHello].extensions)
+                tlsinfo.extensions.update(record[TLSClientHello].extensions)
                  
             if record.haslayer(TLSServerHello):
                 tlsinfo.ciphers.add(record[TLSServerHello].cipher_suite)
@@ -281,6 +283,42 @@ class TLSScanner(object):
         for scan_method in (f for f in dir(self) if f.startswith("_scan_")):
             print "=> %s"%(scan_method.replace("_scan_",""))
             getattr(self, scan_method)(target, starttls=starttls)
+            
+    def sniff(self, target=None, iface=None):
+        def _process(pkt):
+            match_ip = pkt.haslayer(IP) and (pkt[IP].src==target[0] or pkt[IP].dst==target[0]) if target else True
+            match_port = pkt.haslayer(TCP) and (pkt[TCP].sport==target[1] or pkt[TCP].dport==target[1]) if len(target)==2 else True 
+            if match_ip and match_port:
+                self.capabilities.insert(pkt, client=False)
+                events = self.capabilities.get_events()         # misuse get_events :/
+                if events:
+                    strconn = {'src':None,
+                                 'dst':None,
+                                 'sport':None,
+                                 'dport':None}
+                    
+                    if pkt.haslayer(IP):
+                        strconn['src'] = pkt[IP].src
+                        strconn['dst'] = pkt[IP].dst
+                    if pkt.haslayer(TCP):
+                        strconn['sport'] = pkt[TCP].sport
+                        strconn['dport'] = pkt[TCP].dport
+                        
+                    print "Connection: %(src)s:%(sport)d <==> %(dst)s:%(dport)d"%strconn
+                    print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
+            return
+        if iface:
+            conf.iface=iface
+        while True:
+            bpf = None
+            if len(target):
+                bpf = "host %s"%target[0]
+            if len(target)==2:
+                bpf += " and tcp port %d"%target[1]
+            sniff(filter=bpf,
+                    prn=_process,
+                    store=0,
+                    timeout=3)
     
     def _scan_poodle2(self, target, starttls=None, version=TLSVersion.TLS_1_0):
         '''taken from poodle2_padding_check'''
@@ -361,6 +399,8 @@ class TLSScanner(object):
             t.sendall(pkt)
             resp = t.recvall(timeout=2)
             self.capabilities.insert(resp, client=False)
+            if not (resp.haslayer(TLSAlert) and resp[TLSAlert].description==TLSAlertDescription.INAPPROPRIATE_FALLBACK):
+                self.capabilities.events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",resp))
         except socket.error, se:
             print repr(se)
     
@@ -394,36 +434,48 @@ class TLSScanner(object):
             return None
         return resp
 
-        
-if __name__=="__main__":
+
+def main():
     print __doc__
-    if len(sys.argv)<=1:
-        print "USAGE: <host> <port> [starttls] [workers]"
+    if len(sys.argv)<=3:
+        print "USAGE: <mode> <host> <port> [starttls] [num_workers]"
+        print "       mode     ... client | sniff"
         print "       starttls ... starttls keyword e.g. 'starttls\\n' or 'ssl\\n'"
+        print "available interfaces"
+        for i in get_if_list():
+            print "   * %s"%i
         exit(1)
-    starttls = sys.argv[3] if len(sys.argv)>3 else None
-    host = sys.argv[1]
-    port = int(sys.argv[2])
-    workers = 10 if not len(sys.argv)>4 else int(sys.argv[4])
-    print "Scanning with %s parallel threads..."%workers
-    scanner = TLSScanner(workers=workers)
-    t_start = time.time()
-    scanner.scan((host,port), starttls=starttls)
-    print "\n"
-    print "[*] Capabilities (Debug)"
-    print scanner.capabilities
-    print "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES) )
-    print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,c),c) for c in  scanner.capabilities.info.server.ciphers))
-    print ""
-    print "[*] supported protocol versions: %s/%s"%(len(scanner.capabilities.info.server.versions),len(TLS_VERSIONS))
-    print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_VERSIONS.get(c,c),c) for c in  scanner.capabilities.info.server.versions))
-    print ""
-    print "[*] supported compressions methods: %s/%s"%(len(scanner.capabilities.info.server.compressions),len(TLS_COMPRESSION_METHODS))
-    print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_COMPRESSION_METHODS.get(c,c),c) for c in  scanner.capabilities.info.server.compressions))
-    print ""
-    events = scanner.capabilities.get_events()
-    print "[*] Events: %s"%len(events)
-    print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
-    t_diff = time.time()-t_start
-    print ""
-    print "Scan took: %ss"%t_diff
+    mode = sys.argv[1]
+    starttls = sys.argv[4] if len(sys.argv)>4 else None
+    host = sys.argv[2]
+    port = int(sys.argv[3])
+    num_workers = 10 if not len(sys.argv)>5 else int(sys.argv[5])
+    
+    scanner = TLSScanner(workers=num_workers)
+    if mode=="sniff":
+        print "[*] [passive] Scanning in 'sniff' mode..."
+        scanner.sniff((host,port),iface="eth9")
+    else:
+        print "[*] [active] Scanning with %s parallel threads..."%num_workers
+        t_start = time.time()
+        scanner.scan((host,port), starttls=starttls)
+        print "\n"
+        print "[*] Capabilities (Debug)"
+        print scanner.capabilities
+        print "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES) )
+        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,c),c) for c in  scanner.capabilities.info.server.ciphers))
+        print ""
+        print "[*] supported protocol versions: %s/%s"%(len(scanner.capabilities.info.server.versions),len(TLS_VERSIONS))
+        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_VERSIONS.get(c,c),c) for c in  scanner.capabilities.info.server.versions))
+        print ""
+        print "[*] supported compressions methods: %s/%s"%(len(scanner.capabilities.info.server.compressions),len(TLS_COMPRESSION_METHODS))
+        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_COMPRESSION_METHODS.get(c,c),c) for c in  scanner.capabilities.info.server.compressions))
+        print ""
+        events = scanner.capabilities.get_events()
+        print "[*] Events: %s"%len(events)
+        print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
+        t_diff = time.time()-t_start
+        print ""
+        print "Scan took: %ss"%t_diff
+if __name__=="__main__":
+    main()
