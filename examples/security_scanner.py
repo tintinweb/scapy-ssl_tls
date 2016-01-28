@@ -11,19 +11,23 @@ An example implementation of a passive TLS security scanner with custom starttls
 '''
 import sys, os
 import concurrent.futures
+
+
 try:
-    import scapy.all as scapy
+    from scapy.all import get_if_list, sniff, IP, TCP
 except ImportError:
-    import scapy
+    from scapy import get_if_list, sniff, IP, TCP
 
 try:
     # This import works from the project directory
     basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
     sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
+    from scapy_ssl_tls.ssl_tls_crypto import x509_extract_pubkey_from_der
 except ImportError:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
+    from scapy.layers.ssl_tls import x509_extract_pubkey_from_der
     
 import socket
 from collections import namedtuple
@@ -67,25 +71,48 @@ class TCPConnection(object):
         return SSL(''.join(resp))
 
 class TLSInfo(object):
+    # https://en.wikipedia.org/wiki/RSA_numbers
+    RSA_MODULI_KNOWN_FACTORED = (1522605027922533360535618378132637429718068114961380688657908494580122963258952897654000350692006139, # RSA-100
+                                 35794234179725868774991807832568455403003778024228226193532908190484670252364677411513516111204504060317568667, # RSA-110
+                                 227010481295437363334259960947493668895875336466084780038173258247009162675779735389791151574049166747880487470296548479, # RSA-120
+                                 114381625757888867669235779976146612010218296721242362562561842935706935245733897830597123563958705058989075147599290026879543541, #RSA-129
+                                 1807082088687404805951656164405905566278102516769401349170127021450056662540244048387341127590812303371781887966563182013214880557, #RSA-130
+                                 21290246318258757547497882016271517497806703963277216278233383215381949984056495911366573853021918316783107387995317230889569230873441936471, # RSA-140
+                                 155089812478348440509606754370011861770654545830995430655466945774312632703463465954363335027577729025391453996787414027003501631772186840890795964683, #RSA-150
+                                 10941738641570527421809707322040357612003732945449205990913842131476349984288934784717997257891267332497625752899781833797076537244027146743531593354333897, # RSA-155
+                                 2152741102718889701896015201312825429257773588845675980170497676778133145218859135673011059773491059602497907111585214302079314665202840140619946994927570407753, # RSA-160
+                                 26062623684139844921529879266674432197085925380486406416164785191859999628542069361450283931914514618683512198164805919882053057222974116478065095809832377336510711545759, # RSA-170
+                                 188198812920607963838697239461650439807163563379417382700763356422988859715234665485319060606504743045317388011303396716199692321205734031879550656996221305168759307650257059, # RSA-576
+                                 191147927718986609689229466631454649812986246276667354864188503638807260703436799058776201365135161278134258296128109200046702912984568752800330221777752773957404540495707851421041, # RSA-180
+                                 1907556405060696491061450432646028861081179759533184460647975622318915025587184175754054976155121593293492260464152630093238509246603207417124726121580858185985938946945490481721756401423481, # RSA-190
+                                 3107418240490043721350750035888567930037346022842727545720161948823206440518081504556346829671723286782437916272838033415471073108501919548529007337724822783525742386454014691736602477652346609, # RSA-640
+                                 27997833911221327870829467638722601621070446786955428537560009929326128400107609345671052955360856061822351910951365788637105954482006576775098580557613579098734950144178863178946295187237869221823983, # RSA-200
+                                 245246644900278211976517663573088018467026787678332759743414451715061600830038587216952208399332071549103626827191679864079776723243005600592035631246561218465817904100131859299619933817012149335034875870551067, # RSA-210
+                                 74037563479561712828046796097429573142593188889231289084936232638972765034028266276891996419625117843995894330502127585370118968098286733173273108930900552505116877063299072396380786710086096962537934650563796359, #R SA-704
+                                 1230186684530117755130494958384962720772853569595334792197322452151726400507263657518745202199786469389956474942774063845925192557326303453731548268507917026122142913461670429214311602221240479274737794080665351419597459856902143413, # RSA-768
+                                )
+                                
     def __init__(self):
         self.history = []
         self.events = []
         self.info = namedtuple("info", ['client','server'])
-        self.info.client = namedtuple("client", ['versions','ciphers','compressions', 'preferred_ciphers', 'sessions_established', 'heartbeat' ])
+        self.info.client = namedtuple("client", ['versions','ciphers','compressions', 'preferred_ciphers', 'sessions_established', 'heartbeat', 'extensions' ])
         self.info.client.versions = set([])
         self.info.client.ciphers = set([])
         self.info.client.compressions = set([])
         self.info.client.preferred_ciphers = set([])
         self.info.client.sessions_established = 0
         self.info.client.heartbeat = None
-        self.info.server = namedtuple("server", ['versions','ciphers','compressions','sessions_established', 'fallback_scsv', 'heartbeat'])
+        self.info.client.extensions = set([])
+        self.info.server = namedtuple("server", ['versions','ciphers','compressions','sessions_established', 'fallback_scsv', 'heartbeat', 'extensions'])
         self.info.server.versions = set([])
         self.info.server.ciphers = set([])
         self.info.server.compressions = set([])
         self.info.server.sessions_established = 0
-        self.info.server.fallback_scsv = False
+        self.info.server.fallback_scsv = None
         self.info.server.heartbeat = None
         self.info.server.certificates = set([])
+        self.info.server.extensions = set([])
     
     def __str__(self):
         return """<TLSInfo
@@ -131,34 +158,57 @@ class TLSInfo(object):
             if 0 in tmp:
                 tmp.remove(0)
             if len(tmp):
-                events.append(("CRIME - %s supports compression"%tlsinfo,tlsinfo.compressions))
+                events.append(("CRIME - %s supports compression"%tlsinfo.__name__,tlsinfo.compressions))
             # test RC4
             cipher_namelist = [TLS_CIPHER_SUITES.get(c,c) for c in tlsinfo.ciphers]
             
-            tmp = [c for c in cipher_namelist if "EXP" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "EXP" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - Export ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "RC4" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "RC4" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - RC4 ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "MD2" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "MD2" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - MD2 ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "MD4" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "MD4" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - MD4 ciphers enabled",tmp))
-            tmp = [c for c in cipher_namelist if "MD5" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "MD5" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - MD5 ciphers enabled",tmp))
                 
-            tmp = [c for c in cipher_namelist if "RSA_EXP" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "RSA_EXP" in c.upper()]
             if tmp:
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
                 events.append(("FREAK - server supports RSA_EXPORT cipher suites",tmp))
-            tmp = [c for c in cipher_namelist if "DHE_" in c.upper() and "EXPORT_" in c.upper()]
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "DHE_" in c.upper() and "EXPORT_" in c.upper()]
             if tmp:
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
                 events.append(("LOGJAM - server supports weak DH-Group (512) (DHE_*_EXPORT) cipher suites",tmp))
+                
+            tmp = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAndHashAlgorithm)]
+            # obvious SLOTH check, does not detect impl. errors that allow md5 even though not announced.
+            # makes only sense for client_hello
+            for sighashext in tmp:
+                for alg in sighashext[TLSExtSignatureAndHashAlgorithm].algorithms:
+                    if alg.signature_algorithm==TLSSignatureAlgorithm.RSA \
+                         and alg.hash_algorithm in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1):
+                        events.append(("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s"%(tlsinfo.__name__,TLS_HASH_ALGORITHMS.get(alg.hash_algorithm)),alg))
+   
+            try:
+                for certlist in tlsinfo.certificates:
+                    for cert in certlist.certificates:
+                        pubkey = x509_extract_pubkey_from_der(str(cert.data))
+                        pubkey_size = pubkey.size() + 1
+                        if pubkey_size < 2048:
+                            events.append(("INSUFFICIENT SERVER CERT PUBKEY SIZE - 2048 >= %d bits"%pubkey_size,cert))
+                        if pubkey_size % 2048 != 0:
+                            events.append(("SUSPICIOUS SERVER CERT PUBKEY SIZE - %d not a multiple of 2048 bits"%pubkey_size,cert))
+                        if pubkey.n in self.RSA_MODULI_KNOWN_FACTORED:
+                            events.append(("SERVER CERT PUBKEY FACTORED - trivial private_key recovery possible due to known factors n = p x q. See https://en.wikipedia.org/wiki/RSA_numbers | grep %s"%pubkey.n,cert))                  
+            except AttributeError:
+                pass        # tlsinfo.client has no attribute certificates
                 
             if TLSVersion.SSL_2_0 in tlsinfo.versions:
                 events.append(("PROTOCOL VERSION - SSLv2 supported ",tlsinfo.versions))
@@ -169,8 +219,8 @@ class TLSInfo(object):
             if TLSHeartbeatMode.PEER_ALLOWED_TO_SEND == tlsinfo.heartbeat:
                 events.append(("HEARTBEAT - enabled (non conclusive heartbleed) ",tlsinfo.versions))
 
-        if not self.info.server.fallback_scsv:
-            events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",self.info.server.fallback_scsv))
+        if self.info.server.fallback_scsv==True:
+            events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV honored (alert.inappropriate_fallback seen)",self.info.server.fallback_scsv))
 
         return events
         
@@ -200,14 +250,17 @@ class TLSInfo(object):
             if record.haslayer(TLSClientHello):
                 tlsinfo.ciphers.update(record[TLSClientHello].cipher_suites)
                 tlsinfo.compressions.update(record[TLSClientHello].compression_methods)
-                if precordkt[TLSClientHello].cipher_suites:
+                if record[TLSClientHello].cipher_suites:
                     tlsinfo.preferred_ciphers.add(pkt[TLSClientHello].cipher_suites[0])
-                    
+                tlsinfo.extensions.update(record[TLSClientHello].extensions)
+                 
             if record.haslayer(TLSServerHello):
                 tlsinfo.ciphers.add(record[TLSServerHello].cipher_suite)
                 tlsinfo.compressions.add(record[TLSServerHello].compression_method)
                 if record.haslayer(TLSExtHeartbeat):
-                    tlsinfo.heartbeat = record[TLSExtHeartbeat].mode
+                    tlsinfo.heartbeat = record[TLSExtHeartbeat].mode 
+                tlsinfo.extensions.update(record[TLSServerHello].extensions)
+                    
             if record.haslayer(TLSCertificateList):
                 tlsinfo.certificates.add(record[TLSCertificateList])
     
@@ -230,6 +283,42 @@ class TLSScanner(object):
         for scan_method in (f for f in dir(self) if f.startswith("_scan_")):
             print "=> %s"%(scan_method.replace("_scan_",""))
             getattr(self, scan_method)(target, starttls=starttls)
+            
+    def sniff(self, target=None, iface=None):
+        def _process(pkt):
+            match_ip = pkt.haslayer(IP) and (pkt[IP].src==target[0] or pkt[IP].dst==target[0]) if target else True
+            match_port = pkt.haslayer(TCP) and (pkt[TCP].sport==target[1] or pkt[TCP].dport==target[1]) if len(target)==2 else True 
+            if match_ip and match_port:
+                self.capabilities.insert(pkt, client=False)
+                events = self.capabilities.get_events()         # misuse get_events :/
+                if events:
+                    strconn = {'src':None,
+                                 'dst':None,
+                                 'sport':None,
+                                 'dport':None}
+                    
+                    if pkt.haslayer(IP):
+                        strconn['src'] = pkt[IP].src
+                        strconn['dst'] = pkt[IP].dst
+                    if pkt.haslayer(TCP):
+                        strconn['sport'] = pkt[TCP].sport
+                        strconn['dport'] = pkt[TCP].dport
+                        
+                    print "Connection: %(src)s:%(sport)d <==> %(dst)s:%(dport)d"%strconn
+                    print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
+            return
+        if iface:
+            conf.iface=iface
+        while True:
+            bpf = None
+            if len(target):
+                bpf = "host %s"%target[0]
+            if len(target)==2:
+                bpf += " and tcp port %d"%target[1]
+            sniff(filter=bpf,
+                    prn=_process,
+                    store=0,
+                    timeout=3)
     
     def _scan_poodle2(self, target, starttls=None, version=TLSVersion.TLS_1_0):
         '''taken from poodle2_padding_check'''
@@ -253,7 +342,7 @@ class TLSScanner(object):
             else:
                 self.capabilities.events.append(("Poodle2 - vulnerable",r))
             
-        except socket.error, se:
+        except (socket.error, NotImplementedError), se:
             print repr(se)
             return None
 
@@ -310,6 +399,8 @@ class TLSScanner(object):
             t.sendall(pkt)
             resp = t.recvall(timeout=2)
             self.capabilities.insert(resp, client=False)
+            if not (resp.haslayer(TLSAlert) and resp[TLSAlert].description==TLSAlertDescription.INAPPROPRIATE_FALLBACK):
+                self.capabilities.events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",resp))
         except socket.error, se:
             print repr(se)
     
@@ -329,36 +420,62 @@ class TLSScanner(object):
             return None
         return resp
 
-        
-if __name__=="__main__":
+    def _scan_secure_renegotiation(self, target, starttls=None, version=TLSVersion.TLS_1_0, payload_length=20):
+        #todo: also test EMPTY_RENEGOTIATION_INFO_SCSV
+        try:
+            t = TCPConnection(target, starttls=starttls)
+            pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, extensions=TLSExtension()/TLSExtRenegotiationInfo())
+            t.sendall(pkt)
+            resp = t.recvall(timeout=0.5)
+            if resp.haslayer(TLSExtRenegotiationInfo):
+                self.capabilities.events.append(("TLS EXTENSION SECURE RENEGOTIATION - not supported",resp))
+        except socket.error, se:
+            print repr(se)
+            return None
+        return resp
+
+
+def main():
     print __doc__
-    if len(sys.argv)<=1:
-        print "USAGE: <host> <port> [starttls] [workers]"
-        print "   starttls ... starttls keyword e.g. 'starttls\n' or 'ssl\n'"
+    if len(sys.argv)<=3:
+        print "USAGE: <mode> <host> <port> [starttls] [num_workers]"
+        print "       mode     ... client | sniff"
+        print "       starttls ... starttls keyword e.g. 'starttls\\n' or 'ssl\\n'"
+        print "available interfaces"
+        for i in get_if_list():
+            print "   * %s"%i
         exit(1)
-    starttls = sys.argv[3] if len(sys.argv)>3 else None
-    host = sys.argv[1]
-    port = int(sys.argv[2])
-    workers = 10 if not len(sys.argv)>4 else int(sys.argv[4])
-    print "Scanning with %s parallel threads..."%workers
-    scanner = TLSScanner(workers=workers)
-    t_start = time.time()
-    scanner.scan((host,port), starttls=starttls)
-    print "\n"
-    print "[*] Capabilities (Debug)"
-    print scanner.capabilities
-    print "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES) )
-    print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,c),c) for c in  scanner.capabilities.info.server.ciphers))
-    print ""
-    print "[*] supported protocol versions: %s/%s"%(len(scanner.capabilities.info.server.versions),len(TLS_VERSIONS))
-    print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_VERSIONS.get(c,c),c) for c in  scanner.capabilities.info.server.versions))
-    print ""
-    print "[*] supported compressions methods: %s/%s"%(len(scanner.capabilities.info.server.compressions),len(TLS_COMPRESSION_METHODS))
-    print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_COMPRESSION_METHODS.get(c,c),c) for c in  scanner.capabilities.info.server.compressions))
-    print ""
-    events = scanner.capabilities.get_events()
-    print "[*] Events: %s"%len(events)
-    print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
-    t_diff = time.time()-t_start
-    print ""
-    print "Scan took: %ss"%t_diff
+    mode = sys.argv[1]
+    starttls = sys.argv[4] if len(sys.argv)>4 else None
+    host = sys.argv[2]
+    port = int(sys.argv[3])
+    num_workers = 10 if not len(sys.argv)>5 else int(sys.argv[5])
+    
+    scanner = TLSScanner(workers=num_workers)
+    if mode=="sniff":
+        print "[*] [passive] Scanning in 'sniff' mode..."
+        scanner.sniff((host,port),iface="eth9")
+    else:
+        print "[*] [active] Scanning with %s parallel threads..."%num_workers
+        t_start = time.time()
+        scanner.scan((host,port), starttls=starttls)
+        print "\n"
+        print "[*] Capabilities (Debug)"
+        print scanner.capabilities
+        print "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES) )
+        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,c),c) for c in  scanner.capabilities.info.server.ciphers))
+        print ""
+        print "[*] supported protocol versions: %s/%s"%(len(scanner.capabilities.info.server.versions),len(TLS_VERSIONS))
+        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_VERSIONS.get(c,c),c) for c in  scanner.capabilities.info.server.versions))
+        print ""
+        print "[*] supported compressions methods: %s/%s"%(len(scanner.capabilities.info.server.compressions),len(TLS_COMPRESSION_METHODS))
+        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_COMPRESSION_METHODS.get(c,c),c) for c in  scanner.capabilities.info.server.compressions))
+        print ""
+        events = scanner.capabilities.get_events()
+        print "[*] Events: %s"%len(events)
+        print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
+        t_diff = time.time()-t_start
+        print ""
+        print "Scan took: %ss"%t_diff
+if __name__=="__main__":
+    main()

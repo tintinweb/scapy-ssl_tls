@@ -592,7 +592,20 @@ class TLSCertificateList(PacketNoPayload):
     fields_desc = [
                    XBLenField("length", None, length_of="certificates", fmt="!I", numbytes=3),
                    PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length),
-                  ]   
+                  ]
+
+class TLSDigitallySigned(PacketNoPayload):
+    name = "TLS Digitally Signed"
+    fields_desc = [
+                   PacketField("algorithm", None, TLSSignatureHashAlgorithm),
+                   StrField("signature", "", fmt="H"),  # ASN.1 signature element
+                  ] 
+
+class TLSCertificateVerify(PacketNoPayload):
+    name = "TLS Certificate Verify"
+    fields_desc = [
+                   PacketField("digitally-signed", None, TLSDigitallySigned),
+                  ]  
 
 class TLSDecryptablePacket(PacketLengthFieldPayload):
 

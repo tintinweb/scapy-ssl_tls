@@ -719,8 +719,10 @@ TLS1.0 Session Context based decryption of RSA_WITH_AES_128_CBC_SHA for known pr
 
 ##### SSL Security Scanner
 
+Active Scanner:
+
 ```python
-# python examples/security_scanner.py localhost 443 
+# python examples/security_scanner.py active localhost 443 
 
 An example implementation of a passive TLS security scanner with custom starttls support:
 
@@ -735,6 +737,7 @@ Scanning with 10 parallel threads...
 => heartbleed
 => poodle2
 => scsv
+=> secure_renegotiation
 => supported_protocol_versions
 
 
@@ -791,7 +794,7 @@ Scanning with 10 parallel threads...
 [*] supported compressions methods: 1/3
  * NULL (0x0000)
 
-[*] Events: 9
+[*] Events: 12
 * EVENT - HEARTBLEED - vulnerable
 * EVENT - CIPHERS - Export ciphers enabled
 * EVENT - CIPHERS - RC4 ciphers enabled
@@ -800,9 +803,41 @@ Scanning with 10 parallel threads...
 * EVENT - LOGJAM - server supports weak DH-Group (512) (DHE_*_EXPORT) cipher suites
 * EVENT - PROTOCOL VERSION - SSLv3 supported 
 * EVENT - HEARTBEAT - enabled (non conclusive heartbleed) 
+* EVENT - INSUFFICIENT SERVER CERT PUBKEY SIZE - 2048 >= 640 bits
+* EVENT - SUSPICIOUS SERVER CERT PUBKEY SIZE - 640 not a multiple of 2048 bits
+* EVENT - SERVER CERT PUBKEY FACTORED - trivial private_key recovery possible due to known factors n = p x q. See https://en.wikipedia.org/wiki/RSA_numbers | grep 3107418240490043721350750035888567930037346022842727545720161948823206440518081504556346829671723286782437916272838033415471073108501919548529007337724822783525742386454014691736602477652346609
 * EVENT - DOWNGRADE / POODLE - FALLBACK_SCSV - not honored
 
 Scan took: 8.60623884201s
+```
+
+Passive Scanner:
+
+```python
+# python examples/security_scanner.py sniff 192.168.139.131 443 
+An example implementation of a passive TLS security scanner with custom starttls support:
+
+    TLSScanner() generates TLS probe traffic  (optional)
+    TLSInfo() passively evaluates the traffic and generates events/warning
+
+    
+
+[*] [passive] Scanning in 'sniff' mode...
+Connection: 192.168.139.1:1364 <==> 192.168.139.131:443
+* EVENT - CRIME - client supports compression
+* EVENT - SLOTH - client announces capability of signature/hash algorithm: RSA/sha1
+Connection: 192.168.139.131:443 <==> 192.168.139.1:1364
+* EVENT - CRIME - client supports compression
+* EVENT - SLOTH - client announces capability of signature/hash algorithm: RSA/sha1
+Connection: 192.168.139.131:443 <==> 192.168.139.1:1364
+* EVENT - CRIME - client supports compression
+* EVENT - SLOTH - client announces capability of signature/hash algorithm: RSA/sha1
+* EVENT - CRIME - server supports compression
+* EVENT - INSUFFICIENT SERVER CERT PUBKEY SIZE - 2048 >= 640 bits
+* EVENT - SUSPICIOUS SERVER CERT PUBKEY SIZE - 640 not a multiple of 2048 bits
+* EVENT - SERVER CERT PUBKEY FACTORED - trivial private_key recovery possible due to known factors n = p x q. See https://en.wikipedia.org/wiki/RSA_numbers | grep 3107418240490043721350750035888567930037346022842727545720161948823206440518081504556346829671723286782437916272838033415471073108501919548529007337724822783525742386454014691736602477652346609
+* EVENT - HEARTBEAT - enabled (non conclusive heartbleed) 
+Connection: 192.168.139.1:1364 <==> 192.168.139.131:443
 ```
 
 ## Authors / Contributors
