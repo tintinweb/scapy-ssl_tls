@@ -615,9 +615,6 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
 
     def __init__(self, *args, **fields):
         try:
-            # Required by scqpy 2.3.1 for some reason
-            # TODO: investigate why?
-            self.raw_packet_cache_fields = {}
             self.tls_ctx = fields["ctx"]
             del(fields["ctx"])
             self.above_tls10 = self.tls_ctx.params.negotiated.version > TLSVersion.TLS_1_0
@@ -655,6 +652,8 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
         return data
 
     def do_dissect(self, raw_bytes):
+        # Required to walk around scapy 2.3.1 bug
+        self.raw_packet_cache_fields = {}
         # Taken from Packet.do_dissect
         fields = self.fields_desc[:]
         # Remove the crypto fields. Should not be used for dissection
@@ -666,8 +665,10 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
         raw = raw_bytes
         while raw_bytes and fields:
             field = fields.pop()
-            raw_bytes, fval = field.getfield(self, raw_bytes)
-            self.fields[field.name] = fval
+            raw_bytes, field_value = field.getfield(self, raw_bytes)
+            if field.islist or field.holds_packets:
+                self.raw_packet_cache_fields[field.name] = field.do_copy(field_value)
+            self.fields[field.name] = field_value
         assert(raw.endswith(raw_bytes))
         if raw_bytes:
             self.raw_packet_cache = raw[:-len(raw_bytes)]
@@ -686,7 +687,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
         # Ugly hack, to prevent passing crypto fields to upper layers
         # Not sure how to do otherwise though
         if attr in ("explicit_iv", "mac", "padding", "padding_len"):
-            return None
+            return ""
         return self.payload.getfieldval(attr)
 
 
