@@ -244,7 +244,7 @@ class TLSInfo(object):
             elif not client or record.haslayer(TLSServerHello):
                 tlsinfo = self.info.server
                 
-            if not pkt.haslayer(TLSAlert):
+            if not pkt.haslayer(TLSAlert) and pkt.haslayer(TLSRecord):
                 tlsinfo.versions.add(pkt[TLSRecord].version)
         
             if record.haslayer(TLSClientHello):
@@ -438,7 +438,7 @@ class TLSScanner(object):
 def main():
     print __doc__
     if len(sys.argv)<=3:
-        print "USAGE: <mode> <host> <port> [starttls] [num_workers]"
+        print "USAGE: <mode> <host> <port> [starttls] [num_worker] [interface]"
         print "       mode     ... client | sniff"
         print "       starttls ... starttls keyword e.g. 'starttls\\n' or 'ssl\\n'"
         print "available interfaces"
@@ -450,11 +450,12 @@ def main():
     host = sys.argv[2]
     port = int(sys.argv[3])
     num_workers = 10 if not len(sys.argv)>5 else int(sys.argv[5])
-    
+    iface = "eth0" if not len(sys.argv)>6 else sys.argv[6]
+
     scanner = TLSScanner(workers=num_workers)
     if mode=="sniff":
-        print "[*] [passive] Scanning in 'sniff' mode..."
-        scanner.sniff((host,port),iface="eth9")
+        print "[*] [passive] Scanning in 'sniff' mode for %s on %s..."%(repr((host,port)),iface)
+        scanner.sniff((host,port),iface=iface)
     else:
         print "[*] [active] Scanning with %s parallel threads..."%num_workers
         t_start = time.time()
