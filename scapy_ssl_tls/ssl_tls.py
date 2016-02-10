@@ -6,7 +6,7 @@
 import os
 import time
 
-from scapy.packet import bind_layers, NoPayload, Packet, Raw
+from scapy.packet import bind_layers, Packet, Raw
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
@@ -451,16 +451,17 @@ class TLSClientHello(PacketNoPayload):
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
                    ] 
- 
+
+
 class TLSServerHello(PacketNoPayload):
     name = "TLS Server Hello"
     fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
                    IntField("gmt_unix_time", int(time.time())),
                    StrFixedLenField("random_bytes", os.urandom(28), 28),
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
-                   StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
+                   StrLenField("session_id", os.urandom(20), length_from=lambda x:x.session_id_length),
 
-                   XShortEnumField("cipher_suite", TLSCipherSuite.NULL_WITH_NULL_NULL, TLS_CIPHER_SUITES),
+                   XShortEnumField("cipher_suite", TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, TLS_CIPHER_SUITES),
                    ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
 
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
@@ -573,46 +574,43 @@ class TLSServerKeyExchange(TLSKeyExchange):
                           #Add ERSA in the future
 
 
-class TLSFinished(PacketNoPayload):
-    name = "TLS Handshake Finished"
-    fields_desc = [ StrLenField("data", '', length_from=lambda x:x.underlayer.length)]
-
 class TLSServerHelloDone(PacketNoPayload):
     name = "TLS Server Hello Done"
-    fields_desc = [ XBLenField("length", None, fmt="!I", numbytes=3),
-                    StrLenField("data", "", length_from=lambda x:x.length), ]
-    
+    fields_desc = [XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
+                   StrLenField("data", "", length_from=lambda x:x.length)]
+
+
 class TLSCertificate(PacketNoPayload):
     name = "TLS Certificate"
     fields_desc = [ XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
                     PacketLenField("data", None, x509.X509Cert, length_from=lambda x:x.length),]
 
+
 class TLSCertificateList(PacketNoPayload):
     name = "TLS Certificate List"
-    fields_desc = [
-                   XBLenField("length", None, length_of="certificates", fmt="!I", numbytes=3),
-                   PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length),
-                  ]
+    fields_desc = [XBLenField("length", None, length_of="certificates", fmt="!I", numbytes=3),
+                   PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length)]
+
 
 class TLSDigitallySigned(PacketNoPayload):
     name = "TLS Digitally Signed"
-    fields_desc = [
-                   PacketField("algorithm", None, TLSSignatureHashAlgorithm),
-                   StrField("signature", "", fmt="H"),  # ASN.1 signature element
-                  ] 
+    fields_desc = [PacketField("algorithm", None, TLSSignatureHashAlgorithm),
+                   StrField("signature", "", fmt="H")]  # ASN.1 signature element
+
 
 class TLSCertificateVerify(PacketNoPayload):
     name = "TLS Certificate Verify"
-    fields_desc = [
-                   PacketField("digitally-signed", None, TLSDigitallySigned),
-                  ]  
+    fields_desc = [PacketField("digitally-signed", None, TLSDigitallySigned)]
+
 
 class TLSDecryptablePacket(PacketLengthFieldPayload):
 
     explicit_iv_field = StrField("explicit_iv", "", fmt="H")
     mac_field = StrField("mac", "", fmt="H")
     padding_field = StrLenField("padding", "", length_from=lambda pkt:pkt.padding_len)
-    padding_len_field = ConditionalField(XFieldLenField("padding_len", None, length_of="padding", fmt="B"), lambda pkt: True if pkt and hasattr(pkt,"padding") and pkt.padding != "" else False )
+    padding_len_field = ConditionalField(
+            XFieldLenField("padding_len", None, length_of="padding", fmt="B"),
+            lambda pkt: True if pkt and hasattr(pkt, "padding") and pkt.padding != "" else False)
     decryptable_fields = [mac_field, padding_field, padding_len_field]
 
     def __init__(self, *args, **fields):
@@ -635,7 +633,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
             hash_size = self.tls_ctx.sec_params.mac_key_length
             iv_size = self.tls_ctx.sec_params.iv_length
             # CBC mode
-            if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None:
+            if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] is not None:
                 try:
                     self.padding_len = ord(raw_bytes[-1])
                     self.padding = raw_bytes[-self.padding_len - 1:-1]
@@ -653,24 +651,71 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
         # Return plaintext without mac and padding
         return data
 
+    def do_dissect(self, raw_bytes):
+        # Required to walk around scapy 2.3.1 bug
+        self.raw_packet_cache_fields = {}
+        # Taken from Packet.do_dissect
+        fields = self.fields_desc[:]
+        # Remove the crypto fields. Should not be used for dissection
+        for field in self.decryptable_fields + [self.explicit_iv_field]:
+            if field in fields:
+                fields.remove(field)
+        # Identical to Packet.do_dissect()
+        fields.reverse()
+        raw = raw_bytes
+        while raw_bytes and fields:
+            field = fields.pop()
+            raw_bytes, field_value = field.getfield(self, raw_bytes)
+            if field.islist or field.holds_packets:
+                self.raw_packet_cache_fields[field.name] = field.do_copy(field_value)
+            self.fields[field.name] = field_value
+        assert(raw.endswith(raw_bytes))
+        if raw_bytes:
+            self.raw_packet_cache = raw[:-len(raw_bytes)]
+        else:
+            self.raw_packet_cache = raw
+        self.explicit = 1
+        return raw_bytes
+
+    def getfieldval(self, attr):
+        if attr in self.fields:
+            return self.fields[attr]
+        if attr in self.overloaded_fields:
+            return self.overloaded_fields[attr]
+        if attr in self.default_fields:
+            return self.default_fields[attr]
+        # Ugly hack, to prevent passing crypto fields to upper layers
+        # Not sure how to do otherwise though
+        if attr in ("explicit_iv", "mac", "padding", "padding_len"):
+            return ""
+        return self.payload.getfieldval(attr)
+
+
 class TLSHandshake(TLSDecryptablePacket):
     name = "TLS Handshake"
     fields_desc = [ByteEnumField("type", TLSHandshakeType.CLIENT_HELLO, TLS_HANDSHAKE_TYPES),
-                   XBLenField("length", None, fmt="!I", numbytes=3), ]
+                   XBLenField("length", None, fmt="!I", numbytes=3)]
+
+
+class TLSFinished(PacketNoPayload):
+    name = "TLS Handshake Finished"
+    fields_desc = [StrLenField("data", "", length_from=lambda x:x.underlayer.length)]
+
 
 class TLSPlaintext(TLSDecryptablePacket):
     name = "TLS Plaintext"
-    fields_desc = [ StrField("data", "", fmt="H") ]
+    fields_desc = [StrField("data", "", fmt="H")]
+
 
 class TLSChangeCipherSpec(TLSDecryptablePacket):
     name = "TLS ChangeCipherSpec"
-    fields_desc = [ StrField("message", '\x01', fmt="H") ]
+    fields_desc = [StrField("message", '\x01', fmt="H")]
+
 
 class TLSAlert(TLSDecryptablePacket):
     name = "TLS Alert"
-    fields_desc = [ ByteEnumField("level", TLSAlertLevel.WARNING, TLS_ALERT_LEVELS),
-                    ByteEnumField("description", TLSAlertDescription.CLOSE_NOTIFY, TLS_ALERT_DESCRIPTIONS),
-                  ]
+    fields_desc = [ByteEnumField("level", TLSAlertLevel.WARNING, TLS_ALERT_LEVELS),
+                   ByteEnumField("description", TLSAlertDescription.CLOSE_NOTIFY, TLS_ALERT_DESCRIPTIONS)]
 
 class TLSCiphertext(Packet):
     name = "TLS Ciphertext"
@@ -855,12 +900,16 @@ class TLSSocket(object):
         records = TLS("".join(resp), ctx=self.tls_ctx)
         return records
 
+    def accept(self):
+        client_socket, peer = self._s.accept()
+        return TLSSocket(client_socket, client=False, tls_ctx=copy.deepcopy(self.tls_ctx)), peer
+
 
 # entry class
 class SSL(Packet):
-    '''
+    """
     COMPOUND CLASS for SSL
-    '''
+    """
     name = "SSL/TLS"
     fields_desc = [PacketListField("records", None, TLSRecord)]
 
@@ -916,25 +965,22 @@ class SSL(Packet):
         encrypted_payload = None
         decrypted_type = None
         # TLSFinished, encrypted
-        #if record.haslayer(TLSRecord) and record[TLSRecord].content_type==TLSContentType.HANDSHAKE and record.haslayer(TLSCiphertext):
-        #    encrypted_payload = record[TLSCiphertext].data
-        #    decrypted_type = TLSHandshake
-        # Application data
-        if record.haslayer(TLSCiphertext):
-            encrypted_payload = record[TLSCiphertext].data
-            decrypted_type = TLSPlaintext
-        # Handshake with no recognized upper layer = TLSFinished
-        elif (record.haslayer(TLSHandshake) and record[TLSHandshake].payload.name == Raw.name):
+        if record.haslayer(TLSRecord) and record[TLSRecord].content_type == TLSContentType.HANDSHAKE \
+                and record.haslayer(TLSCiphertext):
             encrypted_payload = str(record.payload)
             decrypted_type = TLSHandshake
-        # Do not decrypt cleartext Alerts and CCS
+        # Do not attempt to decrypt cleartext Alerts and CCS
         elif record.haslayer(TLSAlert) and record.length != 0x2:
             encrypted_payload = str(record.payload)
             decrypted_type = TLSAlert
         elif record.haslayer(TLSChangeCipherSpec) and record.length != 0x1:
             encrypted_payload = str(record.payload)
             decrypted_type = TLSChangeCipherSpec
-        return (encrypted_payload, decrypted_type)
+        # Application data
+        elif record.haslayer(TLSCiphertext):
+            encrypted_payload = record[TLSCiphertext].data
+            decrypted_type = TLSPlaintext
+        return encrypted_payload, decrypted_type
 
     def post_dissect(self, s):
         if self.tls_ctx is not None:
@@ -956,14 +1002,17 @@ class SSL(Packet):
                     # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
                     except ValueError as ve:
                         raise ValueError("Decryption failed: %s" % ve)
-        return s 
+        return s
 
 TLS = SSL
 
 cleartext_handler = { TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
-                      TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(TLSHandshake(type=TLSHandshakeType.FINISHED)/tls_ctx.get_verify_data())),
+                      TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE,
+                                                         str(TLSHandshake(type=TLSHandshakeType.FINISHED) /
+                                                             tls_ctx.get_verify_data())),
                       TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt)),
                       TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt)) }
+
 
 def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
     import ssl_tls_crypto as tlsc
@@ -977,7 +1026,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
         if pkt.haslayer(tls_proto):
             content_type, data = handler(pkt[tls_proto], tls_ctx)
     if content_type is None and data is None:
-        raise KeyError("Unhandled encryption for TLS protocol: %s" % tls_proto)
+        raise KeyError("Unhandled encryption for TLS protocol: %s" % pkt.name)
 
     if compress_hook is not None:
         post_compress_data = compress_hook(comp_method, data)
@@ -1048,22 +1097,22 @@ bind_layers(UDP, SSL, dport=4433)
 bind_layers(UDP, SSL, sport=4433)
 
 # TLSRecord
-bind_layers(TLSRecord, TLSChangeCipherSpec, {'content_type':TLSContentType.CHANGE_CIPHER_SPEC})
-bind_layers(TLSRecord, TLSCiphertext, {"content_type":TLSContentType.APPLICATION_DATA})
-bind_layers(TLSRecord, TLSHeartBeat, {'content_type':TLSContentType.HEARTBEAT})
-bind_layers(TLSRecord, TLSAlert, {'content_type':TLSContentType.ALERT})
-bind_layers(TLSRecord, TLSHandshake, {'content_type':TLSContentType.HANDSHAKE})
+bind_layers(TLSRecord, TLSChangeCipherSpec, {'content_type': TLSContentType.CHANGE_CIPHER_SPEC})
+bind_layers(TLSRecord, TLSCiphertext, {"content_type": TLSContentType.APPLICATION_DATA})
+bind_layers(TLSRecord, TLSHeartBeat, {'content_type': TLSContentType.HEARTBEAT})
+bind_layers(TLSRecord, TLSAlert, {'content_type': TLSContentType.ALERT})
+bind_layers(TLSRecord, TLSHandshake, {'content_type': TLSContentType.HANDSHAKE})
 
 # --> handshake proto
-bind_layers(TLSHandshake, TLSHelloRequest, {'type':TLSHandshakeType.HELLO_REQUEST})
-bind_layers(TLSHandshake, TLSClientHello, {'type':TLSHandshakeType.CLIENT_HELLO})
-bind_layers(TLSHandshake, TLSServerHello, {'type':TLSHandshakeType.SERVER_HELLO})
-bind_layers(TLSHandshake, TLSCertificateList, {'type':TLSHandshakeType.CERTIFICATE})
-bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':TLSHandshakeType.SERVER_KEY_EXCHANGE})
-bind_layers(TLSHandshake, TLSServerHelloDone, {'type':TLSHandshakeType.SERVER_HELLO_DONE})
-bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':TLSHandshakeType.CLIENT_KEY_EXCHANGE})
-bind_layers(TLSHandshake, TLSFinished, {'type':TLSHandshakeType.FINISHED})
-bind_layers(TLSHandshake, TLSSessionTicket, {'type':TLSHandshakeType.NEWSESSIONTICKET})
+bind_layers(TLSHandshake, TLSHelloRequest, {'type': TLSHandshakeType.HELLO_REQUEST})
+bind_layers(TLSHandshake, TLSClientHello, {'type': TLSHandshakeType.CLIENT_HELLO})
+bind_layers(TLSHandshake, TLSServerHello, {'type': TLSHandshakeType.SERVER_HELLO})
+bind_layers(TLSHandshake, TLSCertificateList, {'type': TLSHandshakeType.CERTIFICATE})
+bind_layers(TLSHandshake, TLSServerKeyExchange, {'type': TLSHandshakeType.SERVER_KEY_EXCHANGE})
+bind_layers(TLSHandshake, TLSServerHelloDone, {'type': TLSHandshakeType.SERVER_HELLO_DONE})
+bind_layers(TLSHandshake, TLSClientKeyExchange, {'type': TLSHandshakeType.CLIENT_KEY_EXCHANGE})
+bind_layers(TLSHandshake, TLSFinished, {'type': TLSHandshakeType.FINISHED})
+bind_layers(TLSHandshake, TLSSessionTicket, {'type': TLSHandshakeType.NEWSESSIONTICKET})
 # <---
 
 # --> extensions
@@ -1074,16 +1123,16 @@ bind_layers(TLSExtension, TLSExtECPointsFormat, {'type': TLSExtensionType.EC_POI
 bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.SUPPORTED_GROUPS})
 bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
-bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type':TLSExtensionType.SESSIONTICKET_TLS})
-bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type':TLSExtensionType.RENEGOTIATION_INFO})
-bind_layers(TLSExtension, TLSExtSignatureAndHashAlgorithm, {'type':TLSExtensionType.SIGNATURE_ALGORITHMS})
+bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type': TLSExtensionType.SESSIONTICKET_TLS})
+bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type': TLSExtensionType.RENEGOTIATION_INFO})
+bind_layers(TLSExtension, TLSExtSignatureAndHashAlgorithm, {'type': TLSExtensionType.SIGNATURE_ALGORITHMS})
 # <--
 
 # DTLSRecord
-bind_layers(DTLSRecord, DTLSHandshake, {'content_type':TLSContentType.HANDSHAKE})
-bind_layers(DTLSHandshake, DTLSClientHello, {'type':TLSHandshakeType.CLIENT_HELLO})
+bind_layers(DTLSRecord, DTLSHandshake, {'content_type': TLSContentType.HANDSHAKE})
+bind_layers(DTLSHandshake, DTLSClientHello, {'type': TLSHandshakeType.CLIENT_HELLO})
 
 # SSLv2 
-bind_layers(SSLv2Record, SSLv2ServerHello, {'content_type':0x04})
-bind_layers(SSLv2Record, SSLv2ClientHello, {'content_type':0x01})
-bind_layers(SSLv2Record, SSLv2ClientMasterKey, {'content_type':0x02})
+bind_layers(SSLv2Record, SSLv2ServerHello, {'content_type': 0x04})
+bind_layers(SSLv2Record, SSLv2ClientHello, {'content_type': 0x01})
+bind_layers(SSLv2Record, SSLv2ClientMasterKey, {'content_type': 0x02})

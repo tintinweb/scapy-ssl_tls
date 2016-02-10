@@ -153,21 +153,31 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(tls_ctx.crypto.session.premaster_secret, self.priv_key.decrypt(epms, None))
 
     def test_fixed_crypto_data_matches_verify_data(self):
-        verify_data = "12003ac89553b7a233da64b9"
+        client_verify_data = "e23f73911909a86be9e93fdb"
+        server_verify_data = "c83b8eb028d3c4a8d82c1c17"
         tls_ctx = tlsc.TLSSessionCtx()
         # tls_ctx.rsa_load_keys(self.pem_priv_key)
         client_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(gmt_unix_time=1234,
                                                                                  random_bytes="A" * 28)
+        # Hello Request should be ignored in verify_data calculation
+        tls_ctx.insert(tls.TLSHelloRequest())
         tls_ctx.insert(client_hello)
         tls_ctx.crypto.session.premaster_secret = "B" * 48
         epms = "C" * 256
         server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=1234,
+                                                                                 session_id="",
                                                                                  random_bytes="A" * 28)
         tls_ctx.insert(server_hello)
         client_kex = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange() /\
                      tls.TLSClientRSAParams(data=epms)
         tls_ctx.insert(client_kex)
-        self.assertEqual(binascii.hexlify(tls_ctx.get_verify_data()), verify_data)
+        self.assertEqual(client_verify_data, binascii.hexlify(tls_ctx.get_verify_data()))
+        # Make sure that client finish is included in server finish calculation
+        tls_ctx.set_mode(server=True)
+        client_finish = tls.TLSRecord() / tls.TLSHandshake() / tls.tls_to_raw(
+            tls.TLSFinished(data=tls_ctx.get_verify_data()), tls_ctx)
+        tls_ctx.insert(client_finish)
+        self.assertEqual(server_verify_data, binascii.hexlify(tls_ctx.get_verify_data()))
 
     def test_client_dh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()

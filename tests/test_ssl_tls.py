@@ -172,14 +172,14 @@ class TestTLSDissector(unittest.TestCase):
         app_response_records = tls.TLS(app_response, ctx=tls_ctx)
         tls_ctx.insert(app_response_records)
         # Test decryption against given states
-        self.assertTrue(server_finished_records.haslayer(tls.TLSPlaintext))
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].padding_len, ord("\x0b"))
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].padding,
+        self.assertTrue(server_finished_records.haslayer(tls.TLSHandshake))
+        self.assertTrue(server_finished_records.haslayer(tls.TLSFinished))
+        self.assertEqual(server_finished_records[tls.TLSHandshake].padding_len, ord("\x0b"))
+        self.assertEqual(server_finished_records[tls.TLSHandshake].padding,
                          "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b")
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].mac,
+        self.assertEqual(server_finished_records[tls.TLSHandshake].mac,
                          "\xac'\x9a\x94\xf6t'\x18E\x03nD\x0b\xf4\xf7\xf5T\xce\x05q")
-        self.assertEqual(server_finished_records[tls.TLSPlaintext].data,
-                         "\x14\x00\x00\x0c3\x13V\xac\x90.6\x89~7\x13\xbd")
+        self.assertEqual(server_finished_records[tls.TLSFinished].data, "3\x13V\xac\x90.6\x89~7\x13\xbd")
         self.assertTrue(app_response_records.haslayer(tls.TLSPlaintext))
         self.assertTrue(app_response_records[3][tls.TLSPlaintext].data.startswith("HTTP"))
 
