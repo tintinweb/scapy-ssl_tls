@@ -26,11 +26,16 @@ if __name__=='__main__':
         target = (sys.argv[1],int(sys.argv[2]))
     else:
         target = ("127.0.0.1", 8443)
+        
+    server_pem = sys.argv[3] if len(sys.argv)>3 else "../tests/files/openssl_1_0_1_f_server.pem"
  
     TLSServerAutomata.graph()
+    print "using certificate/keyfile: %s"%server_pem
+    with open(server_pem,'r') as f:
+        pemcert = f.read()
     auto_srv = TLSServerAutomata(debug=9,
-                             target=target,
-                             tls_version="TLS_1_1",
+                             bind=target,
+                             pemcert=pemcert,
                              cipher_suite=TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA,
                              response="HTTP/1.1 200 OK\r\n\r\n")
     print auto_srv.run()

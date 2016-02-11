@@ -195,22 +195,31 @@ class TLSServerAutomata(Automaton):
         auto_srv.run()
     """
     def parse_args(self, 
-                   target, 
-                   tls_version='TLS_1_1', 
+                   bind, 
+                   pemcert,
+                   pemkey=None,
                    response="HTTP/1.1 200 OK\r\n\r\n", 
                    cipher_suite=TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA,
                    timeout=4.0, 
                    **kwargs):
         Automaton.parse_args(self, **kwargs)
-        self.target = target
-        self.tls_version = tls_version
+        self.bind = bind
+        self.pemcert = pemcert
+        self.pemkey = pemkey if pemkey else pemcert
+        self.tls_version = 'TLS_1_2'
         self.response = response
         self.cipher_suite = cipher_suite
         self.timeout = timeout
         self.tlssock = None
         self.srv_sock = None
         self.peer = None
+        
+        pemo = pem_get_objects(self.pemcert)
+        for key_pk in (k for k in pemo.keys() if "CERTIFICATE" in k.upper()):
+            self.dercert = ''.join(line for line in pemo[key_pk].get("full").strip().split("\n") if not "-" in line).decode("base64")
+            break
         self.debug(1,"parse_args - done")
+        
 
     # GENERIC BEGIN
     @ATMT.state(initial=1)
@@ -223,18 +232,23 @@ class TLSServerAutomata(Automaton):
     
     @ATMT.action(listen)
     def do_bind(self):
-        self.debug(1,"dobind")
+        self.debug(1,"dobind %s "%repr(self.bind))
         self.srv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        self.srv_sock.bind(self.target)
-        self.srv_sock.listen(1)
+        self.srv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+        self.srv_tls_sock = TLSSocket(self.srv_sock, client=False)
+        self.srv_tls_sock.bind(self.bind)
+        self.srv_tls_sock.listen(1)
         
-        self.debug(1,"server bound to %s:%d"%self.target)
+        pemo = pem_get_objects(self.pemkey)
+        for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
+            self.srv_tls_sock.tls_ctx.crypto.server.rsa.privkey, self.srv_tls_sock.tls_ctx.crypto.server.rsa.pubkey = self.srv_tls_sock.tls_ctx._rsa_load_keys(pemo[key_pk].get("full"))
+            break
         
     @ATMT.state()
     def WAIT_FOR_CLIENT_CONNECTION(self):
         self.debug(1,"accept")
-        self.peer = self.srv_sock.accept()
-        self.tlssock = TLSSocket(self.peer[0], client=False)
+        self.tlssock, self.peer = self.srv_tls_sock.accept()
+        self.debug(1,"new connection: %s"%repr(self.peer))
     
     @ATMT.condition(WAIT_FOR_CLIENT_CONNECTION)
     def recv_client_hello(self):
@@ -242,6 +256,7 @@ class TLSServerAutomata(Automaton):
         p.show()
         if not p.haslayer(TLSClientHello):
             raise self.ERROR(p)
+        self.tls_version = p[TLSClientHello].version
         raise self.CLIENT_HELLO_RECV()
     
     @ATMT.state()
@@ -261,15 +276,8 @@ class TLSServerAutomata(Automaton):
         server_hello.show()
         self.tlssock.sendall(server_hello)
         
-        #TODO: remove static server cert/key 
-        #pem = ssl_tls_crypto.pem_get_objects(open("../tests/files/openssl_1_0_1_f_server.pem",'r').read())
         
-        #key = pem['RSA PRIVATE KEY']['full'].replace("\n","")
-        key = "MIIEpAIBAAKCAQEA84TzkjbcskbKZnrlKcXzSSgi07n+4N7kOM7uIhzpkTuU0HIvh4VZS2axxfV6hV3CD9MuKVg2zEhroqK1Js5n4ke230nSP/qiELfCl0R+hzRtbfKLtFUr1iHeU0uQ6v3q+Tg1K/Tmmg72uxKrhyHDL7z0BriPjhAHJ5XlQsvR1RCMkqzuD9wjSInJxpMMIgLndOclAKv4D1wQtYU7ZpTw+01XBlUhIiXb86qpYL9NqnnRq5JIuhmOEuxo2ca63+xaHNhD/udSyc8C0Md/yX6wlONTRFgLLv0pdLUGm1xEjfsydaQ6qGd7hzIKUI3hohNKJa/mHLElv7SZolPTogK/EQIDAQABAoIBAADq9FwNtuE5IRQnzGtO4q7Y5uCzZ8GDNYr9RKp+P2cbuWDbvVAecYq2NV9QoIiWJOAYZKklOvekIju3r0UZLA0PRiIrTg6NrESx3JrjWDK8QNlUO7CPTZ39/K+FrmMkV9lem9yxjJjyC34DAQB+YRTx+l14HppjdxNwHjAVQpIx/uO2F5xAMuk32+3K+pq9CZUtrofe1q4Agj9R5s8mSy9pbRo9kW9wl5xdEotz1LivFOEiqPUJTUq5J5PeMKao3vdK726XI4Z455NmW2/MA0YV0ug2FYinHcZdvKM6dimH8GLfa3X8xKRfzjGjTiMSwsdjgMa4awY3tEHH674jhAECgYEA/zqMrc0zsbNk83sjgaYIug5kzEpN4ic020rSZsmQxSCerJTgNhmgutKSCt0Re09Jt3LqG48msahX8ycqDsHNvlEGPQSbMu9IYeO3Wr3fAm75GEtFWePYBhM73I7gkRt4s8bUiUepMG/wY45c5tRF23xi8foReHFFe9MDzh8fJFECgYEA9EFX4qAik1pOJGNei9BMwmx0I0gfVEIgu0tzeVqT45vcxbxr7RkTEaDoAG6PlbWP6D9aWQNLp4gsgRM90ZXOJ4up5DsAWDluvaF4/omabMA+MJJ5kGZ0gCj5rbZbKqUws7x8bp+6iBfUPJUbcqNqFmi/08Yt7vrDnMnyMw2A/sECgYEAiiuRMxnuzVm34hQcsbhH6ymVqf7j0PW2qK0F4H1ocT9qhzWFd+RB3kHWrCjnqODQoI6GbGr/4JepHUpre1ex4UEN5oSS3G0ru0rC3U4C59dZ5KwDHFm7ffZ1pr52ljfQDUsrjjIMRtuiwNK2OoRaWSsqiaL+SDzSB+nBmpnAizECgYBdt/y6rerWUx4MhDwwtTnel7JwHyo2MDFS6/5gn8qC2Lj6/fMDRE22w+CA2esp7EJNQJGv+b27iFpbJEDh+/Lf5YzIT4MwVskQ5bYBJFcmRxUVmf4e09D7o705U/DjCgMH09iCsbLmqQ38ONIRSHZaJtMDtNTHD1yi+jF+OT43gQKBgQC/2OHZoko6iRlNOAQ/tMVFNq7fL81GivoQ9F1U0Qr+DH3ZfaH8eIkXxT0ToMPJUzWAn8pZv0snA0um6SIgvkCuxO84OkANCVbttzXImIsL7pFzfcwV/ERKUM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==".decode("base64")
-        #cert = pem['CERTIFICATE']['full'].replace("\n","")
-        cert = "MIID5zCCAs+gAwIBAgIJALnu1NlVpZ6zMA0GCSqGSIb3DQEBBQUAMHAxCzAJBgNVBAYTAlVLMRYwFAYDVQQKDA1PcGVuU1NMIEdyb3VwMSIwIAYDVQQLDBlGT1IgVEVTVElORyBQVVJQT1NFUyBPTkxZMSUwIwYDVQQDDBxPcGVuU1NMIFRlc3QgSW50ZXJtZWRpYXRlIENBMB4XDTExMTIwODE0MDE0OFoXDTIxMTAxNjE0MDE0OFowZDELMAkGA1UEBhMCVUsxFjAUBgNVBAoMDU9wZW5TU0wgR3JvdXAxIjAgBgNVBAsMGUZPUiBURVNUSU5HIFBVUlBPU0VTIE9OTFkxGTAXBgNVBAMMEFRlc3QgU2VydmVyIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDzhPOSNtyyRspmeuUpxfNJKCLTuf7g3uQ4zu4iHOmRO5TQci+HhVlLZrHF9XqFXcIP0y4pWDbMSGuiorUmzmfiR7bfSdI/+qIQt8KXRH6HNG1t8ou0VSvWId5TS5Dq/er5ODUr9OaaDva7EquHIcMvvPQGuI+OEAcnleVCy9HVEIySrO4P3CNIicnGkwwiAud05yUAq/gPXBC1hTtmlPD7TVcGVSEiJdvzqqlgv02qedGrkki6GY4S7GjZxrrf7Foc2EP+51LJzwLQx3/JfrCU41NEWAsu/Sl0tQabXESN+zJ1pDqoZ3uHMgpQjeGiE0olr+YcsSW/tJmiU9OiAr8RAgMBAAGjgY8wgYwwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCBeAwLAYJYIZIAYb4QgENBB8WHU9wZW5TU0wgR2VuZXJhdGVkIENlcnRpZmljYXRlMB0GA1UdDgQWBBSCvM8AABPR9zklmifnr9LvIBturDAfBgNVHSMEGDAWgBQ2w2yI55X+sL3szj49hqshgYfa2jANBgkqhkiG9w0BAQUFAAOCAQEAqb1NV0B0/pbpK9Z4/bNjzPQLTRLKWnSNm/Jh5v0GEUOE/Beg7GNjNrmeNmqxAlpqWz9qoeoFZax+QBpIZYjROU3TS3fpyLsrnlr0CDQ5R7kCCDGa8dkXxemmpZZLbUCpW2Uoy8sAA4JjN9OtsZY7dvUXFgJ7vVNTRnI01ghknbtD+2SxSQd3CWF6QhcRMAzZJ1z1cbbwGDDzfvGFPzJ+Sq+zEPdsxoVLLSetCiBc+40ZcDS5dV98h9XD7JMTQfxzA7mNGv73JoZJA6nFgj+ADSlJsY/tJBv+z1iQRueoh9Qeee+ZbRifPouCB8FDx+AltvHTANdAq0t/K3o+pplMVA==".decode("base64")
-
-        server_certificates = rec_hs / TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(cert))])
+        server_certificates = rec_hs / TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])
         server_certificates.show()
         self.tlssock.sendall(server_certificates)
         (rec_hs / TLSServerHelloDone()).show2()
@@ -330,11 +338,21 @@ class TLSServerAutomata(Automaton):
     
     @ATMT.condition(SERVER_FINISH_SENT)
     def recv_client_appdata(self):
-        p = self.tlssock.recvall()
+        chunk_p = True
+        p = SSL()
+        self.debug(1,"polling in 5sec intervals until data arrives.")
+        while chunk_p:
+            chunk_p = self.tlssock.recvall(timeout=5)
+            if (chunk_p.haslayer(SSL) and len(chunk_p[SSL].records)>0):
+                p.records.append(chunk_p)
+            else:
+                if len(p[SSL].records)>0:
+                    break
+            
         p.show()
         if not (p.haslayer(TLSRecord) and p[TLSRecord].content_type==TLSContentType.APPLICATION_DATA):
             raise self.ERROR(p)
-        raise self.CLIENT_APPDATA_RECV(p)
+        raise self.CLIENT_APPDATA_RECV()
     
     @ATMT.state()
     def CLIENT_APPDATA_RECV(self):
@@ -361,5 +379,5 @@ class TLSServerAutomata(Automaton):
     
     # GENERIC END - return server's response
     @ATMT.state(final=1)
-    def END(self, p):
-        return ''.join(pkt[TLSPlaintext].data for pkt in p.records)
+    def END(self):
+        self.tlssock.sendall(to_raw(TLSAlert(level=TLSAlertLevel.WARNING, description=TLSAlertDescription.CLOSE_NOTIFY), self.tlssock.tls_ctx))
