@@ -279,6 +279,10 @@ TLSHashAlgorithm = EnumStruct(TLS_HASH_ALGORITHMS)
 TLS_SIGNATURE_ALGORITHMS = registry.TLS_SIGNATUREALGORITHM_REGISTRY
 TLSSignatureAlgorithm = EnumStruct(TLS_SIGNATURE_ALGORITHMS)
 
+TLS_CERTIFICATE_TYPE = registry.TLS_CLIENTCERTIFICATETYPE_IDENTIFIERS_REGISTRY
+TLSCertificateType = EnumStruct(TLS_CERTIFICATE_TYPE)
+
+
 class TLSKexNames(object):
     RSA = "RSA"
     DHE = "DHE"
@@ -597,17 +601,6 @@ class TLSCertificateVerify(PacketNoPayload):
     fields_desc = [PacketField("alg", None, TLSSignatureHashAlgorithm),
                    XFieldLenField("sig_length", None, length_of="sig", fmt="H"),  # ASN.1 signature element
                    StrLenField("sig", "", length_from=lambda x:x.sig_length)]
-
-
-TLS_CERTIFICATE_TYPE = {0x1: "rsa_sign",
-                        0x2: "dss_sign",
-                        0x3: "rsa_fixed_dh",
-                        0x4: "dss_fixed_dh",
-                        0x5: "rsa_ephemeral_dh_RESERVED",
-                        0x6: "dss_ephemeral_dh_RESERVED",
-                        0x14: "fortezza_dms_RESERVED",
-                        0xff: "reserved"}
-TLSCertificateType = EnumStruct(TLS_CERTIFICATE_TYPE)
 
 
 class TLSCertificateType(PacketNoPayload):
