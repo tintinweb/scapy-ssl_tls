@@ -279,6 +279,10 @@ TLSHashAlgorithm = EnumStruct(TLS_HASH_ALGORITHMS)
 TLS_SIGNATURE_ALGORITHMS = registry.TLS_SIGNATUREALGORITHM_REGISTRY
 TLSSignatureAlgorithm = EnumStruct(TLS_SIGNATURE_ALGORITHMS)
 
+TLS_CERTIFICATE_TYPE = registry.TLS_CLIENTCERTIFICATETYPE_IDENTIFIERS_REGISTRY
+TLSCertificateType = EnumStruct(TLS_CERTIFICATE_TYPE)
+
+
 class TLSKexNames(object):
     RSA = "RSA"
     DHE = "DHE"
@@ -406,15 +410,15 @@ class TLSExtEllipticCurves(PacketNoPayload):
 class TLSSignatureHashAlgorithm(PacketNoPayload):
     name = "TLS Signature Hash Algorithm Pair"
     fields_desc = [
-                   ByteEnumField("hash_algorithm", None, TLS_HASH_ALGORITHMS),
-                   ByteEnumField("signature_algorithm", None, TLS_SIGNATURE_ALGORITHMS),
+                   ByteEnumField("hash_alg", None, TLS_HASH_ALGORITHMS),
+                   ByteEnumField("sig_alg", None, TLS_SIGNATURE_ALGORITHMS),
                   ]  
     
 class TLSExtSignatureAndHashAlgorithm(PacketNoPayload):
     name = "TLS Extension Signature And Hash Algorithm"
     fields_desc = [
                    XFieldLenField("length", None, length_of="algorithms", fmt="H"),
-                   PacketListField("algorithms", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length),
+                   PacketListField("algs", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length),
                   ]  
 
 class TLSExtHeartbeat(PacketNoPayload):
@@ -592,15 +596,33 @@ class TLSCertificateList(PacketNoPayload):
                    PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length)]
 
 
-class TLSDigitallySigned(PacketNoPayload):
-    name = "TLS Digitally Signed"
-    fields_desc = [PacketField("algorithm", None, TLSSignatureHashAlgorithm),
-                   StrField("signature", "", fmt="H")]  # ASN.1 signature element
-
-
 class TLSCertificateVerify(PacketNoPayload):
     name = "TLS Certificate Verify"
-    fields_desc = [PacketField("digitally-signed", None, TLSDigitallySigned)]
+    fields_desc = [PacketField("alg", None, TLSSignatureHashAlgorithm),
+                   XFieldLenField("sig_length", None, length_of="sig", fmt="H"),  # ASN.1 signature element
+                   StrLenField("sig", "", length_from=lambda x:x.sig_length)]
+
+
+class TLSCertificateType(PacketNoPayload):
+    name = "TLS Certificate Type"
+    fields_desc = [ByteEnumField("type", TLSCertificateType.RSA_SIGN, TLS_CERTIFICATE_TYPE)]
+
+
+class TLSCADistinguishedName(PacketNoPayload):
+    name = "TLS CA Distinguished Name"
+    fields_desc = [XFieldLenField("length", None, length_of="dn", fmt="H"),
+                   PacketLenField("ca_dn", None, x509.X509v3Ext, length_from=lambda x:x.length)]
+                   # StrLenField("ca_dn", "", length_from=lambda x: x.length)]
+
+
+class TLSCertificateRequest(Packet):
+    name = "TLS Certificate Request"
+    fields_desc = [XFieldLenField("type_length", None, length_of="types", fmt="B"),
+                   PacketListField("types", None, TLSCertificateType, length_from=lambda x: x.type_length),
+                   XFieldLenField("alg_length", None, length_of="algorithms", fmt="H"),
+                   PacketListField("algorithms", None, TLSSignatureHashAlgorithm, length_from=lambda x: x.alg_length),
+                   XFieldLenField("dn_length", None, length_of="dns", fmt="H"),
+                   PacketListField("ca_dns", None, TLSCADistinguishedName, length_from=lambda x: x.dn_length)]
 
 
 class TLSDecryptablePacket(PacketLengthFieldPayload):
@@ -1104,15 +1126,17 @@ bind_layers(TLSRecord, TLSAlert, {'content_type': TLSContentType.ALERT})
 bind_layers(TLSRecord, TLSHandshake, {'content_type': TLSContentType.HANDSHAKE})
 
 # --> handshake proto
-bind_layers(TLSHandshake, TLSHelloRequest, {'type': TLSHandshakeType.HELLO_REQUEST})
-bind_layers(TLSHandshake, TLSClientHello, {'type': TLSHandshakeType.CLIENT_HELLO})
-bind_layers(TLSHandshake, TLSServerHello, {'type': TLSHandshakeType.SERVER_HELLO})
-bind_layers(TLSHandshake, TLSCertificateList, {'type': TLSHandshakeType.CERTIFICATE})
-bind_layers(TLSHandshake, TLSServerKeyExchange, {'type': TLSHandshakeType.SERVER_KEY_EXCHANGE})
-bind_layers(TLSHandshake, TLSServerHelloDone, {'type': TLSHandshakeType.SERVER_HELLO_DONE})
-bind_layers(TLSHandshake, TLSClientKeyExchange, {'type': TLSHandshakeType.CLIENT_KEY_EXCHANGE})
-bind_layers(TLSHandshake, TLSFinished, {'type': TLSHandshakeType.FINISHED})
-bind_layers(TLSHandshake, TLSSessionTicket, {'type': TLSHandshakeType.NEWSESSIONTICKET})
+bind_layers(TLSHandshake, TLSHelloRequest, {'type':TLSHandshakeType.HELLO_REQUEST})
+bind_layers(TLSHandshake, TLSClientHello, {'type':TLSHandshakeType.CLIENT_HELLO})
+bind_layers(TLSHandshake, TLSServerHello, {'type':TLSHandshakeType.SERVER_HELLO})
+bind_layers(TLSHandshake, TLSCertificateList, {'type':TLSHandshakeType.CERTIFICATE})
+bind_layers(TLSHandshake, TLSServerKeyExchange, {'type':TLSHandshakeType.SERVER_KEY_EXCHANGE})
+bind_layers(TLSHandshake, TLSServerHelloDone, {'type':TLSHandshakeType.SERVER_HELLO_DONE})
+bind_layers(TLSHandshake, TLSClientKeyExchange, {'type':TLSHandshakeType.CLIENT_KEY_EXCHANGE})
+bind_layers(TLSHandshake, TLSFinished, {'type':TLSHandshakeType.FINISHED})
+bind_layers(TLSHandshake, TLSSessionTicket, {'type':TLSHandshakeType.NEWSESSIONTICKET})
+bind_layers(TLSHandshake, TLSCertificateRequest, {"type": TLSHandshakeType.CERTIFICATE_REQUEST})
+bind_layers(TLSHandshake, TLSCertificateVerify, {"type": TLSHandshakeType.CERTIFICATE_VERIFY})
 # <---
 
 # --> extensions
