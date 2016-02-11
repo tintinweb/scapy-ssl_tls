@@ -584,15 +584,20 @@ class TLSSessionCtx(object):
                 if not handshake.haslayer(tls.TLSHelloRequest):
                     yield handshake
 
-    def get_verify_data(self, client=True, data=None):
-        if client:
+    def get_verify_data(self, data=None):
+        if self.client:
             label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
         else:
             label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
         if data is None:
             verify_data = []
             for handshake in self._walk_handshake_msgs():
-                verify_data.append(str(handshake))
+                if handshake.haslayer(tls.TLSFinished):
+                    # Special case of encrypted handshake. Remove crypto material to compute verify_data
+                    verify_data.append("%s%s%s" % (chr(handshake.type), struct.pack(">I", handshake.length)[1:],
+                                                   handshake[tls.TLSFinished].data))
+                else:
+                    verify_data.append(str(handshake))
         else:
             verify_data = [data]
 

@@ -20,6 +20,7 @@ except ImportError:
     from scapy.layers.ssl_tls import *
     from scapy.all import *
 
+
 def do_tls_mutual_auth(host):
     with open(os.path.join(basedir, "tests/integration/keys/scapy-tls-client.crt.der"), "rb") as f:
         client_cert = f.read()
