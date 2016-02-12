@@ -38,4 +38,11 @@ if __name__=='__main__':
                              pemcert=pemcert,
                              cipher_suite=TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA,
                              response="HTTP/1.1 200 OK\r\n\r\n")
+    
+    def jump_to_server_hello_done(*args, **kwargs):
+        raw_input(" **** -------------> override state, directly jump to SERVER_CERTIFICATES_SENT aka. SERVER_HELLO_DONE")
+        raise auto_srv.SERVER_CERTIFICATES_SENT()
+    
+    # uncomment next line to hook into the 'send_server_hello' condition.  
+    # auto_srv.register_callback('send_server_hello', jump_to_server_hello_done)
     print auto_srv.run()
