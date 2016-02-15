@@ -12,7 +12,6 @@ An example implementation of a passive TLS security scanner with custom starttls
 import sys, os
 import concurrent.futures
 
-
 try:
     from scapy.all import get_if_list, sniff, IP, TCP
 except ImportError:
@@ -160,8 +159,11 @@ class TLSInfo(object):
             if len(tmp):
                 events.append(("CRIME - %s supports compression"%tlsinfo.__name__,tlsinfo.compressions))
             # test RC4
-            cipher_namelist = [TLS_CIPHER_SUITES.get(c,c) for c in tlsinfo.ciphers]
+            cipher_namelist = [TLS_CIPHER_SUITES.get(c,"SSLv2_%s"%SSLv2_CIPHER_SUITES.get(c,c)) for c in tlsinfo.ciphers]
             
+            tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "SSLV2" in c.upper() and "EXP" in c.upper()]
+            if tmp:
+                events.append(("DROWN - SSLv2 with EXPORT ciphers enabled",tmp))
             tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "EXP" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - Export ciphers enabled",tmp))
@@ -230,7 +232,7 @@ class TLSInfo(object):
     def _process(self, pkt, client=None):
         if pkt is None:
             return
-        if not pkt.haslayer(SSL) and not pkt.haslayer(TLSRecord):
+        if not pkt.haslayer(SSL) and not (pkt.haslayer(TLSRecord) or pkt.haslayer(SSLv2Record)):
             return
         
         if pkt.haslayer(SSL):
@@ -239,13 +241,15 @@ class TLSInfo(object):
             records = [pkt]
             
         for record in records:
-            if client or record.haslayer(TLSClientHello):
+            if client or record.haslayer(TLSClientHello) or record.haslayer(SSLv2ClientHello):
                 tlsinfo = self.info.client
-            elif not client or record.haslayer(TLSServerHello):
+            elif not client or record.haslayer(TLSServerHello) or record.haslayer(SSLv2ServerHello):
                 tlsinfo = self.info.server
                 
             if not pkt.haslayer(TLSAlert) and pkt.haslayer(TLSRecord):
                 tlsinfo.versions.add(pkt[TLSRecord].version)
+            elif not pkt.haslayer(TLSAlert) and pkt.haslayer(SSLv2Record):
+                tlsinfo.versions.add(TLSVersion.SSL_2_0)
         
             if record.haslayer(TLSClientHello):
                 tlsinfo.ciphers.update(record[TLSClientHello].cipher_suites)
@@ -253,6 +257,9 @@ class TLSInfo(object):
                 if record[TLSClientHello].cipher_suites:
                     tlsinfo.preferred_ciphers.add(pkt[TLSClientHello].cipher_suites[0])
                 tlsinfo.extensions.update(record[TLSClientHello].extensions)
+            elif record.haslayer(SSLv2ClientHello):
+                tlsinfo.ciphers.add(record[SSLv2ClientHello].cipher_suites)
+                
                  
             if record.haslayer(TLSServerHello):
                 tlsinfo.ciphers.add(record[TLSServerHello].cipher_suite)
@@ -260,6 +267,8 @@ class TLSInfo(object):
                 if record.haslayer(TLSExtHeartbeat):
                     tlsinfo.heartbeat = record[TLSExtHeartbeat].mode 
                 tlsinfo.extensions.update(record[TLSServerHello].extensions)
+            elif record.haslayer(SSLv2ServerHello):
+                tlsinfo.ciphers.update(record[SSLv2ServerHello].cipher_suites)
                     
             if record.haslayer(TLSCertificateList):
                 tlsinfo.certificates.add(record[TLSCertificateList])
@@ -268,6 +277,8 @@ class TLSInfo(object):
                 tlsinfo.session.established +=1
             if record.haslayer(TLSHandshake):
                 tlsinfo.versions.add(pkt[TLSRecord].version)
+            elif record.haslayer(SSLv2ServerHello):
+                tlsinfo.versions.add(pkt[SSLv2Record].version)
                 
             if not client and record.haslayer(TLSAlert) and record[TLSAlert].description==TLSAlertDescription.INAPPROPRIATE_FALLBACK:
                 tlsinfo.fallback_scsv=True
@@ -390,7 +401,24 @@ class TLSScanner(object):
                 self.capabilities.insert(resp, client=False)
             except socket.error, se:
                 print repr(se)
-            
+                
+    def _check_cipher_sslv2(self, target,  cipher_id, starttls=None, version=TLSVersion.SSL_2_0):
+        pkt = SSLv2Record()/SSLv2ClientHello(cipher_suites=[cipher_id],challenge='A'*16,session_id='')   
+        try:
+            t = TCPConnection(target, starttls=starttls)
+            t.sendall(pkt)
+            resp = t.recvall(timeout=0.5)
+        except socket.error, se:
+            print repr(se)
+            return None
+        return resp
+                
+    def _scan_accepted_ciphersuites_ssl2(self, target, starttls=None, cipherlist=SSLv2_CIPHER_SUITES.keys(), version=TLSVersion.SSL_2_0): 
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
+            tasks = [executor.submit(self._check_cipher_sslv2, target, cipher_id, starttls, version) for cipher_id in cipherlist]
+            for future in concurrent.futures.as_completed(tasks):
+                self.capabilities.insert(future.result(), client=False)
+        
     def _scan_scsv(self, target, starttls=None): 
         pkt = TLSRecord(version=TLSVersion.TLS_1_1)/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_0, cipher_suites=[TLSCipherSuite.FALLBACK_SCSV]+range(0xfe)[::-1])
         # connect
@@ -463,8 +491,8 @@ def main():
         print "\n"
         print "[*] Capabilities (Debug)"
         print scanner.capabilities
-        print "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES) )
-        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,c),c) for c in  scanner.capabilities.info.server.ciphers))
+        print "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES)+len(SSLv2_CIPHER_SUITES) )
+        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,"SSLv2_%s"%SSLv2_CIPHER_SUITES.get(c,c)),c) for c in  scanner.capabilities.info.server.ciphers))
         print ""
         print "[*] supported protocol versions: %s/%s"%(len(scanner.capabilities.info.server.versions),len(TLS_VERSIONS))
         print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_VERSIONS.get(c,c),c) for c in  scanner.capabilities.info.server.versions))

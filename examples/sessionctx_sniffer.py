@@ -50,7 +50,8 @@ class L4TcpReassembler(object):
             self.stream_id = L4TcpReassembler.TCPStream.stream_id(pkt)
             
             if not pkt[TCP].flags & L4TcpReassembler.TCPFlags.SYN:
-                raise Exception("NOT THE BEGINNING OF A STREAM: %s"%repr(self.stream_id))
+                #raise Exception("NOT THE BEGINNING OF A STREAM: %s"%repr(self.stream_id))
+                return
             
             self.syn = pkt[TCP]
             self.syn.payload=None   # strip payload

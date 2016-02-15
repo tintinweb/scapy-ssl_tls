@@ -837,7 +837,7 @@ class SSLv2ServerHello(Packet):
                    ByteEnumField("certificate_type", SSLv2CertificateType.X509, SSLv2_CERTIFICATE_TYPES),
                    XShortEnumField("version", TLSVersion.SSL_2_0, TLS_VERSIONS),
 
-                   XFieldLenField("certificate_length", None, length_of="certificates", fmt="H"),
+                   XFieldLenField("certificates_length", None, length_of="certificates", fmt="H"),
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
                    XFieldLenField("connection_id_length", None, length_of="connection_id", fmt="H"),
                    
@@ -1157,6 +1157,6 @@ bind_layers(DTLSRecord, DTLSHandshake, {'content_type': TLSContentType.HANDSHAKE
 bind_layers(DTLSHandshake, DTLSClientHello, {'type': TLSHandshakeType.CLIENT_HELLO})
 
 # SSLv2 
-bind_layers(SSLv2Record, SSLv2ServerHello, {'content_type': 0x04})
-bind_layers(SSLv2Record, SSLv2ClientHello, {'content_type': 0x01})
-bind_layers(SSLv2Record, SSLv2ClientMasterKey, {'content_type': 0x02})
+bind_layers(SSLv2Record, SSLv2ServerHello, {'content_type': SSLv2MessageType.SERVER_HELLO})
+bind_layers(SSLv2Record, SSLv2ClientHello, {'content_type': SSLv2MessageType.CLIENT_HELLO})
+bind_layers(SSLv2Record, SSLv2ClientMasterKey, {'content_type': SSLv2MessageType.CLIENT_MASTER_KEY})
