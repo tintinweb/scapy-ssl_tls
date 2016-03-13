@@ -193,8 +193,9 @@ class TLSSessionCtx(object):
         self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
                                                      'premaster_secret',
                                                      'master_secret',
+                                                     'secret_maps'
                                                      "prf"])
-        
+
         self.crypto.session.encrypted_premaster_secret = None
         self.crypto.session.premaster_secret = None
         self.crypto.session.master_secret = None
@@ -202,7 +203,16 @@ class TLSSessionCtx(object):
         self.crypto.session.randombytes = namedtuple('randombytes',['client','server'])
         self.crypto.session.randombytes.client = None
         self.crypto.session.randombytes.server = None
-        
+
+        self.crypto.session.secret_maps = namedtuple('secret_maps',['client_random_to_master',
+                                                                    'client_random_to_pms',
+                                                                    'session_id_to_master',
+                                                                    'encrypted_pms_to_pms'])
+        self.crypto.session.secret_maps.client_random_to_master = {}
+        self.crypto.session.secret_maps.client_random_to_pms = {}
+        self.crypto.session.secret_maps.session_id_to_master = {}
+        self.crypto.session.secret_maps.encrypted_pms_to_pms = {}
+
         self.crypto.session.key = namedtuple('key',['client','server'])
         self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv', "seq_num"])
         self.crypto.session.key.server.mac = None
@@ -374,6 +384,23 @@ class TLSSessionCtx(object):
                     # fetch randombytes for crypto stuff
                     if not self.crypto.session.randombytes.client:
                         self.crypto.session.randombytes.client = struct.pack("!I", p[tls.TLSClientHello].gmt_unix_time) + p[tls.TLSClientHello].random_bytes
+
+                        # If the client random is related to a known (pre-)master secret, use it
+                        if self.crypto.session.secret_maps.client_random_to_master.get(
+                                self.crypto.session.randombytes.client) is not None:
+                            self.crypto.session.master_secret = self.crypto.session.secret_maps.client_random_to_master.get(
+                                self.crypto.session.randombytes.client)
+                        elif self.crypto.session.secret_maps.client_random_to_pms.get(
+                                self.crypto.session.randombytes.client) is not None:
+                            self.crypto.session.premaster_secret = self.crypto.session.secret_maps.client_random_to_pms.get(
+                                self.crypto.session.randombytes.client)
+
+                    # If the client provided a session id matching a known master secret, use it
+                    if self.crypto.session.secret_maps.session_id_to_master.get(
+                            self.params.handshake.client.session_id) is not None:
+                        self.crypto.session.master_secret = self.crypto.session.secret_maps.session_id_to_master.get(
+                            self.params.handshake.client.session_id)
+
                     # Generate a random PMS. Overriden at decryption time if private key is provided
                     if self.crypto.session.premaster_secret is None:
                         self.crypto.session.premaster_secret = self._generate_random_pms(self.params.negotiated.version)
@@ -385,6 +412,12 @@ class TLSSessionCtx(object):
                     #fetch randombytes
                     if not self.crypto.session.randombytes.server:
                         self.crypto.session.randombytes.server = struct.pack("!I", p[tls.TLSServerHello].gmt_unix_time) + p[tls.TLSServerHello].random_bytes
+
+                    # If the session id is related to a known master secret, load it now
+                    if self.crypto.session.secret_maps.session_id_to_master.get(
+                            self.params.handshake.server.session_id) is not None:
+                        self.crypto.session.master_secret = self.crypto.session.secret_maps.session_id_to_master.get(
+                            self.params.handshake.server.session_id)
                 # negotiated params
                 if not self.params.negotiated.ciphersuite:
                     self.params.negotiated.ciphersuite = p[tls.TLSServerHello].cipher_suite
@@ -455,6 +488,13 @@ class TLSSessionCtx(object):
                     if self.crypto.server.rsa.privkey is not None:
                         self.crypto.session.premaster_secret = PKCS1_v1_5.new(self.crypto.server.rsa.privkey).decrypt(
                             self.crypto.session.encrypted_premaster_secret, None)
+
+                    # Or if the encrypted PMS maps to a known decrypted PMS, use that one.
+                    # Use the first 8 encrypted bytes as the identifier (see 'load_secrets_from_file') for details
+                    enc_identifier = self.crypto.session.encrypted_premaster_secret[:8]
+                    if self.crypto.session.secret_maps.encrypted_pms_to_pms.get(enc_identifier) is not None:
+                        self.crypto.session.premaster_secret = self.crypto.session.secret_maps.encrypted_pms_to_pms.get(enc_identifier)
+
                 elif p.haslayer(tls.TLSClientDHParams):
                     self.crypto.client.dh.y_c = p[tls.TLSClientDHParams].data
                 elif p.haslayer(tls.TLSClientECDHParams):
@@ -467,7 +507,8 @@ class TLSSessionCtx(object):
                                                         self.crypto.session.premaster_secret,
                                                         self.crypto.session.randombytes.client,
                                                         self.crypto.session.randombytes.server,
-                                                        explicit_iv)
+                                                        explicit_iv,
+                                                        self.crypto.session.master_secret)
                 self._assign_crypto_material(self.sec_params)
 
     def _assign_crypto_material(self, sec_params):
@@ -518,6 +559,40 @@ class TLSSessionCtx(object):
             self.crypto.client.rsa.privkey, self.crypto.client.rsa.pubkey = self._rsa_load_keys(priv_key)
         else:
             self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(priv_key)
+
+    def _load_secret_line(self, line):
+        try:
+            line = line.upper()
+            if line.startswith("CLIENT_RANDOM"):
+                _, client_random, master_secret = line.split()
+                client_random = client_random.decode("hex")
+                master_secret = master_secret.decode("hex")
+                self.crypto.session.secret_maps.client_random_to_master[client_random] = master_secret
+            elif line.startswith("PMS_CLIENT_RANDOM"):
+                _, client_random, premaster_secret = line.split()
+                client_random = client_random.decode("hex")
+                premaster_secret = premaster_secret.decode("hex")
+                self.crypto.session.secret_maps.client_random_to_pms[client_random] = premaster_secret
+            elif line.startswith("RSA SESSION-ID:"):
+                _, session_id, master_secret = line.split()
+                session_id = session_id.split(":")[1].decode("hex")
+                master_secret = master_secret.split(":")[1].decode("hex")
+                self.crypto.session.secret_maps.session_id_to_master[session_id] = master_secret
+            elif line.startswith("RSA "):
+                _, encrypted_pms, premaster_secret = line.split()
+                encrypted_pms = encrypted_pms.decode("hex")
+                premaster_secret = premaster_secret.decode("hex")
+                self.crypto.session.secret_maps.encrypted_pms_to_pms[encrypted_pms] = premaster_secret
+        except ValueError:
+            return
+
+
+    def load_secrets_from_file(self, secret_file):
+        # See this wireshark comment for a description of this file format:
+        # https://github.com/wireshark/wireshark/blob/d4dd4fd8481a2059713619a3e0d28ced7edbdf31/epan/dissectors/packet-ssl-utils.c#L4666-#L4691
+        with open(secret_file,'r') as f:
+            for entry in f.readlines():
+                self._load_secret_line(entry)
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))
@@ -863,7 +938,8 @@ class TLSSecurityParameters(object):
 #     0xc0ae: 'ECDHE_ECDSA_WITH_AES_128_CCM_8',
 #     0xc0af: 'ECDHE_ECDSA_WITH_AES_256_CCM_8',
 
-    def __init__(self, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
+    def __init__(self, prf, cipher_suite, pms, client_random, server_random,
+                 explicit_iv=False, master_secret=None):
         """ /!\ This class is not thread safe
         """
         try:
@@ -886,8 +962,8 @@ class TLSSecurityParameters(object):
             self.iv_length = 0 if block_size == 1 else block_size
             self.explicit_iv = explicit_iv
             self.prf = prf
-            self.__init_crypto(pms, client_random, server_random, explicit_iv)
-    
+            self.__init_crypto(pms, client_random, server_random, explicit_iv, master_secret)
+
     def get_client_hmac(self):
         return self.__client_hmac
 
@@ -936,15 +1012,19 @@ class TLSSecurityParameters(object):
             i += self.iv_length
             self.server_write_IV = data[i:i+self.iv_length]
             i += self.iv_length
-        
-    def __init_crypto(self, pms, client_random, server_random, explicit_iv):
-        self.master_secret = self.prf.get_bytes(pms,
-                                                   TLSPRF.TLS_MD_MASTER_SECRET_CONST,
-                                                   client_random + server_random, 
-                                                   num_bytes=48)
+
+    def __init_crypto(self, pms, client_random, server_random, explicit_iv, master_secret):
+        if master_secret is None:
+            self.master_secret = self.prf.get_bytes(pms,
+                                                    TLSPRF.TLS_MD_MASTER_SECRET_CONST,
+                                                    client_random + server_random,
+                                                    num_bytes=48)
+        else:
+            self.master_secret = master_secret
+
         key_block = self.prf.get_bytes(self.master_secret,
-                                          TLSPRF.TLS_MD_KEY_EXPANSION_CONST, 
-                                          server_random + client_random, 
+                                          TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
+                                          server_random + client_random,
                                           num_bytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
         self.__init_key_material(key_block, explicit_iv)
         self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
