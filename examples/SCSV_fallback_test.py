@@ -16,7 +16,7 @@ try:
 except ImportError:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
-    
+
 import socket
 import itertools
 
@@ -25,18 +25,18 @@ if __name__=="__main__":
     if len(sys.argv)<=2:
         print "USAGE: <host> <port>"
         exit(1)
-        
+
     target = (sys.argv[1],int(sys.argv[2]))
 
     PROTOS = [p for p in TLS_VERSIONS.values() if p.startswith("TLS_") or p.startswith("SSL_3")]
 
     TESTS = itertools.product(PROTOS,repeat=2)
     RESULTS = []
-    
+
     TLS_FALLBACK_SCSV_SUPPORTED = False
     SSLV3_ENABLED = True
-    
-            
+
+
     for t in TESTS:
         print "----------------"
         print "TEST : %s"%repr(t)
@@ -47,13 +47,13 @@ if __name__=="__main__":
         # create tcp socket
         s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         s.connect(target)
-        print "connected." 
+        print "connected."
         # create TLS Handhsake / Client Hello packet
         outer,inner = t
         p = TLSRecord(version=outer)/TLSHandshake()/TLSClientHello(version=inner,
-                                                                       compression_methods=range(0xff), 
+                                                                       compression_methods=range(0xff),
                                                                        cipher_suites=range(0xff)+[0x5600],
-                                                                       )         
+                                                                       )
         p.show()
         print "sending TLS payload"
         s.sendall(str(p))
@@ -62,7 +62,7 @@ if __name__=="__main__":
         print "received, %s"%repr(resp)
         resp = SSL(resp)
         resp.show()
-        
+
         if resp.haslayer(TLSAlert):
             v = resp[TLSRecord].version
             if resp[TLSAlert].description==86:        # INAPPROPRIATE_FALLBACK
@@ -73,7 +73,7 @@ if __name__=="__main__":
                 print "[- ] UNKNOWN - server responds with unexpected alert"
                 a_descr=resp[TLSAlert].description
                 RESULTS.append((t,"resp: TLSAlert.%s"%TLS_ALERT_DESCRIPTIONS.get(a_descr,a_descr)))
-                
+
         elif resp.haslayer(TLSServerHello):
             print "[!!] FAILED - server allows downgrade to %s"%t[1]
             v_outer = resp[TLSRecord].version
@@ -84,7 +84,7 @@ if __name__=="__main__":
         else:
             print "[!!] UNKNOWN - unexpected response.."
             RESULTS.append((t,"Unexpected response"))
-            
+
     print "-----------------------"
     print "for: %s"%repr(target)
     print "   record      hello   "
@@ -93,4 +93,4 @@ if __name__=="__main__":
     print "overall:"
     print "    TLS_FALLBACK_SCSV_SUPPORTED   ...  %s"%repr((TLS_FALLBACK_SCSV_SUPPORTED))
     print "    SSLv3_ENABLED                 ...  %s"%repr((SSLV3_ENABLED))
-    
+

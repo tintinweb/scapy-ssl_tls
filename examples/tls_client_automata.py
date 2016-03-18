@@ -19,10 +19,10 @@ except ImportError:
     from scapy.layers.ssl_tls import *
 
 
-    
+
 if __name__=='__main__':
     log_interactive.setLevel(1)
-    
+
     if len(sys.argv)>2:
         target = (sys.argv[1],int(sys.argv[2]))
     else:
@@ -33,7 +33,7 @@ if __name__=='__main__':
     auto_cli = TLSClientAutomata(debug=10,
                              target=target,
                              tls_version="TLS_1_1",
-                             cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, 
+                             cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA,
                                             TLSCipherSuite.RSA_WITH_RC4_128_SHA,
                                             TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA,
                                             TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA],

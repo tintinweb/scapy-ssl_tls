@@ -43,10 +43,10 @@ class PKCS7Encoder(object):
         val = int(binascii.hexlify(text[-1]), 16)
         if val > self.k:
             raise ValueError('Input is not padded or padding is corrupt')
- 
+
         l = nl - val
         return text[:l]
- 
+
     ## @param text The text to encode.
     def encode(self, text):
         '''

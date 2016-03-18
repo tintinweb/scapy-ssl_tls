@@ -7,7 +7,7 @@ An example implementation of a passive TLS security scanner with custom starttls
     TLSScanner() generates TLS probe traffic  (optional)
     TLSInfo() passively evaluates the traffic and generates events/warning
 
-    
+
 '''
 import sys, os
 import concurrent.futures
@@ -27,7 +27,7 @@ except ImportError:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
     from scapy.layers.ssl_tls import x509_extract_pubkey_from_der
-    
+
 import socket
 from collections import namedtuple
 import time
@@ -90,7 +90,7 @@ class TLSInfo(object):
                                  74037563479561712828046796097429573142593188889231289084936232638972765034028266276891996419625117843995894330502127585370118968098286733173273108930900552505116877063299072396380786710086096962537934650563796359, #R SA-704
                                  1230186684530117755130494958384962720772853569595334792197322452151726400507263657518745202199786469389956474942774063845925192557326303453731548268507917026122142913461670429214311602221240479274737794080665351419597459856902143413, # RSA-768
                                 )
-                                
+
     def __init__(self):
         self.history = []
         self.events = []
@@ -112,25 +112,25 @@ class TLSInfo(object):
         self.info.server.heartbeat = None
         self.info.server.certificates = set([])
         self.info.server.extensions = set([])
-    
+
     def __str__(self):
         return """<TLSInfo
         packets.processed: %s
-        
+
         client.versions: %s
         client.ciphers: %s
         client.compressions: %s
         client.preferred_ciphers: %s
         client.sessions_established: %s
         client.heartbeat: %s
-        
+
         server.versions: %s
         server.ciphers: %s
         server.compressions: %s
         server.sessions_established: %s
         server.fallback_scsv: %s
         server.heartbeat: %s
-        
+
         server.certificates: %s
 >
         """%(len(self.history),
@@ -147,7 +147,7 @@ class TLSInfo(object):
              self.info.server.fallback_scsv,
              self.info.server.heartbeat,
              repr(self.info.server.certificates))
-        
+
     def get_events(self):
         events=[]
         events.extend(self.events)
@@ -160,7 +160,7 @@ class TLSInfo(object):
                 events.append(("CRIME - %s supports compression"%tlsinfo.__name__,tlsinfo.compressions))
             # test RC4
             cipher_namelist = [TLS_CIPHER_SUITES.get(c,"SSLv2_%s"%SSLv2_CIPHER_SUITES.get(c,c)) for c in tlsinfo.ciphers]
-            
+
             tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "SSLV2" in c.upper() and "EXP" in c.upper()]
             if tmp:
                 events.append(("DROWN - SSLv2 with EXPORT ciphers enabled",tmp))
@@ -179,7 +179,7 @@ class TLSInfo(object):
             tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "MD5" in c.upper()]
             if tmp:
                 events.append(("CIPHERS - MD5 ciphers enabled",tmp))
-                
+
             tmp = [c for c in cipher_namelist if isinstance(c,basestring) and "RSA_EXP" in c.upper()]
             if tmp:
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
@@ -188,7 +188,7 @@ class TLSInfo(object):
             if tmp:
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
                 events.append(("LOGJAM - server supports weak DH-Group (512) (DHE_*_EXPORT) cipher suites",tmp))
-                
+
             tmp = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAndHashAlgorithm)]
             # obvious SLOTH check, does not detect impl. errors that allow md5 even though not announced.
             # makes only sense for client_hello
@@ -197,7 +197,7 @@ class TLSInfo(object):
                     if alg.signature_algorithm==TLSSignatureAlgorithm.RSA \
                          and alg.hash_algorithm in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1):
                         events.append(("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s"%(tlsinfo.__name__,TLS_HASH_ALGORITHMS.get(alg.hash_algorithm)),alg))
-   
+
             try:
                 for certlist in tlsinfo.certificates:
                     for cert in certlist.certificates:
@@ -208,16 +208,16 @@ class TLSInfo(object):
                         if pubkey_size % 2048 != 0:
                             events.append(("SUSPICIOUS SERVER CERT PUBKEY SIZE - %d not a multiple of 2048 bits"%pubkey_size,cert))
                         if pubkey.n in self.RSA_MODULI_KNOWN_FACTORED:
-                            events.append(("SERVER CERT PUBKEY FACTORED - trivial private_key recovery possible due to known factors n = p x q. See https://en.wikipedia.org/wiki/RSA_numbers | grep %s"%pubkey.n,cert))                  
+                            events.append(("SERVER CERT PUBKEY FACTORED - trivial private_key recovery possible due to known factors n = p x q. See https://en.wikipedia.org/wiki/RSA_numbers | grep %s"%pubkey.n,cert))
             except AttributeError:
                 pass        # tlsinfo.client has no attribute certificates
-                
+
             if TLSVersion.SSL_2_0 in tlsinfo.versions:
                 events.append(("PROTOCOL VERSION - SSLv2 supported ",tlsinfo.versions))
-                
+
             if TLSVersion.SSL_3_0 in tlsinfo.versions:
                 events.append(("PROTOCOL VERSION - SSLv3 supported ",tlsinfo.versions))
-                
+
             if TLSHeartbeatMode.PEER_ALLOWED_TO_SEND == tlsinfo.heartbeat:
                 events.append(("HEARTBEAT - enabled (non conclusive heartbleed) ",tlsinfo.versions))
 
@@ -225,32 +225,32 @@ class TLSInfo(object):
             events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV honored (alert.inappropriate_fallback seen)",self.info.server.fallback_scsv))
 
         return events
-        
+
     def insert(self, pkt, client=None):
         self._process(pkt, client=client)
-    
+
     def _process(self, pkt, client=None):
         if pkt is None:
             return
         if not pkt.haslayer(SSL) and not (pkt.haslayer(TLSRecord) or pkt.haslayer(SSLv2Record)):
             return
-        
+
         if pkt.haslayer(SSL):
             records = pkt[SSL].records
         else:
             records = [pkt]
-            
+
         for record in records:
             if client or record.haslayer(TLSClientHello) or record.haslayer(SSLv2ClientHello):
                 tlsinfo = self.info.client
             elif not client or record.haslayer(TLSServerHello) or record.haslayer(SSLv2ServerHello):
                 tlsinfo = self.info.server
-                
+
             if not pkt.haslayer(TLSAlert) and pkt.haslayer(TLSRecord):
                 tlsinfo.versions.add(pkt[TLSRecord].version)
             elif not pkt.haslayer(TLSAlert) and pkt.haslayer(SSLv2Record):
                 tlsinfo.versions.add(TLSVersion.SSL_2_0)
-        
+
             if record.haslayer(TLSClientHello):
                 tlsinfo.ciphers.update(record[TLSClientHello].cipher_suites)
                 tlsinfo.compressions.update(record[TLSClientHello].compression_methods)
@@ -259,27 +259,27 @@ class TLSInfo(object):
                 tlsinfo.extensions.update(record[TLSClientHello].extensions)
             elif record.haslayer(SSLv2ClientHello):
                 tlsinfo.ciphers.add(record[SSLv2ClientHello].cipher_suites)
-                
-                 
+
+
             if record.haslayer(TLSServerHello):
                 tlsinfo.ciphers.add(record[TLSServerHello].cipher_suite)
                 tlsinfo.compressions.add(record[TLSServerHello].compression_method)
                 if record.haslayer(TLSExtHeartbeat):
-                    tlsinfo.heartbeat = record[TLSExtHeartbeat].mode 
+                    tlsinfo.heartbeat = record[TLSExtHeartbeat].mode
                 tlsinfo.extensions.update(record[TLSServerHello].extensions)
             elif record.haslayer(SSLv2ServerHello):
                 tlsinfo.ciphers.update(record[SSLv2ServerHello].cipher_suites)
-                    
+
             if record.haslayer(TLSCertificateList):
                 tlsinfo.certificates.add(record[TLSCertificateList])
-    
+
             if record.haslayer(TLSFinished):
                 tlsinfo.session.established +=1
             if record.haslayer(TLSHandshake):
                 tlsinfo.versions.add(pkt[TLSRecord].version)
             elif record.haslayer(SSLv2ServerHello):
                 tlsinfo.versions.add(pkt[SSLv2Record].version)
-                
+
             if not client and record.haslayer(TLSAlert) and record[TLSAlert].description==TLSAlertDescription.INAPPROPRIATE_FALLBACK:
                 tlsinfo.fallback_scsv=True
             # track packet
@@ -289,16 +289,16 @@ class TLSScanner(object):
     def __init__(self, workers=10):
         self.workers = workers
         self.capabilities = TLSInfo()
-    
+
     def scan(self, target, starttls=None):
         for scan_method in (f for f in dir(self) if f.startswith("_scan_")):
             print "=> %s"%(scan_method.replace("_scan_",""))
             getattr(self, scan_method)(target, starttls=starttls)
-            
+
     def sniff(self, target=None, iface=None):
         def _process(pkt):
             match_ip = pkt.haslayer(IP) and (pkt[IP].src==target[0] or pkt[IP].dst==target[0]) if target else True
-            match_port = pkt.haslayer(TCP) and (pkt[TCP].sport==target[1] or pkt[TCP].dport==target[1]) if len(target)==2 else True 
+            match_port = pkt.haslayer(TCP) and (pkt[TCP].sport==target[1] or pkt[TCP].dport==target[1]) if len(target)==2 else True
             if match_ip and match_port:
                 self.capabilities.insert(pkt, client=False)
                 events = self.capabilities.get_events()         # misuse get_events :/
@@ -307,14 +307,14 @@ class TLSScanner(object):
                                  'dst':None,
                                  'sport':None,
                                  'dport':None}
-                    
+
                     if pkt.haslayer(IP):
                         strconn['src'] = pkt[IP].src
                         strconn['dst'] = pkt[IP].dst
                     if pkt.haslayer(TCP):
                         strconn['sport'] = pkt[TCP].sport
                         strconn['dport'] = pkt[TCP].dport
-                        
+
                     print "Connection: %(src)s:%(sport)d <==> %(dst)s:%(dport)d"%strconn
                     print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
             return
@@ -330,7 +330,7 @@ class TLSScanner(object):
                     prn=_process,
                     store=0,
                     timeout=3)
-    
+
     def _scan_poodle2(self, target, starttls=None, version=TLSVersion.TLS_1_0):
         '''taken from poodle2_padding_check'''
         def modify_padding(crypto_container):
@@ -343,7 +343,7 @@ class TLSScanner(object):
             ts = TLSSocket(t._s, client=True)
             tls_do_handshake(ts, version, TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA)
             ts.sendall(to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: %s\r\n\r\n" % target[0]), ts.tls_ctx, pre_encrypt_hook=modify_padding))
- 
+
             r = ts.recvall()
             if len(r.records) == 0:
                 self.capabilities.events.append(("Poodle2 - not vulnerable, but implementation does not send a BAD_RECORD_MAC alert",r))
@@ -352,12 +352,12 @@ class TLSScanner(object):
                 pass
             else:
                 self.capabilities.events.append(("Poodle2 - vulnerable",r))
-            
+
         except (socket.error, NotImplementedError), se:
             print repr(se)
             return None
 
-    def _scan_compressions(self, target, starttls=None, compression_list=TLS_COMPRESSION_METHODS.keys()): 
+    def _scan_compressions(self, target, starttls=None, compression_list=TLS_COMPRESSION_METHODS.keys()):
         for comp in compression_list:
             # prepare pkt
             pkt = TLSRecord()/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_1, cipher_suites=range(0xfe)[::-1], compression_methods=comp)
@@ -369,7 +369,7 @@ class TLSScanner(object):
                 self.capabilities.insert(resp, client=False)
             except socket.error, se:
                 print repr(se)
-    
+
     def _check_cipher(self, target,  cipher_id, starttls=None,version=TLSVersion.TLS_1_0):
         pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, cipher_suites=[cipher_id])
         try:
@@ -380,17 +380,17 @@ class TLSScanner(object):
             print repr(se)
             return None
         return resp
-    
-    def _scan_accepted_ciphersuites(self, target, starttls=None, cipherlist=TLS_CIPHER_SUITES.keys(), version=TLSVersion.TLS_1_0): 
+
+    def _scan_accepted_ciphersuites(self, target, starttls=None, cipherlist=TLS_CIPHER_SUITES.keys(), version=TLSVersion.TLS_1_0):
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
             tasks = [executor.submit(self._check_cipher, target, cipher_id, starttls, version) for cipher_id in cipherlist]
             for future in concurrent.futures.as_completed(tasks):
                 self.capabilities.insert(future.result(), client=False)
 
-    
+
     def _scan_supported_protocol_versions(self, target, starttls=None, versionlist=((k,v) for k,v in TLS_VERSIONS.iteritems() if v.startswith("TLS_") or v.startswith("SSL_"))):
         for magic, name in versionlist:
-            pkt = TLSRecord(version=magic)/TLSHandshake()/TLSClientHello(version=magic, 
+            pkt = TLSRecord(version=magic)/TLSHandshake()/TLSClientHello(version=magic,
                                                                          cipher_suites=range(0xfe)[::-1],
                                                                          extensions=[TLSExtension()/TLSExtHeartbeat(mode=TLSHeartbeatMode.PEER_ALLOWED_TO_SEND)])
             try:
@@ -401,9 +401,9 @@ class TLSScanner(object):
                 self.capabilities.insert(resp, client=False)
             except socket.error, se:
                 print repr(se)
-                
+
     def _check_cipher_sslv2(self, target,  cipher_id, starttls=None, version=TLSVersion.SSL_2_0):
-        pkt = SSLv2Record()/SSLv2ClientHello(cipher_suites=[cipher_id],challenge='A'*16,session_id='')   
+        pkt = SSLv2Record()/SSLv2ClientHello(cipher_suites=[cipher_id],challenge='A'*16,session_id='')
         try:
             t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
@@ -412,14 +412,14 @@ class TLSScanner(object):
             print repr(se)
             return None
         return resp
-                
-    def _scan_accepted_ciphersuites_ssl2(self, target, starttls=None, cipherlist=SSLv2_CIPHER_SUITES.keys(), version=TLSVersion.SSL_2_0): 
+
+    def _scan_accepted_ciphersuites_ssl2(self, target, starttls=None, cipherlist=SSLv2_CIPHER_SUITES.keys(), version=TLSVersion.SSL_2_0):
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
             tasks = [executor.submit(self._check_cipher_sslv2, target, cipher_id, starttls, version) for cipher_id in cipherlist]
             for future in concurrent.futures.as_completed(tasks):
                 self.capabilities.insert(future.result(), client=False)
-        
-    def _scan_scsv(self, target, starttls=None): 
+
+    def _scan_scsv(self, target, starttls=None):
         pkt = TLSRecord(version=TLSVersion.TLS_1_1)/TLSHandshake()/TLSClientHello(version=TLSVersion.TLS_1_0, cipher_suites=[TLSCipherSuite.FALLBACK_SCSV]+range(0xfe)[::-1])
         # connect
         try:
@@ -431,7 +431,7 @@ class TLSScanner(object):
                 self.capabilities.events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",resp))
         except socket.error, se:
             print repr(se)
-    
+
     def _scan_heartbleed(self, target, starttls=None, version=TLSVersion.TLS_1_0, payload_length=20):
         try:
             t = TCPConnection(target, starttls=starttls)
