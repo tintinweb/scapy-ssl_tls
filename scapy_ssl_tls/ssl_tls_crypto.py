@@ -50,13 +50,13 @@ def x509_extract_pubkey_from_der(der_certificate):
     try:
         # try to extract pubkey from scapy.layers.x509 X509Cert type in case
         # der_certificate is of type X509Cert
-        # Note: der_certificate may not be of type X509Cert if it wasn't 
+        # Note: der_certificate may not be of type X509Cert if it wasn't
         # received completely, in that case, we'll try to extract it anyway
-        # using the old method. 
+        # using the old method.
         # TODO: get rid of the old method and always expect X509Cert obj ?
         '''
         Rebuild ASN1 SubjectPublicKeyInfo since X509Cert does not provide the full struct
-        
+
         ASN1F_SEQUENCE(
                 ASN1F_SEQUENCE(ASN1F_OID("pubkey_algo","1.2.840.113549.1.1.1"),
                                ASN1F_field("pk_value",ASN1_NULL(0))),
@@ -69,22 +69,22 @@ def x509_extract_pubkey_from_der(der_certificate):
         return RSA.importKey(str(subjectPublicKeyInfo))
     except AttributeError:
         pass
-    
+
     # Fallback method, may pot. allow to extract pubkey from incomplete der streams
     cert = DerSequence()
-    cert.decode(der_certificate)                
-    
+    cert.decode(der_certificate)
+
     tbsCertificate = DerSequence()
     tbsCertificate.decode(cert[0])       # first DER SEQUENCE
-    
+
     # search for pubkey OID: rsaEncryption: "1.2.840.113549.1.1.1"
-    # hex: 06 09 2A 86 48 86 F7 0D 01 01 01 
+    # hex: 06 09 2A 86 48 86 F7 0D 01 01 01
     subjectPublicKeyInfo=None
     for seq in tbsCertificate:
         if not isinstance(seq,basestring): continue     # skip numerics and non sequence stuff
         if "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
             subjectPublicKeyInfo=seq
-        
+
     if not subjectPublicKeyInfo:
         raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
 
@@ -128,7 +128,7 @@ class TLSSessionCtx(object):
         self.packets.client.sequence=0
         self.packets.server = namedtuple('server',['sequence'])
         self.packets.server.sequence=0
-        
+
         self.params = namedtuple('params', ['handshake',
                                             'negotiated',])
         self.params.handshake = namedtuple('handshake',['client','server'])
@@ -194,7 +194,7 @@ class TLSSessionCtx(object):
                                                      'premaster_secret',
                                                      'master_secret',
                                                      "prf"])
-        
+
         self.crypto.session.encrypted_premaster_secret = None
         self.crypto.session.premaster_secret = None
         self.crypto.session.master_secret = None
@@ -202,7 +202,7 @@ class TLSSessionCtx(object):
         self.crypto.session.randombytes = namedtuple('randombytes',['client','server'])
         self.crypto.session.randombytes.client = None
         self.crypto.session.randombytes.server = None
-        
+
         self.crypto.session.key = namedtuple('key',['client','server'])
         self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv', "seq_num"])
         self.crypto.session.key.server.mac = None
@@ -215,7 +215,7 @@ class TLSSessionCtx(object):
         self.crypto.session.key.client.encryption = None
         self.crypto.session.key.client.iv = None
         self.crypto.session.key.client.seq_num = 0
-        
+
         self.crypto.session.key.length = namedtuple('length',['mac','encryption','iv'])
         self.crypto.session.key.length.mac = None
         self.crypto.session.key.length.encryption = None
@@ -231,12 +231,12 @@ class TLSSessionCtx(object):
                   'params-negotiated-encryption':self.params.negotiated.encryption,
                   'params-negotiated-mac':self.params.negotiated.mac,
                   'params-negotiated-compression':tls.TLS_COMPRESSION_METHODS[self.params.negotiated.compression],
-                  
+
                   'crypto-client-enc':repr(self.crypto.client.enc),
                   'crypto-client-dec':repr(self.crypto.client.dec),
                   'crypto-server-enc':repr(self.crypto.server.enc),
                   'crypto-server-dec':repr(self.crypto.server.dec),
-                  
+
                   "crypto-client-rsa-pubkey": repr(self.crypto.client.rsa.pubkey),
                   "crypto-client-rsa-privkey": repr(self.crypto.client.rsa.privkey),
                   "crypto-server-rsa-pubkey": repr(self.crypto.server.rsa.pubkey),
@@ -264,26 +264,26 @@ class TLSSessionCtx(object):
                   'crypto-session-encrypted_premaster_secret':repr(self.crypto.session.encrypted_premaster_secret),
                   'crypto-session-premaster_secret':repr(self.crypto.session.premaster_secret),
                   'crypto-session-master_secret':repr(self.crypto.session.master_secret),
-                  
+
                   'crypto-session-randombytes-client':repr(self.crypto.session.randombytes.client),
                   'crypto-session-randombytes-server':repr(self.crypto.session.randombytes.server),
-                  
+
                   'crypto-session-key-server-mac':repr(self.crypto.session.key.server.mac),
                   'crypto-session-key-server-encryption':repr(self.crypto.session.key.server.encryption),
                   'crypto-session-key-server-iv':repr(self.crypto.session.key.server.iv),
-                  
+
                   'crypto-session-key-client-mac':repr(self.crypto.session.key.client.mac),
                   'crypto-session-key-client-encryption':repr(self.crypto.session.key.client.encryption),
                   'crypto-session-key-client-iv':repr(self.crypto.session.key.client.iv),
-                  
+
                   'crypto-session-key-length-mac':self.crypto.session.key.length.mac,
                   'crypto-session-key-length-encryption':self.crypto.session.key.length.encryption,
                   'crypto-session-key-length-iv':self.crypto.session.key.length.iv,
                   }
 
-        
+
         str_ = "<TLSSessionCtx: id=%(id)s"
-        
+
         str_ +="\n\t params.handshake.client=%(params-handshake-client)s"
         str_ +="\n\t params.handshake.server=%(params-handshake-server)s"
         str_ +="\n\t params.negotiated.version=%(params-negotiated-version)s"
@@ -292,7 +292,7 @@ class TLSSessionCtx(object):
         str_ +="\n\t params.negotiated.encryption=%(params-negotiated-encryption)s"
         str_ +="\n\t params.negotiated.mac=%(params-negotiated-mac)s"
         str_ +="\n\t params.negotiated.compression=%(params-negotiated-compression)s"
-        
+
         str_ +="\n\t crypto.client.enc=%(crypto-client-enc)s"
         str_ +="\n\t crypto.client.dec=%(crypto-client-dec)s"
         str_ +="\n\t crypto.server.enc=%(crypto-server-enc)s"
@@ -327,7 +327,7 @@ class TLSSessionCtx(object):
         str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
         str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
         str_ +="\n\t crypto.session.master_secret=%(crypto-session-master_secret)s"
-        
+
         str_ +="\n\t crypto.session.randombytes.client=%(crypto-session-randombytes-client)s"
         str_ +="\n\t crypto.session.randombytes.server=%(crypto-session-randombytes-server)s"
 
@@ -338,14 +338,14 @@ class TLSSessionCtx(object):
         str_ +="\n\t crypto.session.key.server.mac=%(crypto-session-key-server-mac)s"
         str_ +="\n\t crypto.session.key.server.encryption=%(crypto-session-key-server-encryption)s"
         str_ +="\n\t crypto.session.key.server.iv=%(crypto-session-key-server-iv)s"
-        
+
         str_ +="\n\t crypto.session.key.length.mac=%(crypto-session-key-length-mac)s"
         str_ +="\n\t crypto.session.key.length.encryption=%(crypto-session-key-length-encryption)s"
         str_ +="\n\t crypto.session.key.length.iv=%(crypto-session-key-length-iv)s"
-        
+
         str_ += "\n>"
         return str_ % params
-    
+
     def insert(self, p):
         '''
         add packet to context
@@ -355,7 +355,7 @@ class TLSSessionCtx(object):
             ps = p[tls.SSL].records
         else:
             ps = [p]
-        
+
         for p in ps:
             self.packets.history.append(p)
             self._process(p)    # fill structs
@@ -408,7 +408,7 @@ class TLSSessionCtx(object):
                                       self.params.negotiated.ciphersuite)
 
             if p.haslayer(tls.TLSCertificateList):
-                # TODO: Probably don't want to do that if rsa_load_priv*() is called 
+                # TODO: Probably don't want to do that if rsa_load_priv*() is called
                 if self.params.negotiated.key_exchange is not None and (self.params.negotiated.key_exchange == tls.TLSKexNames.RSA or self.params.negotiated.sig == RSA):
                     # fetch server pubkey // PKCS1_v1_5
                     cert = p[tls.TLSCertificateList].certificates[0].data
@@ -492,7 +492,7 @@ class TLSSessionCtx(object):
         self.crypto.server.enc = sec_params.get_server_enc_cipher()
         self.crypto.server.dec = sec_params.get_server_dec_cipher()
         self.crypto.server.hmac = sec_params.get_server_hmac()
-        
+
     def _rsa_load_keys(self, priv_key):
         priv_key = RSA.importKey(priv_key)
         pub_key = priv_key.publickey()
@@ -674,7 +674,7 @@ class TLSPRF(object):
 
 
 class CryptoContainer(object):
-    
+
     def __init__(self, tls_ctx, data="", content_type=tls.TLSContentType.APPLICATION_DATA):
         if tls_ctx is None:
             raise ValueError("Valid TLS session context required")
@@ -740,17 +740,17 @@ class CryptoContainer(object):
 class NullCipher(object):
     """ Implements a pycrypto like interface for the Null Cipher
     """
-    
+
     block_size = 0
     key_size = 0
-    
+
     @classmethod
     def new(cls, *args, **kwargs):
         return cls()
-    
+
     def encrypt(self, cleartext):
         return cleartext
-    
+
     def decrypt(self, ciphertext):
         return ciphertext
 
@@ -760,23 +760,23 @@ class NullHash(object):
 
     blocksize = 0
     digest_size = 0
-    
+
     def __init__(self, *args, **kwargs):
         pass
-    
+
     @classmethod
     def new(cls, *args, **kwargs):
         return cls(*args, **kwargs)
-    
+
     def update(self, data):
         pass
-    
+
     def digest(self):
         return ""
-    
+
     def hexdigest(self):
         return ""
-    
+
     def copy(self):
         return copy.deepcopy(self)
 
@@ -798,7 +798,7 @@ class ECDSA(object):
 
 
 class TLSSecurityParameters(object):
-    
+
     crypto_params = {
             tls.TLSCipherSuite.NULL_WITH_NULL_NULL:             {"name":tls.TLS_CIPHER_SUITES[0x0000], "export":False, "key_exchange":{"type":RSA, "name":tls.TLSKexNames.RSA, "sig":None}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":NullHash, "name":"Null"}},
             tls.TLSCipherSuite.RSA_WITH_NULL_MD5:               {"name":tls.TLS_CIPHER_SUITES[0x0001], "export":False, "key_exchange":{"type":RSA, "name":tls.TLSKexNames.RSA, "sig":None}, "cipher":{"type":NullCipher, "name":"Null", "key_len":0, "mode":None, "mode_name":""}, "hash":{"type":MD5, "name":"MD5"}},
@@ -887,31 +887,31 @@ class TLSSecurityParameters(object):
             self.explicit_iv = explicit_iv
             self.prf = prf
             self.__init_crypto(pms, client_random, server_random, explicit_iv)
-    
+
     def get_client_hmac(self):
         return self.__client_hmac
 
     def get_server_hmac(self):
         return self.__server_hmac
-    
+
     def get_server_enc_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
             return self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
         else:
             return self.__server_enc_cipher
-    
+
     def get_server_dec_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
             return self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
         else:
             return self.__server_dec_cipher
-    
+
     def get_client_enc_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
             return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
         else:
             return self.__client_enc_cipher
-    
+
     def get_client_dec_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
             return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
@@ -936,15 +936,15 @@ class TLSSecurityParameters(object):
             i += self.iv_length
             self.server_write_IV = data[i:i+self.iv_length]
             i += self.iv_length
-        
+
     def __init_crypto(self, pms, client_random, server_random, explicit_iv):
         self.master_secret = self.prf.get_bytes(pms,
                                                    TLSPRF.TLS_MD_MASTER_SECRET_CONST,
-                                                   client_random + server_random, 
+                                                   client_random + server_random,
                                                    num_bytes=48)
         key_block = self.prf.get_bytes(self.master_secret,
-                                          TLSPRF.TLS_MD_KEY_EXPANSION_CONST, 
-                                          server_random + client_random, 
+                                          TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
+                                          server_random + client_random,
                                           num_bytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
         self.__init_key_material(key_block, explicit_iv)
         self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
@@ -986,7 +986,7 @@ class NullCompression(object):
         return data
 
 class TLSCompressionParameters(object):
-    
+
     comp_params = {
                   tls.TLSCompressionMethod.NULL:    {"name":tls.TLS_COMPRESSION_METHODS[0x00], "type":NullCompression},
                   tls.TLSCompressionMethod.DEFLATE: {"name":tls.TLS_COMPRESSION_METHODS[0x01], "type":zlib}

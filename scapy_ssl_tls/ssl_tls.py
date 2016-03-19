@@ -12,7 +12,7 @@ from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
 
 import ssl_tls_registry as registry
-    
+
 class BLenField(LenField):
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
         self.name = name
@@ -30,7 +30,7 @@ class BLenField(LenField):
         self.default = self.any2i(None, default)
         self.sz = struct.calcsize(self.fmt) if not numbytes else numbytes
         self.owners = []
-        
+
     def addfield(self, pkt, s, val):
         """Add an internal value  to a string"""
         pack = struct.pack(self.fmt, self.i2m(pkt, val))
@@ -42,16 +42,16 @@ class BLenField(LenField):
         upack_data = s[:self.sz]
         # prepend struct.calcsize()-len(data) bytes to satisfy struct.unpack
         upack_data = '\x00' * (struct.calcsize(self.fmt) - self.sz) + upack_data
-            
+
         return  s[self.sz:], self.m2i(pkt, struct.unpack(self.fmt, upack_data)[0])
-    
+
     def i2m(self, pkt, x):
         if x is None:
             if not (self.length_of or self.count_of):
                 x = len(pkt.payload)
                 x = self.adjust_i2m(pkt, x)
                 return x
-             
+
             if self.length_of is not None:
                 fld, fval = pkt.getfield_and_val(self.length_of)
                 f = fld.i2len(pkt, fval)
@@ -66,20 +66,20 @@ class BLenField(LenField):
 class XBLenField(BLenField):
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))
-    
+
 class XLenField(LenField):
     def i2repr(self, pkt, x):
         return lhex(self.i2h(pkt, x))
-    
+
 class XFieldLenField(FieldLenField):
     def i2repr(self, pkt, x):
-        return lhex(self.i2h(pkt, x))   
-    
+        return lhex(self.i2h(pkt, x))
+
 class BEnumField(EnumField):
     def __init__(self, name, default, enum, fmt="!I", numbytes=None):
         EnumField.__init__(self, name, default, enum, fmt)
         self.numbytes = numbytes
-        
+
         self.name = name
         if fmt[0] in "@=<>!":
             self.fmt = fmt
@@ -100,9 +100,9 @@ class BEnumField(EnumField):
         upack_data = s[:self.sz]
         # prepend struct.calcsize()-len(data) bytes to satisfy struct.unpack
         upack_data = '\x00' * (struct.calcsize(self.fmt) - self.sz) + upack_data
-            
+
         return  s[self.sz:], self.m2i(pkt, struct.unpack(self.fmt, upack_data)[0])
-        
+
     def i2repr_one(self, pkt, x):
         if self not in conf.noenum and not isinstance(x, VolatileValue) and x in self.i2s:
             return self.i2s[x]
@@ -110,7 +110,7 @@ class BEnumField(EnumField):
 
 class XBEnumField(BEnumField):
     def i2repr(self, pkt, x):
-        return lhex(self.i2h(pkt, x))   
+        return lhex(self.i2h(pkt, x))
 
 class ReprFieldListField(FieldListField):
     ''' Human Readable FieldListField for Enum type list entries '''
@@ -125,13 +125,13 @@ class StrConditionalField(ConditionalField):
     '''
     def _evalcond(self, pkt=None, s=None, val=None):
         return self.cond(pkt, s, val)
-    
+
     def getfield(self, pkt, s):
         if self._evalcond(pkt,s):
             return self.fld.getfield(pkt,s)
         else:
             return s,None
-        
+
     def addfield(self, pkt, s, val):
         if self._evalcond(pkt,s,val):
             return self.fld.addfield(pkt,s,val)
@@ -144,12 +144,12 @@ class PacketNoPayload(Packet):
     '''
     def extract_padding(self, s):
         return '', s
-   
+
 class PacketLengthFieldPayload(Packet):
     '''
     This type of packet provides only up to self.length bytes to the next layer (payload)
     Applicable when last field is .length and the length describes the next-layer length in bytes
-    Behaves like Packet.extract_padding if self.length is not available to make this Packet type work with all Packets    
+    Behaves like Packet.extract_padding if self.length is not available to make this Packet type work with all Packets
     '''
     def extract_padding(self, s):
         if not hasattr(self, 'length'):
@@ -157,7 +157,7 @@ class PacketLengthFieldPayload(Packet):
         pay = s[:self.length]
         pad = s[self.length:]
         return pay, pad
- 
+
 class StackedLenPacket(Packet):
     ''' Allows stacked packets. Tries to chop layers by layer.length
     '''
@@ -180,7 +180,7 @@ class StackedLenPacket(Packet):
             except AttributeError, ae:
                 pass
             self.add_payload(p)
-            s = s[s_len:]  
+            s = s[s_len:]
 
 class EnumStruct(object):
     def __init__(self, entries):
@@ -215,7 +215,7 @@ TLSExtensionType = EnumStruct(TLS_EXTENSION_TYPES)
 TLS_ALERT_LEVELS = {
     0x01: "warning",
     0x02: "fatal",
-    0xff: "unknown", 
+    0xff: "unknown",
     }
 TLSAlertLevel = EnumStruct(TLS_ALERT_LEVELS)
 
@@ -346,13 +346,13 @@ class TLSServerName(PacketNoPayload):
                   XFieldLenField("length", None, length_of="data", fmt="H"),
                   StrLenField("data", "", length_from=lambda x:x.length),
                   ]
-    
+
 class TLSExtServerNameIndication(PacketNoPayload):
     name = "TLS Extension Servername Indication"
     fields_desc = [XFieldLenField("length", None, length_of="server_names", fmt="H"),
                    PacketListField("server_names", None, TLSServerName, length_from=lambda x:x.length),
                   ]
-    
+
 #https://tools.ietf.org/html/rfc7301
 class TLSALPNProtocol(PacketNoPayload):
     name = "TLS ALPN Protocol"
@@ -360,7 +360,7 @@ class TLSALPNProtocol(PacketNoPayload):
                   XFieldLenField("length", None, length_of="data", fmt="B"),
                   StrLenField("data", "", length_from=lambda x:x.length),
                   ]
-    
+
 class TLSExtALPN(PacketNoPayload):
     name = "TLS Extension Application-Layer Protocol Negotiation"
     fields_desc = [XFieldLenField("length", None, length_of="protocol_name_list", fmt="H"),
@@ -385,14 +385,14 @@ class TLSURLAndOptionalHash(PacketNoPayload):
                   ByteEnumField("hash_present", TLSTypeBoolean.FALSE, TLS_TYPE_BOOLEAN),
                   StrLenField("sha1hash", "", length_from=lambda x:20 if x.hash_present else 0),  # opaque SHA1Hash[20];
                   ]
-    
+
 class TLSExtCertificateURL(PacketNoPayload):
     name = "TLS Extension Certificate URL"
     fields_desc = [ByteEnumField("type", TLSCertChainType.INDIVIDUAL_CERTS, TLS_CERT_CHAIN_TYPE),
                    XFieldLenField("length", None, length_of="certificate_urls", fmt="H"),
                    PacketListField("certificate_urls", None, TLSURLAndOptionalHash, length_from=lambda x:x.length)
                    ]
-    
+
 class TLSExtECPointsFormat(PacketNoPayload):
     name = "TLS Extension EC Points Format"
     fields_desc = [
@@ -406,20 +406,20 @@ class TLSExtEllipticCurves(PacketNoPayload):
                    XFieldLenField("length", None, length_of="elliptic_curves", fmt="H"),
                    ReprFieldListField("elliptic_curves", None, ShortEnumField("elliptic_curve", None, TLS_ELLIPTIC_CURVES), length_from=lambda x:x.length),
                   ]
-    
+
 class TLSSignatureHashAlgorithm(PacketNoPayload):
     name = "TLS Signature Hash Algorithm Pair"
     fields_desc = [
                    ByteEnumField("hash_alg", None, TLS_HASH_ALGORITHMS),
                    ByteEnumField("sig_alg", None, TLS_SIGNATURE_ALGORITHMS),
-                  ]  
-    
+                  ]
+
 class TLSExtSignatureAndHashAlgorithm(PacketNoPayload):
     name = "TLS Extension Signature And Hash Algorithm"
     fields_desc = [
                    XFieldLenField("length", None, length_of="algorithms", fmt="H"),
                    PacketListField("algs", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length),
-                  ]  
+                  ]
 
 class TLSExtHeartbeat(PacketNoPayload):
     name = "TLS Extension HeartBeat"
@@ -427,12 +427,12 @@ class TLSExtHeartbeat(PacketNoPayload):
 
 class TLSExtSessionTicketTLS(PacketNoPayload):
     name = "TLS Extension SessionTicket TLS"
-    fields_desc = [StrLenField("data", '', length_from=lambda x:x.underlayer.length),] 
-    
+    fields_desc = [StrLenField("data", '', length_from=lambda x:x.underlayer.length),]
+
 class TLSExtRenegotiationInfo(PacketNoPayload):
     name = "TLS Extension Renegotiation Info"
     fields_desc = [XFieldLenField("length", None, length_of="data", fmt="B"),
-                   StrLenField("data", '', length_from=lambda x:x.length),] 
+                   StrLenField("data", '', length_from=lambda x:x.length),]
 
 class TLSHelloRequest(Packet):
     name = "TLS Hello Request"
@@ -445,16 +445,16 @@ class TLSClientHello(PacketNoPayload):
                    StrFixedLenField("random_bytes", os.urandom(28), 28),
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
                    StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
-    
+
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
                    ReprFieldListField("cipher_suites", [TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA], XShortEnumField("cipher", None, TLS_CIPHER_SUITES), length_from=lambda x:x.cipher_suites_length),
-                   
+
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    ReprFieldListField("compression_methods", [TLSCompressionMethod.NULL], ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
-                   
+
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
-                   ] 
+                   ]
 
 
 class TLSServerHello(PacketNoPayload):
@@ -477,7 +477,7 @@ class TLSSessionTicket(PacketNoPayload):
     fields_desc = [IntField("lifetime", 7200),
                    XFieldLenField("ticket_length", None, length_of="ticket", fmt="!H"),
                    StrLenField("ticket", '', length_from=lambda x:x.ticket_length),
-                   ]     
+                   ]
 
 class TLSHeartBeat(PacketNoPayload):
     name = "TLS HeartBeat"
@@ -766,20 +766,20 @@ class DTLSClientHello(PacketNoPayload):
                    StrFixedLenField("random_bytes", os.urandom(28), 28),
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
                    StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
-                   
+
                    XFieldLenField("cookie_length", None, length_of="cookie", fmt="B"),
                    StrLenField("cookie", '', length_from=lambda x:x.cookie_length),
-                   
+
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
                    ReprFieldListField("cipher_suites", None, XShortEnumField("cipher", None, TLS_CIPHER_SUITES), length_from=lambda x:x.cipher_suites_length),
-                   
+
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    ReprFieldListField("compression_methods", None, ByteEnumField("compression", None, TLS_COMPRESSION_METHODS), length_from=lambda x:x.compression_methods_length),
-                   
+
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"), lambda pkt,s,val: True if val or pkt.extensions or (s and struct.unpack("!H",s[:2])[0]==len(s)-2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length),
-                   ]   
-    
+                   ]
+
 SSLv2_CERTIFICATE_TYPES = { 0x01: 'x509' }
 SSLv2CertificateType = EnumStruct(SSLv2_CERTIFICATE_TYPES)
 
@@ -789,8 +789,8 @@ class DTLSHelloVerify(PacketNoPayload):
                    XFieldLenField("cookie_length", None, length_of="cookie", fmt="B"),
                    StrLenField("cookie", '', length_from=lambda x:x.cookie_length),
                    ]
-    
-    
+
+
 SSLv2_MESSAGE_TYPES = {
     0x01:'client_hello',
     0x04: 'server_hello',
@@ -824,7 +824,7 @@ class SSLv2ClientHello(Packet):
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="H"),
                    XFieldLenField("challenge_length", None, length_of="challenge", fmt="H"),
-                   
+
                    ReprFieldListField("cipher_suites", None, XBEnumField("cipher", None, SSLv2_CIPHER_SUITES, fmt="!I", numbytes=3), length_from=lambda x:x.cipher_suites_length),
                    StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
                    StrLenField("challenge", '', length_from=lambda x:x.challenge_length),
@@ -840,7 +840,7 @@ class SSLv2ServerHello(Packet):
                    XFieldLenField("certificates_length", None, length_of="certificates", fmt="H"),
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
                    XFieldLenField("connection_id_length", None, length_of="connection_id", fmt="H"),
-                   
+
                    StrLenField("certificates", '', length_from=lambda x:x.certificates_length),
                    ReprFieldListField("cipher_suites", None, XBEnumField("cipher", None, SSLv2_CIPHER_SUITES, fmt="!I", numbytes=3), length_from=lambda x:x.cipher_suites_length),
                    StrLenField("connection_id", '', length_from=lambda x:x.connection_id_length),
@@ -854,7 +854,7 @@ class SSLv2ClientMasterKey(Packet):
                    XFieldLenField("clear_key_length", None, length_of="clear_key", fmt="H"),
                    XFieldLenField("encrypted_key_length", None, length_of="encrypted_key", fmt="H"),
                    XFieldLenField("key_argument_length", None, length_of="key_argument", fmt="H"),
-                   
+
                    StrLenField("clear_key", '', length_from=lambda x:x.clear_key_length),
                    StrLenField("encrypted_key", '', length_from=lambda x:x.clear_key_length),
                    StrLenField("key_argument", '', length_from=lambda x:x.key_argument_length),
@@ -1156,7 +1156,7 @@ bind_layers(TLSExtension, TLSExtSignatureAndHashAlgorithm, {'type': TLSExtension
 bind_layers(DTLSRecord, DTLSHandshake, {'content_type': TLSContentType.HANDSHAKE})
 bind_layers(DTLSHandshake, DTLSClientHello, {'type': TLSHandshakeType.CLIENT_HELLO})
 
-# SSLv2 
+# SSLv2
 bind_layers(SSLv2Record, SSLv2ServerHello, {'content_type': SSLv2MessageType.SERVER_HELLO})
 bind_layers(SSLv2Record, SSLv2ClientHello, {'content_type': SSLv2MessageType.CLIENT_HELLO})
 bind_layers(SSLv2Record, SSLv2ClientMasterKey, {'content_type': SSLv2MessageType.CLIENT_MASTER_KEY})
