@@ -4,6 +4,8 @@
 
 import os
 import sys
+import logging
+logger = logging.getLogger(__name__)
 
 from scapy.all import conf, log_interactive
 
@@ -20,8 +22,10 @@ except ImportError:
 
 
 if __name__=='__main__':
+    #conf.prog.dot = '"path_to_graphviz/dot"'
+    logging.basicConfig(level=logging.DEBUG)
     log_interactive.setLevel(1)
- 
+    
     if len(sys.argv)>2:
         target = (sys.argv[1],int(sys.argv[2]))
     else:
@@ -30,7 +34,7 @@ if __name__=='__main__':
     server_pem = sys.argv[3] if len(sys.argv)>3 else "../tests/files/openssl_1_0_1_f_server.pem"
  
     TLSServerAutomata.graph()
-    print "using certificate/keyfile: %s"%server_pem
+    logger.info("using certificate/keyfile: %s"%server_pem)
     with open(server_pem,'r') as f:
         pemcert = f.read()
     auto_srv = TLSServerAutomata(debug=9,
@@ -42,7 +46,11 @@ if __name__=='__main__':
     def jump_to_server_hello_done(*args, **kwargs):
         raw_input(" **** -------------> override state, directly jump to SERVER_CERTIFICATES_SENT aka. SERVER_HELLO_DONE")
         raise auto_srv.SERVER_CERTIFICATES_SENT()
-    
+
+    logger.debug("registered states: %s"%auto_srv.states)   # all registered states
+    logger.debug("registered actions: %s"%auto_srv.actions) # all registered actions
+    logger.debug("pkt-to-state-mapping: %s"%auto_srv.STATES)# mapped pkts to states
+    logger.debug("pkt-to-action-mapping: %s"%auto_srv.ACTIONS)# mapped pkts to actions
     # uncomment next line to hook into the 'send_server_hello' condition.  
-    # auto_srv.register_callback('send_server_hello', jump_to_server_hello_done)
+    # auto_srv.register_callback(auto_srv.ACTIONS[TLSServerHello], jump_to_server_hello_done)
     print auto_srv.run()
