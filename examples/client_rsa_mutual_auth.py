@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import with_statement
-from __future__ import print_function
+from __future__ import print (_function)
 import os
 import socket
 import sys
@@ -63,9 +63,9 @@ def do_tls_mutual_auth(host):
 
     tls_socket.sendall(to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"), tls_socket.tls_ctx))
     resp = tls_socket.recvall()
-    print("Got response from server")
+    print (("Got response from server"))
     resp.show()
-    print(tls_socket.tls_ctx)
+    print ((tls_socket.tls_ctx))
 
 
 if __name__ == "__main__":

@@ -46,6 +46,6 @@ r = c_socket.recvall()
 c_socket.sendall(to_raw(TLSPlaintext(data="It works!\n"), c_socket.tls_ctx))
 c_socket.sendall(to_raw(TLSAlert(), c_socket.tls_ctx))
 
-print(c_socket.tls_ctx)
+print ((c_socket.tls_ctx))
 
 

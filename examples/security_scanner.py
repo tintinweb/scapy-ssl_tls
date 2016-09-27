@@ -41,8 +41,8 @@ class TCPConnection(object):
             try:
                 self._s.connect(target)
                 break
-            except socket.error, se:
-                print "- connection retry %s: %s"%(t,repr(target))
+            except socket.error as  se:
+                print ( "- connection retry %s: %s"%(t,repr(target)))
                 last_exception = se
         if not self._s:
             raise se
@@ -292,7 +292,7 @@ class TLSScanner(object):
 
     def scan(self, target, starttls=None):
         for scan_method in (f for f in dir(self) if f.startswith("_scan_")):
-            print "=> %s"%(scan_method.replace("_scan_",""))
+            print ( "=> %s"%(scan_method.replace("_scan_","")))
             getattr(self, scan_method)(target, starttls=starttls)
 
     def sniff(self, target=None, iface=None):
@@ -315,8 +315,8 @@ class TLSScanner(object):
                         strconn['sport'] = pkt[TCP].sport
                         strconn['dport'] = pkt[TCP].dport
 
-                    print "Connection: %(src)s:%(sport)d <==> %(dst)s:%(dport)d"%strconn
-                    print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
+                    print ( "Connection: %(src)s:%(sport)d <==> %(dst)s:%(dport)d"%strconn)
+                    print ( "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events))
             return
         if iface:
             conf.iface=iface
@@ -353,8 +353,8 @@ class TLSScanner(object):
             else:
                 self.capabilities.events.append(("Poodle2 - vulnerable",r))
 
-        except (socket.error, NotImplementedError), se:
-            print repr(se)
+        except (socket.error, NotImplementedError) as  se:
+            print ( repr(se))
             return None
 
     def _scan_compressions(self, target, starttls=None, compression_list=TLS_COMPRESSION_METHODS.keys()):
@@ -367,8 +367,8 @@ class TLSScanner(object):
                 t.sendall(pkt)
                 resp = t.recvall(timeout=0.5)
                 self.capabilities.insert(resp, client=False)
-            except socket.error, se:
-                print repr(se)
+            except socket.error as  se:
+                print ( repr(se))
 
     def _check_cipher(self, target,  cipher_id, starttls=None,version=TLSVersion.TLS_1_0):
         pkt = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, cipher_suites=[cipher_id])
@@ -376,8 +376,8 @@ class TLSScanner(object):
             t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
-        except socket.error, se:
-            print repr(se)
+        except socket.error as  se:
+            print ( repr(se))
             return None
         return resp
 
@@ -388,7 +388,7 @@ class TLSScanner(object):
                 self.capabilities.insert(future.result(), client=False)
 
 
-    def _scan_supported_protocol_versions(self, target, starttls=None, versionlist=((k,v) for k,v in TLS_VERSIONS.iteritems() if v.startswith("TLS_") or v.startswith("SSL_"))):
+    def _scan_supported_protocol_versions(self, target, starttls=None, versionlist=((k,v) for k,v in TLS_VERSIONS.items() if v.startswith("TLS_") or v.startswith("SSL_"))):
         for magic, name in versionlist:
             pkt = TLSRecord(version=magic)/TLSHandshake()/TLSClientHello(version=magic,
                                                                          cipher_suites=range(0xfe)[::-1],
@@ -399,8 +399,8 @@ class TLSScanner(object):
                 t.sendall(pkt)
                 resp = t.recvall(timeout=0.5)
                 self.capabilities.insert(resp, client=False)
-            except socket.error, se:
-                print repr(se)
+            except socket.error as  se:
+                print ( repr(se))
 
     def _check_cipher_sslv2(self, target,  cipher_id, starttls=None, version=TLSVersion.SSL_2_0):
         pkt = SSLv2Record()/SSLv2ClientHello(cipher_suites=[cipher_id],challenge='A'*16,session_id='')
@@ -408,8 +408,8 @@ class TLSScanner(object):
             t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
-        except socket.error, se:
-            print repr(se)
+        except socket.error as  se:
+            print ( repr(se))
             return None
         return resp
 
@@ -429,8 +429,8 @@ class TLSScanner(object):
             self.capabilities.insert(resp, client=False)
             if not (resp.haslayer(TLSAlert) and resp[TLSAlert].description==TLSAlertDescription.INAPPROPRIATE_FALLBACK):
                 self.capabilities.events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",resp))
-        except socket.error, se:
-            print repr(se)
+        except socket.error as  se:
+            print ( repr(se))
 
     def _scan_heartbleed(self, target, starttls=None, version=TLSVersion.TLS_1_0, payload_length=20):
         try:
@@ -443,8 +443,8 @@ class TLSScanner(object):
             resp = t.recvall(timeout=0.5)
             if resp.haslayer(TLSHeartBeat) and resp[TLSHeartBeat].length>8:
                 self.capabilities.events.append(("HEARTBLEED - vulnerable",resp))
-        except socket.error, se:
-            print repr(se)
+        except socket.error as  se:
+            print ( repr(se))
             return None
         return resp
 
@@ -457,21 +457,21 @@ class TLSScanner(object):
             resp = t.recvall(timeout=0.5)
             if resp.haslayer(TLSExtRenegotiationInfo):
                 self.capabilities.events.append(("TLS EXTENSION SECURE RENEGOTIATION - not supported",resp))
-        except socket.error, se:
-            print repr(se)
+        except socket.error as  se:
+            print ( repr(se))
             return None
         return resp
 
 
 def main():
-    print __doc__
+    print ( __doc__)
     if len(sys.argv)<=3:
-        print "USAGE: <mode> <host> <port> [starttls] [num_worker] [interface]"
-        print "       mode     ... client | sniff"
-        print "       starttls ... starttls keyword e.g. 'starttls\\n' or 'ssl\\n'"
-        print "available interfaces"
+        print ( "USAGE: <mode> <host> <port> [starttls] [num_worker] [interface]")
+        print ( "       mode     ... client | sniff")
+        print ( "       starttls ... starttls keyword e.g. 'starttls\\n' or 'ssl\\n'")
+        print ( "available interfaces")
         for i in get_if_list():
-            print "   * %s"%i
+            print ( "   * %s"%i)
         exit(1)
     mode = sys.argv[1]
     starttls = sys.argv[4] if len(sys.argv)>4 else None
@@ -482,29 +482,29 @@ def main():
 
     scanner = TLSScanner(workers=num_workers)
     if mode=="sniff":
-        print "[*] [passive] Scanning in 'sniff' mode for %s on %s..."%(repr((host,port)),iface)
+        print ( "[*] [passive] Scanning in 'sniff' mode for %s on %s..."%(repr((host,port)),iface))
         scanner.sniff((host,port),iface=iface)
     else:
-        print "[*] [active] Scanning with %s parallel threads..."%num_workers
+        print ( "[*] [active] Scanning with %s parallel threads..."%num_workers)
         t_start = time.time()
         scanner.scan((host,port), starttls=starttls)
-        print "\n"
-        print "[*] Capabilities (Debug)"
-        print scanner.capabilities
-        print "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES)+len(SSLv2_CIPHER_SUITES) )
-        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,"SSLv2_%s"%SSLv2_CIPHER_SUITES.get(c,c)),c) for c in  scanner.capabilities.info.server.ciphers))
-        print ""
-        print "[*] supported protocol versions: %s/%s"%(len(scanner.capabilities.info.server.versions),len(TLS_VERSIONS))
-        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_VERSIONS.get(c,c),c) for c in  scanner.capabilities.info.server.versions))
-        print ""
-        print "[*] supported compressions methods: %s/%s"%(len(scanner.capabilities.info.server.compressions),len(TLS_COMPRESSION_METHODS))
-        print " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_COMPRESSION_METHODS.get(c,c),c) for c in  scanner.capabilities.info.server.compressions))
-        print ""
+        print ( "\n")
+        print ( "[*] Capabilities (Debug)")
+        print ( scanner.capabilities)
+        print ( "[*] supported ciphers: %s/%s"%(len(scanner.capabilities.info.server.ciphers),len(TLS_CIPHER_SUITES)+len(SSLv2_CIPHER_SUITES) ))
+        print ( " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_CIPHER_SUITES.get(c,"SSLv2_%s"%SSLv2_CIPHER_SUITES.get(c,c)),c) for c in  scanner.capabilities.info.server.ciphers)))
+        print ( "")
+        print ( "[*] supported protocol versions: %s/%s"%(len(scanner.capabilities.info.server.versions),len(TLS_VERSIONS)))
+        print ( " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_VERSIONS.get(c,c),c) for c in  scanner.capabilities.info.server.versions)))
+        print ( "")
+        print ( "[*] supported compressions methods: %s/%s"%(len(scanner.capabilities.info.server.compressions),len(TLS_COMPRESSION_METHODS)))
+        print ( " * " + "\n * ".join(("%s (0x%0.4x)"%(TLS_COMPRESSION_METHODS.get(c,c),c) for c in  scanner.capabilities.info.server.compressions)))
+        print ( "")
         events = scanner.capabilities.get_events()
-        print "[*] Events: %s"%len(events)
-        print "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events)
+        print ( "[*] Events: %s"%len(events))
+        print ( "* EVENT - " + "\n* EVENT - ".join(e[0] for e in events))
         t_diff = time.time()-t_start
-        print ""
-        print "Scan took: %ss"%t_diff
+        print ( "")
+        print ( "Scan took: %ss"%t_diff)
 if __name__=="__main__":
     main()

@@ -10,8 +10,8 @@ import struct
 import zlib
 import re
 import warnings
-import pkcs7
-import ssl_tls as tls
+from scapy.layers import pkcs7
+from scapy.layers import ssl_tls as tls
 import tinyec.ec as ec
 import tinyec.registry as ec_reg
 
@@ -509,7 +509,7 @@ class TLSSessionCtx(object):
                     else:
                         self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(pemo[key_pk].get("full"))
                     return
-                except ValueError, ve:
+                except ValueError as  ve:
                     pass
         raise ValueError("Unable to load PRIVATE key from pem file: %s"%priv_key_file)
 

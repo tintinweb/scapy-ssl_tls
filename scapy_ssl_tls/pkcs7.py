@@ -3,7 +3,7 @@
 # Author : janglin <http://japrogbits.blogspot.co.at>
 # http://japrogbits.blogspot.co.at/2011/02/using-encrypted-data-between-python-and.html
 import binascii
-import StringIO
+from io import StringIO
 
 class PKCS7Encoder(object):
     '''

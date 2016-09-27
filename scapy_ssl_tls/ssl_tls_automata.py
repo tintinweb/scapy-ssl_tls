@@ -169,7 +169,7 @@ class TLSClientAutomata(Automaton):
     def SERVER_APPDATA_RECV(self, p):
         raise self.END(p)
 
-    # GENERIC ERROR - print received data if available
+    # GENERIC ERROR - print ( received data if available)
     @ATMT.state(error=1)
     def ERROR(self, p=None):
         if p:

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import with_statement
-from __future__ import print_function
+from __future__ import print (_function)
 import os
 import socket
 import sys
@@ -46,18 +46,18 @@ def tls_client(ip, priv_key=None):
     try:
         sock.connect(ip)
         sock = TLSSocket(sock, client=True)
-        print("Connected to server: %s" % (ip,))
+        print (("Connected to server: %s" % (ip,)))
     except socket.timeout as te:
-        print("Failed to open connection to server: %s" % (ip,), file=sys.stderr)
+        print (("Failed to open connection to server: %s" % (ip,), file=sys.stderr))
     else:
         tls_hello(sock)
         tls_client_key_exchange(sock)
-        print("Finished handshake. Sending application data (GET request)")
+        print (("Finished handshake. Sending application data (GET request)"))
         sock.sendall(to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"), sock.tls_ctx))
         resp = sock.recvall()
-        print("Got response from server")
+        print (("Got response from server"))
         resp.show()
-        print(sock.tls_ctx)
+        print ((sock.tls_ctx))
     finally:
         sock.close()
 

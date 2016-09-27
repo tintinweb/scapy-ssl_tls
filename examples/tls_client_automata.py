@@ -39,4 +39,4 @@ if __name__=='__main__':
                                             TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA],
                              request="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n")
 
-    print auto_cli.run()
+    print ( auto_cli.run())

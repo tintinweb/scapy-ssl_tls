@@ -28,7 +28,7 @@ def get_site_packages():
     try:
         site_packages += _site.getsitepackages()
     except AttributeError:
-        print("WARNING: Error trying to call site.getsitepackages(). This is probably virtualenv issue#355")
+        print (("WARNING: Error trying to call site.getsitepackages(). This is probably virtualenv issue#355"))
     return list(set(site_packages))
 
 
@@ -38,7 +38,7 @@ def get_scapy_locations(sites):
         try:
             dirs = os.listdir(site)
         except OSError as oe:
-            print("Non exisiting site-package reported: %s. Skipping" %
+            print ("Non exisiting site-package reported: %s. Skipping" %
                   site, file=sys.stderr)
         else:
             # Look for scapy folder in site-packages
@@ -52,7 +52,7 @@ def get_scapy_locations(sites):
                             for dir_ in dirs:
                                 if dir_ == "layers":
                                     scapy_locations.append(root)
-    print("INFO: Installing scapy-ssl_tls layers to: %s"%repr(scapy_locations))
+    print (("INFO: Installing scapy-ssl_tls layers to: %s"%repr(scapy_locations)))
     return scapy_locations
 
 
@@ -90,7 +90,7 @@ def _post_install(dir_):
         processing_layer_list = False
         for line in fileinput.input(scapy_config, inplace=1, backup=".bak"):
             if line.strip().startswith("load_layers"):
-                print(line, end="")
+                print (line)
                 processing_layer_list = True
             else:
                 if processing_layer_list and line.strip().endswith("]"):
@@ -98,14 +98,14 @@ def _post_install(dir_):
                     # ] characters
                     last_quote = line.rfind("\"")
                     if last_quote > 0 and "ssl_tls" not in line:
-                        print("%s, \"ssl_tls\" ]" % line[
+                        print ("%s, \"ssl_tls\" ]" % line[
                               :last_quote + 1], end="")
                         processing_layer_list = False
                     else:
-                        print(line)
+                        print (line)
                         processing_layer_list = False
                 else:
-                    print(line, end="")
+                    print (line, end="")
 
 def os_install_requires():
     dependencies = ["scapy", "pycrypto", "tinyec"]

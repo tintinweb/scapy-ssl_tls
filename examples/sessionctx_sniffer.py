@@ -138,43 +138,43 @@ class Sniffer(object):
 
         session = ssl_tls_crypto.TLSSessionCtx()
         if keyfile:
-            print "* load servers privatekey for ciphertext decryption (RSA key only): %s"%keyfile
+            print ( "* load servers privatekey for ciphertext decryption (RSA key only): %s"%keyfile)
             session.rsa_load_keys_from_file(keyfile)
 
-            session.printed=False
+            session.print (ed=False)
             self.ssl_session_map[target]=session
         else:
-            print "!! missing private key"
+            print ( "!! missing private key")
 
     def process_ssl(self, p):
             if not p.haslayer(SSL):
                 return
             session = self.ssl_session_map.get((p[IP].dst,p[TCP].dport)) or self.ssl_session_map.get((p[IP].src,p[TCP].sport))
             if not session:
-                print "|   %-16s:%-5d => %-16s:%-5d | %s"%(p[IP].src,p[TCP].sport,p[IP].dst,p[TCP].dport,repr(p[SSL]))
+                print ( "|   %-16s:%-5d => %-16s:%-5d | %s"%(p[IP].src,p[TCP].sport,p[IP].dst,p[TCP].dport,repr(p[SSL])))
                 return
             p_ssl = p[SSL]
             source = (p[IP].src,p[TCP].sport)
 
             if p_ssl.haslayer(SSLv2Record):
-                print "SSLv2 not supported - skipping..",repr(p)
+                print ( "SSLv2 not supported - skipping..",repr(p))
                 return
 
             if p_ssl.haslayer(TLSServerHello):
-                    session.printed=False
+                    session.print (ed=False)
                     session.crypto.session.master_secret=None
                     session.match_server = source
-                    #reset the session and print it next time
+                    #reset the session and print ( it next time)
             if p_ssl.haslayer(TLSClientHello):
                 session.match_client = source
 
             session.insert(p_ssl)
 
-            if session.crypto.session.master_secret and session.printed==False:
-                print repr(session)
-                session.printed = True
+            if session.crypto.session.master_secret and session.print (ed==False:)
+                print ( repr(session))
+                session.print (ed = True)
 
-            print "|   %-16s:%-5d => %-16s:%-5d | %s"%(p[IP].src,p[TCP].sport,p[IP].dst,p[TCP].dport,repr(p_ssl))
+            print ( "|   %-16s:%-5d => %-16s:%-5d | %s"%(p[IP].src,p[TCP].sport,p[IP].dst,p[TCP].dport,repr(p_ssl)))
             if p.haslayer(TLSCiphertext) or (p.haslayer(TLSAlert) and p.haslayer(Raw)):
                 if source == session.match_client:
                     session.set_mode(server=True)
@@ -184,9 +184,9 @@ class Sniffer(object):
                     Exception("src packet mismatch: %s"%repr(source))
                 try:
                     p = SSL(str(p_ssl),ctx=session)
-                    print "|-> %-48s | %s"%("decrypted record",repr(p))
-                except ValueError, ve:
-                    print "Exception:", repr(ve)
+                    print ( "|-> %-48s | %s"%("decrypted record",repr(p)))
+                except ValueError as  ve:
+                    print ( "Exception:", repr(ve))
 
     def sniff(self, target, keyfile=None, iface=None):
         self._tcp_reassembler = L4TcpReassembler()
@@ -208,21 +208,21 @@ class Sniffer(object):
 def main(target,pcap=None, iface=None, keyfile=None):
     sniffer = Sniffer()
     if pcap:
-        print "* pcap ready!"
+        print ( "* pcap ready!")
         # pcap mainloop
         sniffer.rdpcap(target=target, keyfile=keyfile, pcap=pcap)
     else:
-        print "* sniffer ready!"
+        print ( "* sniffer ready!")
         # sniffer mainloop
         sniffer.sniff(target=target, keyfile=keyfile, iface=iface)
 
 if __name__=="__main__":
     if len(sys.argv)<=3:
-        print "USAGE: <host> <port> <inteface or pcap>"
-        print "\navailable interfaces:"
+        print ( "USAGE: <host> <port> <inteface or pcap>")
+        print ( "\navailable interfaces:")
         for i in get_if_list():
-            print "   * %s"%i
-        print "* default"
+            print ( "   * %s"%i)
+        print ( "* default")
         exit(1)
 
     pcap=None

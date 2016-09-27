@@ -11,7 +11,7 @@ from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
 
-import ssl_tls_registry as registry
+from scapy.layers import ssl_tls_registry as registry
 
 class BLenField(LenField):
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
@@ -177,14 +177,14 @@ class StackedLenPacket(Packet):
                 if p.length <= s_len:
                     p = cls(s[:cls_header_len+p.length], _internal=1, _underlayer=self)
                     s_len = cls_header_len+p.length
-            except AttributeError, ae:
+            except AttributeError as  ae:
                 pass
             self.add_payload(p)
             s = s[s_len:]
 
 class EnumStruct(object):
     def __init__(self, entries):
-        entries = dict((v.replace(' ','_').upper(),k) for k,v in entries.iteritems())
+        entries = dict((v.replace(' ','_').upper(),k) for k,v in entries.items())
         self.__dict__.update(entries)
 
 TLS_VERSIONS = {
@@ -1044,7 +1044,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
     comp_method = tls_ctx.compression.method
 
     content_type, data = None, None
-    for tls_proto, handler in cleartext_handler.iteritems():
+    for tls_proto, handler in cleartext_handler.items():
         if pkt.haslayer(tls_proto):
             content_type, data = handler(pkt[tls_proto], tls_ctx)
     if content_type is None and data is None:

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import with_statement
-from __future__ import print_function
+from __future__ import print (_function)
 import os
 import sys
 
@@ -79,19 +79,19 @@ if __name__ == "__main__":
     request = "GET / HTTP/1.1\r\nHOST: %s\r\n\r\n" % server[0]
     block_aligned_request = align_data_on_block_bounday(request, cipher_suite)
 
-    print("Testing all padding bytes")
+    print (("Testing all padding bytes"))
     # Perform poodle 2 check
     for _ in range(0, TLSSecurityParameters.crypto_params[cipher_suite]["cipher"]["type"].block_size - 1):
-        print("Modifying padding byte %d" % index)
-        print(test_all_field_bytes(server, cipher_suite, block_aligned_request, modify_padding))
+        print (("Modifying padding byte %d" % index))
+        print ((test_all_field_bytes(server, cipher_suite, block_aligned_request, modify_padding)))
         index += 1
 
-    print("Testing all mac bytes")
+    print (("Testing all mac bytes"))
     index = 0
     # Perform mac check
     for _ in range(0, TLSSecurityParameters.crypto_params[cipher_suite]["hash"]["type"].digest_size - 1):
-        print("Modifying mac byte %d" % index)
-        print(test_all_field_bytes(server, cipher_suite, block_aligned_request, modify_mac))
+        print (("Modifying mac byte %d" % index))
+        print ((test_all_field_bytes(server, cipher_suite, block_aligned_request, modify_mac)))
         index += 1
 
-    print("Test complete")
+    print (("Test complete"))
