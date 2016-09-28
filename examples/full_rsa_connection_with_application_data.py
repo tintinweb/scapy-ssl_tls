@@ -41,13 +41,13 @@ def tls_client_key_exchange(sock):
     server_finished.show()
 
 
-def tls_client(ip, priv_key=None):
+def tls_client(ip):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.connect(ip)
         sock = TLSSocket(sock, client=True)
         print("Connected to server: %s" % (ip,))
-    except socket.timeout as te:
+    except socket.timeout:
         print("Failed to open connection to server: %s" % (ip,), file=sys.stderr)
     else:
         tls_hello(sock)

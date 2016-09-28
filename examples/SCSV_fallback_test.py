@@ -91,6 +91,6 @@ if __name__=="__main__":
     for t,r in RESULTS:
         print "%s  ... %s"%(t,r)
     print "overall:"
-    print "    TLS_FALLBACK_SCSV_SUPPORTED   ...  %s"%repr((TLS_FALLBACK_SCSV_SUPPORTED))
-    print "    SSLv3_ENABLED                 ...  %s"%repr((SSLV3_ENABLED))
+    print "    TLS_FALLBACK_SCSV_SUPPORTED   ...  %s"%repr(TLS_FALLBACK_SCSV_SUPPORTED)
+    print "    SSLv3_ENABLED                 ...  %s"%repr(SSLV3_ENABLED)
 

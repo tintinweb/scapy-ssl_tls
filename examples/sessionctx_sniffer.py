@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
-'''
+"""
 
 server:
     #> openssl s_server -accept 443 -WWW -debug -cipher AES128-SHA
 client:
     #> openssl s_client -connect 192.168.220.131:443 -tls1
 
-'''
+"""
 
 import sys, os
 try:
@@ -30,10 +30,10 @@ except ImportError:
 import socket
 
 class L4TcpReassembler(object):
-    ''' WARNING - this is not a valid TCP Stream Reassembler.
+    """ WARNING - this is not a valid TCP Stream Reassembler.
                   It is not L5+ aware and only operates at L4
                   Only works for the assumption that a consecutive stream will be split in segments of the max segment size (mss). It will concat segments == mss until a segment < mss is found. it will then spit out a reassembled (fake) TCP packet with the full payload.
-    '''
+    """
     class TCPFlags:
         FIN = 0x01
         SYN = 0x02
@@ -64,7 +64,7 @@ class L4TcpReassembler(object):
 
         @staticmethod
         def stream_id(pkt):
-            return (pkt[IP].src, pkt[TCP].sport, pkt[IP].dst, pkt[TCP].dport)
+            return pkt[IP].src, pkt[TCP].sport, pkt[IP].dst, pkt[TCP].dport
 
         def process(self, pkt):
             self.last_seq = pkt[TCP].seq
@@ -75,9 +75,9 @@ class L4TcpReassembler(object):
                 if len(self.pktlist)>1:
                     # create fake packet
                     p_reassembled = pkt
-                    del(p_reassembled[IP].len)
-                    del(p_reassembled[IP].chksum)
-                    del(p_reassembled[TCP].chksum)
+                    del p_reassembled[IP].len
+                    del p_reassembled[IP].chksum
+                    del p_reassembled[TCP].chksum
                     #p_reassembled.name = "TCPReassembled"
                     p_reassembled[TCP].payload = ''.join(str(p[TCP].payload) for p in self.pktlist) + str(p_reassembled[TCP].payload)
                     p_reassembled[TCP] = TCP(str(p_reassembled[TCP]))       # force re-dissect
@@ -106,8 +106,8 @@ class L4TcpReassembler(object):
         return stream_obj
 
     def reassemble(self, pktlist):
-        '''Defragment and Reassemble Streams
-        '''
+        """Defragment and Reassemble Streams
+        """
         # defragment L3
         for pkt in defragment(pktlist):
             if not pkt.haslayer(TCP):
@@ -124,11 +124,11 @@ class L4TcpReassembler(object):
             yield p
 
 class Sniffer(object):
-    ''' Sniffer()
+    """ Sniffer()
         .rdpcap(pcap)
         or
         .sniff()
-    '''
+    """
     def __init__(self):
         self.ssl_session_map = {}
 
@@ -192,7 +192,7 @@ class Sniffer(object):
         self._tcp_reassembler = L4TcpReassembler()
         def reassemble(p):
             for rp in (pkt for pkt in self._tcp_reassembler.reassemble([p]) if pkt.haslayer(SSL)):
-                self.process_ssl(p)
+                self.process_ssl(rp)
         if iface:
             conf.iface=iface
         self._create_context(target=target,keyfile=keyfile)

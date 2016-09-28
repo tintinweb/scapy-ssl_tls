@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
-'''
+"""
 An example implementation of a passive TLS security scanner with custom starttls support:
 
     TLSScanner() generates TLS probe traffic  (optional)
     TLSInfo() passively evaluates the traffic and generates events/warning
 
 
-'''
+"""
 import sys, os
 import concurrent.futures
 
@@ -45,7 +45,7 @@ class TCPConnection(object):
                 print "- connection retry %s: %s"%(t,repr(target))
                 last_exception = se
         if not self._s:
-            raise se
+            raise last_exception
         if starttls:
             self.sendall(starttls.replace("\\r","\r").replace("\\n","\n"))
             self.recvall(timeout=2)
@@ -332,7 +332,7 @@ class TLSScanner(object):
                     timeout=3)
 
     def _scan_poodle2(self, target, starttls=None, version=TLSVersion.TLS_1_0):
-        '''taken from poodle2_padding_check'''
+        """taken from poodle2_padding_check"""
         def modify_padding(crypto_container):
             padding = crypto_container.padding
             crypto_container.padding = "\xff%s" % padding[1:]
