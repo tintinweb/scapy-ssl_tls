@@ -347,10 +347,10 @@ class TLSSessionCtx(object):
         return str_ % params
 
     def insert(self, p):
-        '''
+        """
         add packet to context
         - unpack SSL.records and add them to history
-        '''
+        """
         if p.haslayer(tls.SSL):
             ps = p[tls.SSL].records
         else:
@@ -361,9 +361,9 @@ class TLSSessionCtx(object):
             self._process(p)    # fill structs
 
     def _process(self,p):
-        '''
+        """
         fill context
-        '''
+        """
         if p.haslayer(tls.TLSHandshake):
             # requires handshake messages
             if p.haslayer(tls.TLSClientHello):
@@ -509,7 +509,7 @@ class TLSSessionCtx(object):
                     else:
                         self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(pemo[key_pk].get("full"))
                     return
-                except ValueError, ve:
+                except ValueError:
                     pass
         raise ValueError("Unable to load PRIVATE key from pem file: %s"%priv_key_file)
 
@@ -612,10 +612,10 @@ class TLSSessionCtx(object):
                                                                 num_bytes=12)
         return prf_verify_data
 
-    def get_handshake_hash(self, hash):
+    def get_handshake_hash(self, hash_):
         for handshake in self._walk_handshake_msgs():
-            hash.update(str(handshake))
-        return hash
+            hash_.update(str(handshake))
+        return hash_
 
     def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=None):
         if self.crypto.client.rsa.privkey is None:
