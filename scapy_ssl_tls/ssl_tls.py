@@ -15,13 +15,13 @@ import ssl_tls_registry as registry
 
 class BLenField(LenField):
     def __init__(self, name, default, fmt="I", adjust_i2m=lambda pkt, x:x, numbytes=None, length_of=None, count_of=None, adjust_m2i=lambda pkt, x:x):
+        LenField.__init__(self, name, default, fmt)
         self.name = name
         self.adjust_i2m = adjust_i2m
         self.adjust_m2i = adjust_m2i
         self.numbytes = numbytes
         self.length_of = length_of
         self.count_of = count_of
-        LenField.__init__(self, name, default, fmt)
 
         if fmt[0] in "@=<>!":
             self.fmt = fmt
