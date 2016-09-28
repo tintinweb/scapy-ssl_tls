@@ -26,7 +26,7 @@ try:
 except ImportError:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
-    from scapy.layers.ssl_tls import x509_extract_pubkey_from_der
+    from scapy.layers.ssl_tls_crypto import x509_extract_pubkey_from_der
 
 import socket
 from collections import namedtuple
