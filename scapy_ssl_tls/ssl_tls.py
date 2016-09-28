@@ -113,16 +113,16 @@ class XBEnumField(BEnumField):
         return lhex(self.i2h(pkt, x))
 
 class ReprFieldListField(FieldListField):
-    ''' Human Readable FieldListField for Enum type list entries '''
+    """ Human Readable FieldListField for Enum type list entries """
     def i2repr(self, pkt, x):
         return self.field.i2repr(pkt,x)
 
 class StrConditionalField(ConditionalField):
-    '''
+    """
     Base conditional field that is not restricted to pkt checks
     + allows conditional checks on the raw_stream 's'
     + allows conditional checks on the layers build value
-    '''
+    """
     def _evalcond(self, pkt=None, s=None, val=None):
         return self.cond(pkt, s, val)
 
@@ -139,18 +139,18 @@ class StrConditionalField(ConditionalField):
             return s
 
 class PacketNoPayload(Packet):
-    '''
+    """
     This type of packet has no payload/sub-layer (typically used for PacketListFields or leaf layers)
-    '''
+    """
     def extract_padding(self, s):
         return '', s
 
 class PacketLengthFieldPayload(Packet):
-    '''
+    """
     This type of packet provides only up to self.length bytes to the next layer (payload)
     Applicable when last field is .length and the length describes the next-layer length in bytes
     Behaves like Packet.extract_padding if self.length is not available to make this Packet type work with all Packets
-    '''
+    """
     def extract_padding(self, s):
         if not hasattr(self, 'length'):
             return Packet.extract_padding(self, s)
@@ -159,8 +159,8 @@ class PacketLengthFieldPayload(Packet):
         return pay, pad
 
 class StackedLenPacket(Packet):
-    ''' Allows stacked packets. Tries to chop layers by layer.length
-    '''
+    """ Allows stacked packets. Tries to chop layers by layer.length
+    """
 
     def do_dissect_payload(self, s):
         # prototype for this layer. only layers of same type can be stacked
@@ -177,7 +177,7 @@ class StackedLenPacket(Packet):
                 if p.length <= s_len:
                     p = cls(s[:cls_header_len+p.length], _internal=1, _underlayer=self)
                     s_len = cls_header_len+p.length
-            except AttributeError, ae:
+            except AttributeError:
                 pass
             self.add_payload(p)
             s = s[s_len:]
@@ -279,8 +279,8 @@ TLSHashAlgorithm = EnumStruct(TLS_HASH_ALGORITHMS)
 TLS_SIGNATURE_ALGORITHMS = registry.TLS_SIGNATUREALGORITHM_REGISTRY
 TLSSignatureAlgorithm = EnumStruct(TLS_SIGNATURE_ALGORITHMS)
 
-TLS_CERTIFICATE_TYPE = registry.TLS_CLIENTCERTIFICATETYPE_IDENTIFIERS_REGISTRY
-TLSCertificateType = EnumStruct(TLS_CERTIFICATE_TYPE)
+TLS_CERTIFICATE_TYPE_IDENTIFIERS = registry.TLS_CLIENTCERTIFICATETYPE_IDENTIFIERS_REGISTRY
+TLSCertificateTypeIdentifier = EnumStruct(TLS_CERTIFICATE_TYPE_IDENTIFIERS)
 
 
 class TLSKexNames(object):
@@ -308,8 +308,8 @@ class TLSRecord(StackedLenPacket):
         StackedLenPacket.__init__(self, *args, **fields)
 
     def guess_payload_class(self, payload):
-        ''' Sense for ciphertext
-        '''
+        """ Sense for ciphertext
+        """
         cls = StackedLenPacket.guess_payload_class(self, payload)
         p = cls(payload, _internal=1, _underlayer=self)
         try:
@@ -605,7 +605,7 @@ class TLSCertificateVerify(PacketNoPayload):
 
 class TLSCertificateType(PacketNoPayload):
     name = "TLS Certificate Type"
-    fields_desc = [ByteEnumField("type", TLSCertificateType.RSA_SIGN, TLS_CERTIFICATE_TYPE)]
+    fields_desc = [ByteEnumField("type", TLSCertificateTypeIdentifier.RSA_SIGN, TLS_CERTIFICATE_TYPE_IDENTIFIERS)]
 
 
 class TLSCADistinguishedName(PacketNoPayload):
@@ -862,14 +862,14 @@ class SSLv2ClientMasterKey(Packet):
 
 class TLSSocket(object):
 
-    def __init__(self, socket, client=None, tls_ctx=None):
-        if socket is not None:
-            self._s = socket
+    def __init__(self, sock, client=None, tls_ctx=None):
+        if sock is not None:
+            self._s = sock
         else:
             raise ValueError("Socket cannot be None")
 
         if client is None:
-            self.client = self._is_listening(socket)
+            self.client = self._is_listening()
         else:
             self.client = client
 
@@ -879,7 +879,7 @@ class TLSSocket(object):
         else:
             self.tls_ctx = tls_ctx
 
-    def _is_listening(self, socket):
+    def _is_listening(self):
         import errno
         import socket
         try:
@@ -1082,7 +1082,7 @@ class TLSProtocolError(Exception):
         Exception.__init__(self, *args, **kwargs)
 
 def tls_do_handshake(tls_socket, version, ciphers):
-    client_hello = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, compression_methods=(TLSCompressionMethod.NULL),
+    client_hello = TLSRecord(version=version)/TLSHandshake()/TLSClientHello(version=version, compression_methods=[TLSCompressionMethod.NULL],
                                                                             cipher_suites=ciphers)
     tls_socket.sendall(client_hello)
     r = tls_socket.recvall()
