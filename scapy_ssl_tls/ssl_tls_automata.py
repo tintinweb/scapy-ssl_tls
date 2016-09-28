@@ -84,10 +84,10 @@ class TLSClientAutomata(Automaton):
                         TLSDecryptablePacket: 'send_client_appdata',
                         }
         
-    def parse_args(self, 
-                   target, 
-                   tls_version='TLS_1_1', 
-                   request="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n", 
+    def parse_args(self,
+                   target,
+                   tls_version='TLS_1_1',
+                   request="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n",
                    cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA],
                    timeout=4.0,
                    **kwargs):
@@ -104,9 +104,9 @@ class TLSClientAutomata(Automaton):
         self.callbacks[fname] = f
         
     def run(self, *args, **kwargs):
-        '''tin: ugly hack Part II:
-                fix {state:condition_funcs} map to use hookable(f) instead of f 
-        '''
+        """tin: ugly hack Part II:
+                fix {state:condition_funcs} map to use hookable(f) instead of f
+        """
         for name in self.conditions:
             self.conditions[name] = [getattr(cf,'wrapper_f', cf) for cf in self.conditions[name]]
         return Automaton.run(self, *args, **kwargs)
@@ -153,7 +153,7 @@ class TLSClientAutomata(Automaton):
     @ATMT.action(send_client_hello)
     def do_send_client_hello(self):
         client_hello = TLSRecord(version=self.tls_version) / TLSHandshake() / TLSClientHello(version=self.tls_version,
-                                                                                             compression_methods=(TLSCompressionMethod.NULL),
+                                                                                             compression_methods=(TLSCompressionMethod.NULL,),
                                                                                              cipher_suites=self.cipher_suites)
         self.tlssock.sendall(client_hello)
     
@@ -355,9 +355,9 @@ class TLSServerAutomata(Automaton):
         self.callbacks[fname] = f
         
     def run(self, *args, **kwargs):
-        '''tin: ugly hack Part II:
-                fix {state:condition_funcs} map to use hookable(f) instead of f 
-        '''
+        """tin: ugly hack Part II:
+                fix {state:condition_funcs} map to use hookable(f) instead of f
+        """
         for name in self.conditions:
             self.conditions[name] = [getattr(cf,'wrapper_f', cf) for cf in self.conditions[name]]
         return Automaton.run(self, *args, **kwargs)
@@ -548,7 +548,7 @@ class TLSServerAutomata(Automaton):
         self.debug(1,"polling in 5sec intervals until data arrives.")
         while chunk_p:
             chunk_p = self.tlssock.recvall(timeout=5)
-            if (chunk_p.haslayer(SSL) and len(chunk_p[SSL].records)>0):
+            if chunk_p.haslayer(SSL) and len(chunk_p[SSL].records) > 0:
                 p.records.append(chunk_p)
             else:
                 if len(p[SSL].records)>0:
@@ -556,7 +556,7 @@ class TLSServerAutomata(Automaton):
             
         if self.debug_level >= 1:
             p.show()
-        if not (p.haslayer(TLSRecord) and p[TLSRecord].content_type==TLSContentType.APPLICATION_DATA):
+        if not (p.haslayer(TLSRecord) and p[TLSRecord].content_type ==TLSContentType.APPLICATION_DATA):
             raise self.ERROR(p)
         raise self.CLIENT_APPDATA_RECV()
     
