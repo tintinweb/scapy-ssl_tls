@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
+from __future__ import print_function
 import sys
 import logging
 logger = logging.getLogger(__name__)
@@ -53,4 +54,4 @@ if __name__=='__main__':
     
     auto_cli.register_callback(auto_cli.ACTIONS[TLSFinished], jump_to_random_state)
     '''
-    print auto_cli.run()
+    print (auto_cli.run())

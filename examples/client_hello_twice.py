@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
+from __future__ import print_function
 import sys
 try:
     import scapy.all as scapy
@@ -19,7 +20,7 @@ import socket
 
 if __name__=="__main__":
     if len(sys.argv)<=2:
-        print "USAGE: <host> <port>"
+        print ("USAGE: <host> <port>")
         exit(1)
 
     target = (sys.argv[1],int(sys.argv[2]))
@@ -32,17 +33,16 @@ if __name__=="__main__":
 
     p.show()
 
-
-    print "sending TLS payload"
+    print ("sending TLS payload")
     s.sendall(str(p))
     resp = s.recv(1024*8)
-    print "received, %s"%repr(resp)
+    print ("received, %s" % repr(resp))
     SSL(resp).show()
 
-    print "sending TLS payload"
+    print ("sending TLS payload")
     s.sendall(str(p))
     resp = s.recv(1024*8)
-    print "received, %s"%repr(resp)
+    print ("received, %s" % repr(resp))
     SSL(resp).show()
 
     s.close()

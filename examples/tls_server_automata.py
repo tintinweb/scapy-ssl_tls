@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
+from __future__ import print_function
 import sys
 import logging
 logger = logging.getLogger(__name__)
@@ -63,4 +64,4 @@ if __name__=='__main__':
     auto_srv.register_callback(auto_srv.ACTIONS[TLSFinished], jump_to_server_hello_done)
     auto_srv.register_callback(auto_srv.ACTIONS[TLSFinished], jump_to_random_state)
     '''
-    print auto_srv.run()
+    print (auto_srv.run())
