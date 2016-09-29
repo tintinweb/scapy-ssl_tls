@@ -186,7 +186,7 @@ class Sniffer(object):
                 try:
                     p = SSL(str(p_ssl),ctx=session)
                     print ("|-> %-48s | %s" % ("decrypted record", repr(p)))
-                except ValueError, ve:
+                except ValueError as ve:
                     print ("Exception:", repr(ve))
 
     def sniff(self, target, keyfile=None, iface=None):

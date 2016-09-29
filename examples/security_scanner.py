@@ -40,7 +40,7 @@ class TCPConnection(object):
             try:
                 self._s.connect(target)
                 break
-            except socket.error, se:
+            except socket.error as se:
                 print ("- connection retry %s: %s" % (t, repr(target)))
                 last_exception = se
         if not self._s:
@@ -352,7 +352,7 @@ class TLSScanner(object):
             else:
                 self.capabilities.events.append(("Poodle2 - vulnerable",r))
 
-        except (socket.error, NotImplementedError), se:
+        except (socket.error, NotImplementedError) as se:
             print (repr(se))
             return None
 
@@ -366,7 +366,7 @@ class TLSScanner(object):
                 t.sendall(pkt)
                 resp = t.recvall(timeout=0.5)
                 self.capabilities.insert(resp, client=False)
-            except socket.error, se:
+            except socket.error as se:
                 print (repr(se))
 
     def _check_cipher(self, target,  cipher_id, starttls=None,version=TLSVersion.TLS_1_0):
@@ -375,7 +375,7 @@ class TLSScanner(object):
             t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
-        except socket.error, se:
+        except socket.error as se:
             print (repr(se))
             return None
         return resp
@@ -398,7 +398,7 @@ class TLSScanner(object):
                 t.sendall(pkt)
                 resp = t.recvall(timeout=0.5)
                 self.capabilities.insert(resp, client=False)
-            except socket.error, se:
+            except socket.error as se:
                 print (repr(se))
 
     def _check_cipher_sslv2(self, target,  cipher_id, starttls=None, version=TLSVersion.SSL_2_0):
@@ -407,7 +407,7 @@ class TLSScanner(object):
             t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
-        except socket.error, se:
+        except socket.error as se:
             print (repr(se))
             return None
         return resp
@@ -428,7 +428,7 @@ class TLSScanner(object):
             self.capabilities.insert(resp, client=False)
             if not (resp.haslayer(TLSAlert) and resp[TLSAlert].description==TLSAlertDescription.INAPPROPRIATE_FALLBACK):
                 self.capabilities.events.append(("DOWNGRADE / POODLE - FALLBACK_SCSV - not honored",resp))
-        except socket.error, se:
+        except socket.error as se:
             print (repr(se))
 
     def _scan_heartbleed(self, target, starttls=None, version=TLSVersion.TLS_1_0, payload_length=20):
@@ -442,7 +442,7 @@ class TLSScanner(object):
             resp = t.recvall(timeout=0.5)
             if resp.haslayer(TLSHeartBeat) and resp[TLSHeartBeat].length>8:
                 self.capabilities.events.append(("HEARTBLEED - vulnerable",resp))
-        except socket.error, se:
+        except socket.error as se:
             print (repr(se))
             return None
         return resp
@@ -456,7 +456,7 @@ class TLSScanner(object):
             resp = t.recvall(timeout=0.5)
             if resp.haslayer(TLSExtRenegotiationInfo):
                 self.capabilities.events.append(("TLS EXTENSION SECURE RENEGOTIATION - not supported",resp))
-        except socket.error, se:
+        except socket.error as se:
             print (repr(se))
             return None
         return resp

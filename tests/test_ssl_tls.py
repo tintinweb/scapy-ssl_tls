@@ -416,11 +416,11 @@ class TestPCAP(unittest.TestCase):
         self.assertTrue(record.haslayer(x509.X509Cert))
         try:
             record[tls.TLSCertificate].data.pubkey
-        except AttributeError, ae:
+        except AttributeError as ae:
             self.fail(ae)
         try:
             record[tls.TLSCertificate].data.signature
-        except AttributeError, ae:
+        except AttributeError as ae:
             self.fail(ae)
         # server hello done
         record = pkts.pop()
@@ -673,7 +673,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertEqual(str(pkt[tls.TLSCertificate].data), self.der_cert)
         try:
             pkt[tls.TLSCertificate].data.pubkey
-        except AttributeError, ae:
+        except AttributeError as ae:
             self.fail(ae)
         # serialize and dissect the same packet
         pkt_d = tls.SSL(str(pkt))
@@ -681,7 +681,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertEqual(str(pkt_d[tls.TLSCertificate].data), self.der_cert)
         try:
             pkt_d[tls.TLSCertificate].data.pubkey
-        except AttributeError, ae:
+        except AttributeError as ae:
             self.fail(ae)
         # compare pubkeys
         self.assertEqual(pkt[tls.TLSCertificate].data.pubkey, pkt_d[tls.TLSCertificate].data.pubkey)
@@ -699,7 +699,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
             self.assertEqual(str(tlscert.data), self.der_cert)
             try:
                 tlscert.data.pubkey
-            except AttributeError, ae:
+            except AttributeError as ae:
                 self.fail(ae)
 
         # serialize and dissect the same packet
@@ -710,7 +710,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
             self.assertEqual(str(tlscert.data), self.der_cert)
             try:
                 tlscert.data.pubkey
-            except AttributeError, ae:
+            except AttributeError as ae:
                 self.fail(ae)
             # compare pubkeys
             self.assertEqual(pkt[tls.TLSCertificate].data.pubkey, tlscert.data.pubkey)
