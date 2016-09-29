@@ -9,10 +9,9 @@ import sys
 
 from Crypto.Hash import SHA256
 
+basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
     from scapy.all import *
 except ImportError:

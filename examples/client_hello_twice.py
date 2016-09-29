@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
-import sys, os
+import sys
 try:
     import scapy.all as scapy
 except ImportError:
@@ -10,8 +10,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
 except ImportError:
     # If you installed this package via pip, you just need to execute this

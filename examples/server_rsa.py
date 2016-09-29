@@ -5,7 +5,6 @@ import socket
 import sys
 
 basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-sys.path.append(basedir)
 try:
     # This import works from the project directory
     from scapy_ssl_tls.ssl_tls import *

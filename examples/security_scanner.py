@@ -9,7 +9,7 @@ An example implementation of a passive TLS security scanner with custom starttls
 
 
 """
-import sys, os
+import sys
 import concurrent.futures
 
 try:
@@ -19,8 +19,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
     from scapy_ssl_tls.ssl_tls_crypto import x509_extract_pubkey_from_der
 except ImportError:

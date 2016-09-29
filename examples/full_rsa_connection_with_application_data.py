@@ -3,14 +3,11 @@
 
 from __future__ import with_statement
 from __future__ import print_function
-import os
 import socket
 import sys
 
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
 except ImportError:
     # If you installed this package via pip, you just need to execute this

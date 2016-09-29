@@ -18,8 +18,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
     import scapy_ssl_tls.ssl_tls_crypto as ssl_tls_crypto
 except ImportError:

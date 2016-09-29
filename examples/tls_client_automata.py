@@ -2,7 +2,6 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
-import os
 import sys
 import logging
 logger = logging.getLogger(__name__)
@@ -11,8 +10,6 @@ from scapy.all import conf, log_interactive
 
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls_automata import TLSClientAutomata
     from scapy_ssl_tls.ssl_tls import *
 except ImportError:
