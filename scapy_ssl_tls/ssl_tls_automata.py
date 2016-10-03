@@ -153,7 +153,7 @@ class TLSClientAutomata(Automaton):
     @ATMT.action(send_client_hello)
     def do_send_client_hello(self):
         client_hello = TLSRecord(version=self.tls_version) / TLSHandshake() / TLSClientHello(version=self.tls_version,
-                                                                                             compression_methods=(TLSCompressionMethod.NULL,),
+                                                                                             compression_methods=[TLSCompressionMethod.NULL,],
                                                                                              cipher_suites=self.cipher_suites)
         self.tlssock.sendall(client_hello)
     
