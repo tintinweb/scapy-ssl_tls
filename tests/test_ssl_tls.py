@@ -235,9 +235,9 @@ class TestTLSDecryptablePacket(unittest.TestCase):
     def test_streaming_mac_and_padding_are_added_if_session_context_is_provided(self):
         data = "%s%s" % ("A" * 2, "B" * MD5.digest_size)
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.sec_params = tlsc.TLSSecurityParameters(tlsc.TLSPRF(tls.TLSVersion.TLS_1_0),
-                                                        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_MD5, "A" * 48,
-                                                        "B" * 32, "C" * 32)
+        tls_ctx.sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(
+            tlsc.TLSPRF(tls.TLSVersion.TLS_1_0), tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_MD5, "A" * 48, "B" * 32,
+            "C" * 32)
         records = tls.TLSAlert(data, ctx=tls_ctx)
         self.assertEqual("B" * MD5.digest_size, records[tls.TLSAlert].mac)
         self.assertEqual("", records[tls.TLSAlert].padding)
@@ -245,9 +245,8 @@ class TestTLSDecryptablePacket(unittest.TestCase):
     def test_cbc_mac_and_padding_are_added_if_session_context_is_provided(self):
         data = "%s%s%s" % ("A" * 2, "B" * SHA.digest_size, "\x03" * 4)
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.sec_params = tlsc.TLSSecurityParameters(tlsc.TLSPRF(tls.TLSVersion.TLS_1_0),
-                                                        tls.TLSCipherSuite.RSA_WITH_DES_CBC_SHA, "A" * 48, "B" * 32,
-                                                        "C" * 32)
+        tls_ctx.sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(
+            tlsc.TLSPRF(tls.TLSVersion.TLS_1_0), tls.TLSCipherSuite.RSA_WITH_DES_CBC_SHA, "A" * 48, "B" * 32, "C" * 32)
         records = tls.TLSAlert(data, ctx=tls_ctx)
         self.assertEqual(ord("\x03"), records[tls.TLSAlert].padding_len)
         self.assertEqual("\x03" * 3, records[tls.TLSAlert].padding)
@@ -257,9 +256,9 @@ class TestTLSDecryptablePacket(unittest.TestCase):
         data = "%s%s%s%s" % ("C" * AES.block_size, "A" * 2, "B" * SHA.digest_size, "\x03" * 4)
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.params.negotiated.version = tls.TLSVersion.TLS_1_1
-        tls_ctx.sec_params = tlsc.TLSSecurityParameters(tlsc.TLSPRF(tls.TLSVersion.TLS_1_0),
-                                                        tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA, "A" * 48, "B" * 32,
-                                                        "C" * 32, True)
+        tls_ctx.sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(
+            tlsc.TLSPRF(tls.TLSVersion.TLS_1_0), tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA, "A" * 48, "B" * 32,
+            "C" * 32, True)
         records = tls.TLSAlert(data, ctx=tls_ctx)
         self.assertEqual(ord("\x03"), records[tls.TLSAlert].padding_len)
         self.assertEqual("\x03" * 3, records[tls.TLSAlert].padding)

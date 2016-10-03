@@ -462,12 +462,12 @@ class TLSSessionCtx(object):
                     self.crypto.client.ecdh.pub = str_to_ec_point(p[tls.TLSClientECDHParams].data, ec_curve)
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
-                self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
-                                                        self.params.negotiated.ciphersuite,
-                                                        self.crypto.session.premaster_secret,
-                                                        self.crypto.session.randombytes.client,
-                                                        self.crypto.session.randombytes.server,
-                                                        explicit_iv)
+                self.sec_params = TLSSecurityParameters.from_pre_master_secret(self.crypto.session.prf,
+                                                                               self.params.negotiated.ciphersuite,
+                                                                               self.crypto.session.premaster_secret,
+                                                                               self.crypto.session.randombytes.client,
+                                                                               self.crypto.session.randombytes.server,
+                                                                               explicit_iv)
                 self._assign_crypto_material(self.sec_params)
 
     def _assign_crypto_material(self, sec_params):
@@ -863,16 +863,12 @@ class TLSSecurityParameters(object):
 #     0xc0ae: 'ECDHE_ECDSA_WITH_AES_128_CCM_8',
 #     0xc0af: 'ECDHE_ECDSA_WITH_AES_256_CCM_8',
 
-    def __init__(self, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
-        """ /!\ This class is not thread safe
-        """
+    def __init__(self, prf, cipher_suite, client_random, server_random, explicit_iv=False):
         try:
             self.negotiated_crypto_param = self.crypto_params[cipher_suite]
         except KeyError:
             raise RuntimeError("Cipher 0x%04x not supported" % cipher_suite)
         else:
-            # Not validating lengths here, since sending a longuer PMS might be interesting
-            self.pms = pms
             if len(client_random) != 32:
                 raise ValueError("Client random must be 32 bytes")
             self.client_random = client_random
@@ -886,7 +882,23 @@ class TLSSecurityParameters(object):
             self.iv_length = 0 if block_size == 1 else block_size
             self.explicit_iv = explicit_iv
             self.prf = prf
-            self.__init_crypto(pms, client_random, server_random, explicit_iv)
+            self.pms = ""
+            self.master_secret = ""
+
+    @classmethod
+    def from_pre_master_secret(cls, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
+        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+        sec_params.pms = pms
+        sec_params.generate_master_secret(pms, client_random, server_random)
+        sec_params.init_crypto(client_random, server_random, explicit_iv)
+        return sec_params
+
+    @classmethod
+    def from_master_secret(cls, prf, cipher_suite, master_secret, client_random, server_random, explicit_iv=False):
+        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+        sec_params.master_secret = master_secret
+        sec_params.init_crypto(client_random, server_random, explicit_iv)
+        return sec_params
 
     def get_client_hmac(self):
         return self.__client_hmac
@@ -937,25 +949,30 @@ class TLSSecurityParameters(object):
             self.server_write_IV = data[i:i+self.iv_length]
             i += self.iv_length
 
-    def __init_crypto(self, pms, client_random, server_random, explicit_iv):
-        self.master_secret = self.prf.get_bytes(pms,
-                                                   TLSPRF.TLS_MD_MASTER_SECRET_CONST,
-                                                   client_random + server_random,
-                                                   num_bytes=48)
-        key_block = self.prf.get_bytes(self.master_secret,
-                                          TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
-                                          server_random + client_random,
-                                          num_bytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
+    def generate_master_secret(self, pms, client_random, server_random):
+        self.master_secret = self.prf.get_bytes(pms, TLSPRF.TLS_MD_MASTER_SECRET_CONST,
+                                                client_random + server_random, num_bytes=48)
+        return self.master_secret
+
+    def init_crypto(self, client_random, server_random, explicit_iv, master_secret=None):
+        if master_secret is None:
+            master_secret = self.master_secret
+        key_block = self.prf.get_bytes(master_secret, TLSPRF.TLS_MD_KEY_EXPANSION_CONST, server_random + client_random,
+                                       num_bytes=2 * (self.mac_key_length + self.cipher_key_length + self.iv_length))
         self.__init_key_material(key_block, explicit_iv)
         self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
         self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
         self.hash_type = self.negotiated_crypto_param["hash"]["type"]
         # Block ciphers
         if self.cipher_mode is not None:
-            self.__client_enc_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
-            self.__client_dec_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
-            self.__server_enc_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
-            self.__server_dec_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
+            self.__client_enc_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode,
+                                                            IV=self.client_write_IV)
+            self.__client_dec_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode,
+                                                            IV=self.client_write_IV)
+            self.__server_enc_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode,
+                                                            IV=self.server_write_IV)
+            self.__server_dec_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode,
+                                                            IV=self.server_write_IV)
         # Stream ciphers
         else:
             self.__client_enc_cipher = self.cipher_type.new(self.client_write_key)
