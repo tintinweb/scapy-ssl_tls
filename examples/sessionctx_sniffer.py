@@ -18,13 +18,16 @@ except ImportError:
     from scapy import *
 
 try:
-    # This import works from the project directory
-    from scapy_ssl_tls.ssl_tls import *
-    import scapy_ssl_tls.ssl_tls_crypto as ssl_tls_crypto
-except ImportError:
+    # try systemwide scapy import first, otherwise we might end up with different
+    #  imports for SSL()/TLS() leading to sesionctx_sniffer.py not showing any
+    #  traffic.
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
     import scapy.layers.ssl_tls_crypto as ssl_tls_crypto
+except ImportError:
+    # This import works from the project directory
+    from scapy_ssl_tls.ssl_tls import *
+    import scapy_ssl_tls.ssl_tls_crypto as ssl_tls_crypto
 
 import socket
 
