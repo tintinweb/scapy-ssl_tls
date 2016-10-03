@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 
-import os
+from __future__ import print_function
 import sys
 import logging
 logger = logging.getLogger(__name__)
@@ -11,8 +11,6 @@ from scapy.all import conf, log_interactive
 
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls_automata import TLSClientAutomata
     from scapy_ssl_tls.ssl_tls import *
 except ImportError:
@@ -56,4 +54,4 @@ if __name__=='__main__':
     
     auto_cli.register_callback(auto_cli.ACTIONS[TLSFinished], jump_to_random_state)
     '''
-    print auto_cli.run()
+    print (auto_cli.run())

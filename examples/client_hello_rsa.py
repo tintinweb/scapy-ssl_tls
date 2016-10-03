@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
-import sys, os
+
+from __future__ import print_function
+import sys
 try:
     import scapy.all as scapy
 except ImportError:
@@ -9,8 +11,6 @@ except ImportError:
 
 try:
     # This import works from the project directory
-    basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-    sys.path.append(basedir)
     from scapy_ssl_tls.ssl_tls import *
 except ImportError:
     # If you installed this package via pip, you just need to execute this
@@ -20,7 +20,7 @@ import socket
 
 if __name__=="__main__":
     if len(sys.argv)<=2:
-        print "USAGE: <host> <port>"
+        print ("USAGE: <host> <port>")
         exit(1)
 
     target = (sys.argv[1],int(sys.argv[2]))
@@ -32,9 +32,9 @@ if __name__=="__main__":
     p = TLSRecord()/TLSHandshake()/TLSClientHello(cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA])
 
     p.show()
-    print "sending TLS payload"
+    print ("sending TLS payload")
     s.sendall(str(p))
     resp=s.recv(1024*8)
-    print "received, %d --  %s"%(len(resp),repr(resp))
+    print ("received, %d --  %s" % (len(resp), repr(resp)))
     SSL(resp).show()
     s.close()
