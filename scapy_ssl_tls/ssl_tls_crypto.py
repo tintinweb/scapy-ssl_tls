@@ -199,6 +199,7 @@ class TLSSessionCtx(object):
         self.crypto.session.premaster_secret = None
         self.crypto.session.master_secret = None
         self.crypto.session.prf = None
+        self.crypto.session.resume = False
         self.crypto.session.randombytes = namedtuple('randombytes',['client','server'])
         self.crypto.session.randombytes.client = None
         self.crypto.session.randombytes.server = None
@@ -406,6 +407,17 @@ class TLSSessionCtx(object):
                     except KeyError:
                         warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" %
                                       self.params.negotiated.ciphersuite)
+
+                if self.crypto.session.resume:
+                    explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
+                    self.crypto.session.prf = TLSPRF(self.params.negotiated.version)
+                    self.sec_params = TLSSecurityParameters.from_master_secret(self.crypto.session.prf,
+                                                                               self.params.negotiated.ciphersuite,
+                                                                               self.crypto.session.master_secret,
+                                                                               self.crypto.session.randombytes.client,
+                                                                               self.crypto.session.randombytes.server,
+                                                                               explicit_iv)
+                    self._assign_crypto_material(self.sec_params)
 
             if p.haslayer(tls.TLSCertificateList):
                 # TODO: Probably don't want to do that if rsa_load_priv*() is called
@@ -629,6 +641,10 @@ class TLSSessionCtx(object):
     def set_mode(self, client=None, server=None):
         self.client = client if client else not server
         self.server = not self.client
+
+    def resume_session(self, master_secret):
+        self.crypto.session.master_secret = master_secret
+        self.crypto.session.resume = True
 
 
 class TLSPRF(object):
