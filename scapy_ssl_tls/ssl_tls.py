@@ -926,6 +926,12 @@ class TLSSocket(object):
         client_socket, peer = self._s.accept()
         return TLSSocket(client_socket, client=False, tls_ctx=copy.deepcopy(self.tls_ctx)), peer
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
 
 # entry class
 class SSL(Packet):
