@@ -99,17 +99,12 @@ class TLSSessionCtx(object):
         self.compression = namedtuple("compression", ["method"])
         self.compression.method = None
         self.crypto = namedtuple('crypto', ['client','server'])
-        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac"])
+        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac", "keystore"])
         self.crypto.client.enc = None
         self.crypto.client.dec = None
         self.crypto.client.hmac = None
-        self.crypto.client.keystore = None
-        self.crypto.client.rsa = namedtuple("rsa", ["pubkey","privkey"])
-        self.crypto.client.rsa.pubkey = None
-        self.crypto.client.rsa.privkey = None
-        self.crypto.client.dsa = namedtuple("dsa", ["pubkey","privkey"])
-        self.crypto.client.dsa.pubkey = None
-        self.crypto.client.dsa.privkey = None
+        self.crypto.client.keystore = tlsk.EmptyAsymKeystore()
+
         self.crypto.client.dh = namedtuple("dh", ["x", "y_c"])
         self.crypto.client.dh.x = None
         self.crypto.client.dh.y_c = None
@@ -117,17 +112,12 @@ class TLSSessionCtx(object):
         self.crypto.client.ecdh.curve_name = None
         self.crypto.client.ecdh.priv = None
         self.crypto.client.ecdh.pub = None
-        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac"])
+        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac", "keystore"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
         self.crypto.server.hmac = None
-        self.crypto.server.keystore = None
-        self.crypto.server.rsa = namedtuple("rsa", ["pubkey","privkey"])
-        self.crypto.server.rsa.pubkey = None
-        self.crypto.server.rsa.privkey = None
-        self.crypto.server.dsa = namedtuple("dsa", ["pubkey","privkey"])
-        self.crypto.server.dsa.pubkey = None
-        self.crypto.server.dsa.privkey = None
+        self.crypto.server.keystore = tlsk.EmptyAsymKeystore()
+
         self.crypto.server.dh = namedtuple("dh", ["p", "g", "x", "y_s"])
         self.crypto.server.dh.p = None
         self.crypto.server.dh.g = None
@@ -184,15 +174,8 @@ class TLSSessionCtx(object):
                   'crypto-server-enc':repr(self.crypto.server.enc),
                   'crypto-server-dec':repr(self.crypto.server.dec),
 
-                  "crypto-client-rsa-pubkey": repr(self.crypto.client.rsa.pubkey),
-                  "crypto-client-rsa-privkey": repr(self.crypto.client.rsa.privkey),
-                  "crypto-server-rsa-pubkey": repr(self.crypto.server.rsa.pubkey),
-                  "crypto-server-rsa-privkey": repr(self.crypto.server.rsa.privkey),
-
-                  "crypto-client-dsa-pubkey": repr(self.crypto.client.dsa.pubkey),
-                  "crypto-client-dsa-privkey": repr(self.crypto.client.dsa.privkey),
-                  "crypto-server-dsa-pubkey": repr(self.crypto.server.dsa.pubkey),
-                  "crypto-server-dsa-privkey": repr(self.crypto.server.dsa.privkey),
+                  "crypto-client-keystore": self.crypto.client.keystore,
+                  "crypto-server-keystore": self.crypto.server.keystore,
 
                   "crypto-client-dh-x": repr(self.crypto.client.dh.x),
                   "crypto-client-dh-y_c": repr(self.crypto.client.dh.y_c),
@@ -245,17 +228,8 @@ class TLSSessionCtx(object):
         str_ +="\n\t crypto.server.enc=%(crypto-server-enc)s"
         str_ +="\n\t crypto.server.dec=%(crypto-server-dec)s"
 
-        str_ +="\n\t crypto.client.rsa.privkey=%(crypto-client-rsa-privkey)s"
-        str_ +="\n\t crypto.client.rsa.pubkey=%(crypto-client-rsa-pubkey)s"
-
-        str_ +="\n\t crypto.server.rsa.privkey=%(crypto-server-rsa-privkey)s"
-        str_ +="\n\t crypto.server.rsa.pubkey=%(crypto-server-rsa-pubkey)s"
-
-        str_ +="\n\t crypto.client.dsa.privkey=%(crypto-client-dsa-privkey)s"
-        str_ +="\n\t crypto.client.dsa.pubkey=%(crypto-client-dsa-pubkey)s"
-
-        str_ +="\n\t crypto.server.dsa.privkey=%(crypto-server-dsa-privkey)s"
-        str_ +="\n\t crypto.server.dsa.pubkey=%(crypto-server-dsa-pubkey)s"
+        str_ += "\n\t crypto.client.keystore=%(crypto-client-keystore)s"
+        str_ += "\n\t crypto.server.keystore=%(crypto-server-keystore)s"
 
         str_ += "\n\t crypto.client.dh.x=%(crypto-client-dh-x)s"
         str_ += "\n\t crypto.client.dh.y_c=%(crypto-client-dh-y_c)s"
@@ -359,8 +333,12 @@ class TLSSessionCtx(object):
                 if self.params.negotiated.key_exchange is not None and (self.params.negotiated.key_exchange == tls.TLSKexNames.RSA or self.params.negotiated.sig == RSA):
                     # fetch server pubkey // PKCS1_v1_5
                     cert = p[tls.TLSCertificateList].certificates[0].data
-                    self.crypto.server.keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
-                    self.crypto.server.rsa.pubkey = self.crypto.server.keystore.public
+                    # If we have a default keystore, create an RSA keystore and populate it from data on the wire
+                    if isinstance(self.crypto.server.keystore, tlsk.EmptyAsymKeystore):
+                        self.crypto.server.keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
+                    # Else keystore was assigned by user. Just add cert from the wire to the store
+                    else:
+                        self.crypto.server.keystore.certificate = str(cert)
                     # TODO: In the future also handle kex = DH and extract static DH params from cert
                 elif self.params.negotiated.key_exchange is not None and self.params.negotiated.sig == DSA:
                     # TODO: Handle DSA sig key loading here to allow sig checks
@@ -400,9 +378,10 @@ class TLSSessionCtx(object):
                 if p.haslayer(tls.TLSClientRSAParams):
                     self.crypto.session.encrypted_premaster_secret = p[tls.TLSClientRSAParams].data
                     # If we have the private key, let's decrypt the PMS
-                    if self.crypto.server.rsa.privkey is not None:
-                        self.crypto.session.premaster_secret = PKCS1_v1_5.new(self.crypto.server.rsa.privkey).decrypt(
-                            self.crypto.session.encrypted_premaster_secret, None)
+                    private = self.crypto.server.keystore.private
+                    if private is not None:
+                        self.crypto.session.premaster_secret = PKCS1_v1_5.new(
+                            private).decrypt(self.crypto.session.encrypted_premaster_secret, None)
                 elif p.haslayer(tls.TLSClientDHParams):
                     self.crypto.client.dh.y_c = p[tls.TLSClientDHParams].data
                 elif p.haslayer(tls.TLSClientECDHParams):
@@ -449,10 +428,8 @@ class TLSSessionCtx(object):
                 try:
                     if client:
                         self.crypto.client.keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
-                        self.crypto.client.rsa.privkey, self.crypto.client.rsa.pubkey = self.crypto.client.keystore.keys
                     else:
                         self.crypto.server.keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
-                        self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self.crypto.server.keystore.keys
                     return
                 except ValueError:
                     pass
@@ -461,19 +438,17 @@ class TLSSessionCtx(object):
     def rsa_load_keys(self, private, client=False):
         if client:
             self.crypto.client.keystore = tlsk.RSAKeystore.from_private(private)
-            self.crypto.client.rsa.privkey, self.crypto.client.rsa.pubkey = self.crypto.client.keystore.keys
         else:
             self.crypto.server.keystore = tlsk.RSAKeystore.from_private(private)
-            self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self.crypto.server.keystore.keys
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))
 
     def get_encrypted_pms(self, pms=None):
         cleartext = pms or self.crypto.session.premaster_secret
-        if self.crypto.server.rsa.pubkey is not None:
-            self.crypto.session.encrypted_premaster_secret = PKCS1_v1_5.new(self.crypto.server.rsa.pubkey).\
-                encrypt(cleartext)
+        public = self.crypto.server.keystore.public
+        if public is not None:
+            self.crypto.session.encrypted_premaster_secret = PKCS1_v1_5.new(public).encrypt(cleartext)
         else:
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.crypto.session.encrypted_premaster_secret
@@ -565,13 +540,13 @@ class TLSSessionCtx(object):
         return hash_
 
     def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=None):
-        if self.crypto.client.rsa.privkey is None:
+        if self.crypto.client.keystore.private is None:
             raise RuntimeError("Missing client private key. Can't sign")
         msg_hash = self.get_handshake_hash(hash_)
         if pre_sign_hook is not None:
             msg_hash = pre_sign_hook(msg_hash)
         # Will throw exception if we can't sign or if data is larger the modulus
-        return Sig_PKCS1_v1_5.new(self.crypto.client.rsa.privkey).sign(msg_hash)
+        return Sig_PKCS1_v1_5.new(self.crypto.client.keystore.private).sign(msg_hash)
 
     def set_mode(self, client=None, server=None):
         self.client = client if client else not server

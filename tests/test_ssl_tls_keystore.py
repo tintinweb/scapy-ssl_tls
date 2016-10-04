@@ -9,7 +9,7 @@ class TestAsymKeyStore(unittest.TestCase):
 
     def test_when_rsa_keystore_is_initialized_then_name_is_set(self):
         rsa_keystore = tlsk.RSAKeystore(b"5678")
-        self.assertEqual(rsa_keystore.name, "RSA")
-        self.assertEqual(rsa_keystore.private, None)
-        self.assertEqual(rsa_keystore.public, b"5678")
-        self.assertEqual(rsa_keystore.certificate, None)
+        self.assertEqual("RSA Keystore", rsa_keystore.name)
+        self.assertEqual(None, rsa_keystore.private)
+        self.assertEqual(b"5678", rsa_keystore.public)
+        self.assertEqual(None, rsa_keystore.certificate)

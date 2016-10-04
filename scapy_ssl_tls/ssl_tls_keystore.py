@@ -76,10 +76,24 @@ class AsymKeyStore(object):
     def from_private(cls, private):
         raise NotImplementedError()
 
+    def __str__(self):
+        template = """
+{name}:
+    certificate: {certificate}
+    public: {public}
+    private: {private}"""
+        return template.format(name=self.name, certificate=repr(self.certificate), public=self.public,
+                               private=self.private)
+
+
+class EmptyAsymKeystore(AsymKeyStore):
+    def __init__(self):
+        super(EmptyAsymKeystore, self).__init__("Empty Keystore", None, None)
+
 
 class RSAKeystore(AsymKeyStore):
     def __init__(self, public, private=None):
-        super(RSAKeystore, self).__init__("RSA", public, private)
+        super(RSAKeystore, self).__init__("RSA Keystore", public, private)
 
     @classmethod
     def from_der_certificate(cls, certificate):
@@ -104,4 +118,4 @@ class RSAKeystore(AsymKeyStore):
 
 class DSAKeystore(AsymKeyStore):
     def __init__(self, public, private=None):
-        super(DSAKeystore, self).__init__("DSA", public, private)
+        super(DSAKeystore, self).__init__("DSA Keystore", public, private)
