@@ -21,11 +21,11 @@ except ImportError:
 try:
     # This import works from the project directory
     from scapy_ssl_tls.ssl_tls import *
-    from scapy_ssl_tls.ssl_tls_crypto import x509_extract_pubkey_from_der
-except ImportError:
+    import scapy_ssl_tls.ssl_tls_keystore as tlsk
+except ImportError as ie:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
-    from scapy.layers.ssl_tls_crypto import x509_extract_pubkey_from_der
+    import scapy.layers.ssl_tls_keystore as tlsk
 
 import socket
 from collections import namedtuple
@@ -200,7 +200,8 @@ class TLSInfo(object):
             try:
                 for certlist in tlsinfo.certificates:
                     for cert in certlist.certificates:
-                        pubkey = x509_extract_pubkey_from_der(str(cert.data))
+                        keystore = tlsk.RSAKeystore.from_der_certificate(str(cert.data))
+                        pubkey = keystore.public
                         pubkey_size = pubkey.size() + 1
                         if pubkey_size < 2048:
                             events.append(("INSUFFICIENT SERVER CERT PUBKEY SIZE - 2048 >= %d bits"%pubkey_size,cert))

@@ -12,6 +12,7 @@ import re
 import warnings
 import pkcs7
 import ssl_tls as tls
+import ssl_tls_keystore as tlsk
 import tinyec.ec as ec
 import tinyec.registry as ec_reg
 
@@ -20,8 +21,6 @@ from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
 from Crypto.Hash import HMAC, MD5, SHA, SHA256, SHA384
 from Crypto.PublicKey import DSA, RSA
 from Crypto.Signature import PKCS1_v1_5 as Sig_PKCS1_v1_5
-from Crypto.Util.asn1 import DerSequence
-from scapy.asn1.asn1 import ASN1_SEQUENCE
 
 
 '''
@@ -44,60 +43,6 @@ def pem_get_objects(data):
         d[pemtype]={'data':data,
                     'full':full}
     return d
-
-def x509_extract_pubkey_from_der(der_certificate):
-    # Extract subjectPublicKeyInfo field from X.509 certificate (see RFC3280)
-    try:
-        # try to extract pubkey from scapy.layers.x509 X509Cert type in case
-        # der_certificate is of type X509Cert
-        # Note: der_certificate may not be of type X509Cert if it wasn't
-        # received completely, in that case, we'll try to extract it anyway
-        # using the old method.
-        # TODO: get rid of the old method and always expect X509Cert obj ?
-        '''
-        Rebuild ASN1 SubjectPublicKeyInfo since X509Cert does not provide the full struct
-
-        ASN1F_SEQUENCE(
-                ASN1F_SEQUENCE(ASN1F_OID("pubkey_algo","1.2.840.113549.1.1.1"),
-                               ASN1F_field("pk_value",ASN1_NULL(0))),
-                ASN1F_BIT_STRING("pubkey","")
-                ),
-        '''
-        subjectPublicKeyInfo = ASN1_SEQUENCE([ ASN1_SEQUENCE([der_certificate.pubkey_algo,
-                                                              der_certificate.pk_value]),
-                                                der_certificate.pubkey,])
-        return RSA.importKey(str(subjectPublicKeyInfo))
-    except AttributeError:
-        pass
-
-    # Fallback method, may pot. allow to extract pubkey from incomplete der streams
-    cert = DerSequence()
-    cert.decode(der_certificate)
-
-    tbsCertificate = DerSequence()
-    tbsCertificate.decode(cert[0])       # first DER SEQUENCE
-
-    # search for pubkey OID: rsaEncryption: "1.2.840.113549.1.1.1"
-    # hex: 06 09 2A 86 48 86 F7 0D 01 01 01
-    subjectPublicKeyInfo=None
-    for seq in tbsCertificate:
-        if not isinstance(seq,basestring): continue     # skip numerics and non sequence stuff
-        if "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
-            subjectPublicKeyInfo=seq
-
-    if not subjectPublicKeyInfo:
-        raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
-
-    # Initialize RSA key
-    return RSA.importKey(subjectPublicKeyInfo)
-
-def x509_extract_pubkey_from_pem(public_key_string):
-    #https://github.com/m4droid/U-Pasaporte/blob/7a00b344e97bb05265fd726f4125f0966dca6a5a/upasaporte/__init__.py
-    # Convert from PEM to DER
-    lines = public_key_string.replace(" ",'').split()
-    der = binascii.a2b_base64(''.join(lines[1:-1]))
-
-    return x509_extract_pubkey_from_der(der)
 
 
 def int_to_str(int_):
@@ -158,6 +103,7 @@ class TLSSessionCtx(object):
         self.crypto.client.enc = None
         self.crypto.client.dec = None
         self.crypto.client.hmac = None
+        self.crypto.client.keystore = None
         self.crypto.client.rsa = namedtuple("rsa", ["pubkey","privkey"])
         self.crypto.client.rsa.pubkey = None
         self.crypto.client.rsa.privkey = None
@@ -175,6 +121,7 @@ class TLSSessionCtx(object):
         self.crypto.server.enc = None
         self.crypto.server.dec = None
         self.crypto.server.hmac = None
+        self.crypto.server.keystore = None
         self.crypto.server.rsa = namedtuple("rsa", ["pubkey","privkey"])
         self.crypto.server.rsa.pubkey = None
         self.crypto.server.rsa.privkey = None
@@ -412,7 +359,8 @@ class TLSSessionCtx(object):
                 if self.params.negotiated.key_exchange is not None and (self.params.negotiated.key_exchange == tls.TLSKexNames.RSA or self.params.negotiated.sig == RSA):
                     # fetch server pubkey // PKCS1_v1_5
                     cert = p[tls.TLSCertificateList].certificates[0].data
-                    self.crypto.server.rsa.pubkey = x509_extract_pubkey_from_der(str(cert))
+                    self.crypto.server.keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
+                    self.crypto.server.rsa.pubkey = self.crypto.server.keystore.public
                     # TODO: In the future also handle kex = DH and extract static DH params from cert
                 elif self.params.negotiated.key_exchange is not None and self.params.negotiated.sig == DSA:
                     # TODO: Handle DSA sig key loading here to allow sig checks
@@ -493,11 +441,6 @@ class TLSSessionCtx(object):
         self.crypto.server.dec = sec_params.get_server_dec_cipher()
         self.crypto.server.hmac = sec_params.get_server_hmac()
 
-    def _rsa_load_keys(self, priv_key):
-        priv_key = RSA.importKey(priv_key)
-        pub_key = priv_key.publickey()
-        return priv_key, pub_key
-
     def rsa_load_keys_from_file(self, priv_key_file, client=False):
         with open(priv_key_file,'r') as f:
             # _rsa_load_keys expects one pem/der key per file.
@@ -505,19 +448,23 @@ class TLSSessionCtx(object):
             for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
                 try:
                     if client:
-                        self.crypto.client.rsa.privkey, self.crypto.client.rsa.pubkey = self._rsa_load_keys(pemo[key_pk].get("full"))
+                        self.crypto.client.keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+                        self.crypto.client.rsa.privkey, self.crypto.client.rsa.pubkey = self.crypto.client.keystore.keys
                     else:
-                        self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(pemo[key_pk].get("full"))
+                        self.crypto.server.keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+                        self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self.crypto.server.keystore.keys
                     return
                 except ValueError:
                     pass
         raise ValueError("Unable to load PRIVATE key from pem file: %s"%priv_key_file)
 
-    def rsa_load_keys(self, priv_key, client=False):
+    def rsa_load_keys(self, private, client=False):
         if client:
-            self.crypto.client.rsa.privkey, self.crypto.client.rsa.pubkey = self._rsa_load_keys(priv_key)
+            self.crypto.client.keystore = tlsk.RSAKeystore.from_private(private)
+            self.crypto.client.rsa.privkey, self.crypto.client.rsa.pubkey = self.crypto.client.keystore.keys
         else:
-            self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self._rsa_load_keys(priv_key)
+            self.crypto.server.keystore = tlsk.RSAKeystore.from_private(private)
+            self.crypto.server.rsa.privkey, self.crypto.server.rsa.pubkey = self.crypto.server.keystore.keys
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))

@@ -7,6 +7,7 @@ import socket
 import unittest
 import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
+import scapy_ssl_tls.ssl_tls_keystore as tlsk
 
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.Hash import MD5, SHA
@@ -721,8 +722,10 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         # dissect and extract pubkey
         pkt = tls.SSL(str(pkt))
 
-        pubkey_extract_from_der = tlsc.x509_extract_pubkey_from_der(self.der_cert)
-        pubkey_extract_from_tls_certificate = tlsc.x509_extract_pubkey_from_der(pkt[tls.TLSCertificate].data)
+        keystore1 = tlsk.RSAKeystore.from_der_certificate(self.der_cert)
+        pubkey_extract_from_der = keystore1.public
+        keystore2 = tlsk.RSAKeystore.from_der_certificate(pkt[tls.TLSCertificate].data)
+        pubkey_extract_from_tls_certificate = keystore2.public
 
         self.assertEqual(pubkey_extract_from_der, pubkey_extract_from_tls_certificate)
 
