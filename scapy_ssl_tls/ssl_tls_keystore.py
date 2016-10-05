@@ -8,7 +8,7 @@ from scapy.asn1.asn1 import ASN1_SEQUENCE
 
 
 def rsa_public_from_der_certificate(certificate):
-    # Extract subjectPublicKeyInfo field from X.509 certificate (see RFC3280)
+    # Extract subject_public_key_info field from X.509 certificate (see RFC3280)
     try:
         # try to extract pubkey from scapy.layers.x509 X509Cert type in case
         # der_certificate is of type X509Cert
@@ -16,7 +16,7 @@ def rsa_public_from_der_certificate(certificate):
         # received completely, in that case, we'll try to extract it anyway
         # using the old method.
         # TODO: get rid of the old method and always expect X509Cert obj ?
-        '''
+        """
         Rebuild ASN1 SubjectPublicKeyInfo since X509Cert does not provide the full struct
 
         ASN1F_SEQUENCE(
@@ -24,11 +24,10 @@ def rsa_public_from_der_certificate(certificate):
                                ASN1F_field("pk_value",ASN1_NULL(0))),
                 ASN1F_BIT_STRING("pubkey","")
                 ),
-        '''
-        subjectPublicKeyInfo = ASN1_SEQUENCE([ASN1_SEQUENCE([certificate.pubkey_algo,
-                                                             certificate.pk_value]),
-                                              certificate.pubkey, ])
-        return RSA.importKey(str(subjectPublicKeyInfo))
+        """
+        subject_public_key_info = ASN1_SEQUENCE([ASN1_SEQUENCE([certificate.pubkey_algo, certificate.pk_value]),
+                                                 certificate.pubkey])
+        return RSA.importKey(str(subject_public_key_info))
     except AttributeError:
         pass
 
@@ -36,22 +35,23 @@ def rsa_public_from_der_certificate(certificate):
     cert = DerSequence()
     cert.decode(certificate)
 
-    tbsCertificate = DerSequence()
-    tbsCertificate.decode(cert[0])       # first DER SEQUENCE
+    tbs_certificate = DerSequence()
+    tbs_certificate.decode(cert[0])       # first DER SEQUENCE
 
     # search for pubkey OID: rsaEncryption: "1.2.840.113549.1.1.1"
     # hex: 06 09 2A 86 48 86 F7 0D 01 01 01
-    subjectPublicKeyInfo=None
-    for seq in tbsCertificate:
-        if not isinstance(seq,basestring): continue     # skip numerics and non sequence stuff
+    subject_public_key_info = None
+    for seq in tbs_certificate:
+        if not isinstance(seq, basestring):
+            continue     # skip numerics and non sequence stuff
         if "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
-            subjectPublicKeyInfo=seq
+            subject_public_key_info = seq
 
-    if not subjectPublicKeyInfo:
+    if subject_public_key_info is None:
         raise ValueError("could not find OID rsaEncryption 1.2.840.113549.1.1.1 in certificate")
 
     # Initialize RSA key
-    return RSA.importKey(subjectPublicKeyInfo)
+    return RSA.importKey(subject_public_key_info)
 
 
 def rsa_public_from_pem_certificate(certificate):
