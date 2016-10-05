@@ -103,22 +103,22 @@ class TLSSessionCtx(object):
         self.compression = namedtuple("compression", ["method"])
         self.compression.method = None
         self.crypto = namedtuple('crypto', ['client','server'])
-        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac", "keystore", "kex_keystore"])
+        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac", "asym_keystore", "kex_keystore"])
         self.crypto.client.enc = None
         self.crypto.client.dec = None
         self.crypto.client.hmac = None
-        self.crypto.client.keystore = tlsk.EmptyAsymKeystore()
+        self.crypto.client.asym_keystore = tlsk.EmptyAsymKeystore()
         self.crypto.client.kex_keystore = tlsk.EmptyKexKeystore()
 
         self.crypto.client.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
         self.crypto.client.ecdh.curve_name = None
         self.crypto.client.ecdh.priv = None
         self.crypto.client.ecdh.pub = None
-        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac", "keystore", "kex_keystore"])
+        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac", "asym_keystore", "kex_keystore"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
         self.crypto.server.hmac = None
-        self.crypto.server.keystore = tlsk.EmptyAsymKeystore()
+        self.crypto.server.asym_keystore = tlsk.EmptyAsymKeystore()
         self.crypto.server.kex_keystore = tlsk.EmptyKexKeystore()
 
         self.crypto.server.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
@@ -172,9 +172,9 @@ class TLSSessionCtx(object):
                   'crypto-server-enc':repr(self.crypto.server.enc),
                   'crypto-server-dec':repr(self.crypto.server.dec),
 
-                  "crypto-client-keystore": self.crypto.client.keystore,
+                  "crypto-client-asym_keystore": self.crypto.client.asym_keystore,
                   "crypto-client-kex_keystore": self.crypto.client.kex_keystore,
-                  "crypto-server-keystore": self.crypto.server.keystore,
+                  "crypto-server-asym_keystore": self.crypto.server.asym_keystore,
                   "crypto-server-kex_keystore": self.crypto.server.kex_keystore,
 
                   "crypto-client-ecdh-curve_name": repr(self.crypto.client.ecdh.curve_name),
@@ -221,9 +221,9 @@ class TLSSessionCtx(object):
         str_ +="\n\t crypto.server.enc=%(crypto-server-enc)s"
         str_ +="\n\t crypto.server.dec=%(crypto-server-dec)s"
 
-        str_ += "\n\t crypto.client.keystore=%(crypto-client-keystore)s"
+        str_ += "\n\t crypto.client.asym_keystore=%(crypto-client-asym_keystore)s"
         str_ += "\n\t crypto.client.kex_keystore=%(crypto-client-kex_keystore)s"
-        str_ += "\n\t crypto.server.keystore=%(crypto-server-keystore)s"
+        str_ += "\n\t crypto.server.asym_keystore=%(crypto-server-asym_keystore)s"
         str_ += "\n\t crypto.server.kex_keystore=%(crypto-server-kex_keystore)s"
 
         str_ += "\n\t crypto.client.ecdh.curve_name=%(crypto-client-ecdh-curve_name)s"
@@ -322,11 +322,11 @@ class TLSSessionCtx(object):
                     # fetch server pubkey // PKCS1_v1_5
                     cert = pkt[tls.TLSCertificateList].certificates[0].data
                     # If we have a default keystore, create an RSA keystore and populate it from data on the wire
-                    if isinstance(self.crypto.server.keystore, tlsk.EmptyAsymKeystore):
-                        self.crypto.server.keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
+                    if isinstance(self.crypto.server.asym_keystore, tlsk.EmptyAsymKeystore):
+                        self.crypto.server.asym_keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
                     # Else keystore was assigned by user. Just add cert from the wire to the store
                     else:
-                        self.crypto.server.keystore.certificate = str(cert)
+                        self.crypto.server.asym_keystore.certificate = str(cert)
                     # TODO: In the future also handle kex = DH and extract static DH params from cert
                 elif self.params.negotiated.key_exchange is not None and self.params.negotiated.sig == DSA:
                     # TODO: Handle DSA sig key loading here to allow sig checks
@@ -368,7 +368,7 @@ class TLSSessionCtx(object):
                 if pkt.haslayer(tls.TLSClientRSAParams):
                     self.crypto.session.encrypted_premaster_secret = pkt[tls.TLSClientRSAParams].data
                     # If we have the private key, let's decrypt the PMS
-                    private = self.crypto.server.keystore.private
+                    private = self.crypto.server.asym_keystore.private
                     if private is not None:
                         self.crypto.session.premaster_secret = PKCS1_v1_5.new(
                             private).decrypt(self.crypto.session.encrypted_premaster_secret, None)
@@ -426,9 +426,9 @@ class TLSSessionCtx(object):
             for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
                 try:
                     if client:
-                        self.crypto.client.keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+                        self.crypto.client.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
                     else:
-                        self.crypto.server.keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+                        self.crypto.server.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
                     return
                 except ValueError:
                     pass
@@ -436,16 +436,16 @@ class TLSSessionCtx(object):
 
     def rsa_load_keys(self, private, client=False):
         if client:
-            self.crypto.client.keystore = tlsk.RSAKeystore.from_private(private)
+            self.crypto.client.asym_keystore = tlsk.RSAKeystore.from_private(private)
         else:
-            self.crypto.server.keystore = tlsk.RSAKeystore.from_private(private)
+            self.crypto.server.asym_keystore = tlsk.RSAKeystore.from_private(private)
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))
 
     def get_encrypted_pms(self, pms=None):
         cleartext = pms or self.crypto.session.premaster_secret
-        public = self.crypto.server.keystore.public
+        public = self.crypto.server.asym_keystore.public
         if public is not None:
             self.crypto.session.encrypted_premaster_secret = PKCS1_v1_5.new(public).encrypt(cleartext)
         else:
@@ -531,13 +531,13 @@ class TLSSessionCtx(object):
         return hash_
 
     def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=None):
-        if self.crypto.client.keystore.private is None:
+        if self.crypto.client.asym_keystore.private is None:
             raise RuntimeError("Missing client private key. Can't sign")
         msg_hash = self.get_handshake_hash(hash_)
         if pre_sign_hook is not None:
             msg_hash = pre_sign_hook(msg_hash)
         # Will throw exception if we can't sign or if data is larger the modulus
-        return Sig_PKCS1_v1_5.new(self.crypto.client.keystore.private).sign(msg_hash)
+        return Sig_PKCS1_v1_5.new(self.crypto.client.asym_keystore.private).sign(msg_hash)
 
     def set_mode(self, client=None, server=None):
         self.client = client if client else not server

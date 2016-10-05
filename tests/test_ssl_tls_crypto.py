@@ -130,15 +130,15 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)
         tls_ctx.insert(pkt)
         tls_ctx.rsa_load_keys(self.pem_priv_key)
-        self.assertIsNotNone(tls_ctx.crypto.server.keystore.private)
-        self.assertIsNotNone(tls_ctx.crypto.server.keystore.public)
+        self.assertIsNotNone(tls_ctx.crypto.server.asym_keystore.private)
+        self.assertIsNotNone(tls_ctx.crypto.server.asym_keystore.public)
         # Broken due to pycrypto bug: https://github.com/dlitz/pycrypto/issues/114
         # Uncomment when fixed upstream
-        # self.assertTrue(tls_ctx.crypto.server.keystore.private.can_decrypt())
-        # self.assertTrue(tls_ctx.crypto.server.keystore.public.can_decrypt())
-        self.assertTrue(tls_ctx.crypto.server.keystore.private.can_encrypt())
+        # self.assertTrue(tls_ctx.crypto.server.asym_keystore.private.can_decrypt())
+        # self.assertTrue(tls_ctx.crypto.server.asym_keystore.public.can_decrypt())
+        self.assertTrue(tls_ctx.crypto.server.asym_keystore.private.can_encrypt())
         # TODO: Invertigate further: broken also in pycrypto. Should return False for public keys.
-        # self.assertFalse(tls_ctx.crypto.server.keystore.public.can_encrypt())
+        # self.assertFalse(tls_ctx.crypto.server.asym_keystore.public.can_encrypt())
 
     def test_decrypted_pms_matches_generated_pms(self):
         tls_ctx = tlsc.TLSSessionCtx()
@@ -300,8 +300,8 @@ class TestTLSSecurityParameters(unittest.TestCase):
         pem_file = env_local_file("openssl_1_0_1_f_server.pem")
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.rsa_load_keys_from_file(pem_file)
-        self.assertTrue(tls_ctx.crypto.server.keystore.private)
-        self.assertTrue(tls_ctx.crypto.server.keystore.public)
+        self.assertTrue(tls_ctx.crypto.server.asym_keystore.private)
+        self.assertTrue(tls_ctx.crypto.server.asym_keystore.public)
 
 
 class TestNullCompression(unittest.TestCase):

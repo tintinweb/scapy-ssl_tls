@@ -385,7 +385,7 @@ class TLSServerAutomata(Automaton):
         
         pemo = pem_get_objects(self.pemkey)
         for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
-            self.srv_tls_sock.tls_ctx.crypto.server.keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+            self.srv_tls_sock.tls_ctx.crypto.server.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
             break
 
     @hookable

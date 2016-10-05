@@ -75,6 +75,10 @@ class AsymKeyStore(object):
         self.name = name
         self.private = private
         self.public = public
+        if self.public is not None:
+            self.size = nb_bits(self.public.n)
+        else:
+            self.size = 0
         self.keys = (self.private, self.public)
         self.certificate = None
 
@@ -84,17 +88,18 @@ class AsymKeyStore(object):
 
     def __str__(self):
         template = """
-{name}:
-    certificate: {certificate}
-    public: {public}
-    private: {private}"""
-        return template.format(name=self.name, certificate=repr(self.certificate), public=self.public,
+        {name}:
+            certificate: {certificate}
+            size: {size}
+            public: {public}
+            private: {private}"""
+        return template.format(name=self.name, certificate=repr(self.certificate), size=self.size, public=self.public,
                                private=self.private)
 
 
 class EmptyAsymKeystore(AsymKeyStore):
     def __init__(self):
-        super(EmptyAsymKeystore, self).__init__("Empty Keystore", None, None)
+        super(EmptyAsymKeystore, self).__init__("Empty Asymmetrical Keystore", None, None)
 
 
 class RSAKeystore(AsymKeyStore):
