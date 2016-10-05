@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import binascii
+import math
+import random
 
 from Crypto.PublicKey import RSA
 from Crypto.Util.asn1 import DerSequence
@@ -64,6 +66,10 @@ def pem_to_der(certificate):
     return binascii.a2b_base64("".join(lines[1:-1]))
 
 
+def nb_bits(int_):
+    return int(math.ceil(math.log(int_) / math.log(2)))
+
+
 class AsymKeyStore(object):
     def __init__(self, name, public, private=None):
         self.name = name
@@ -119,3 +125,47 @@ class RSAKeystore(AsymKeyStore):
 class DSAKeystore(AsymKeyStore):
     def __init__(self, public, private=None):
         super(DSAKeystore, self).__init__("DSA Keystore", public, private)
+
+
+class KexKeyStore(object):
+    def __init__(self, name, public, private=None):
+        self.name = name
+        self.public = public
+        self.private = private
+
+
+class EmptyKexKeystore(KexKeyStore):
+    def __init__(self):
+        super(EmptyKexKeystore, self).__init__("Empty Kex Keystore", None, None)
+
+
+class DHKeyStore(KexKeyStore):
+    def __init__(self, g, p, public, private=None):
+        self.g = g
+        self.p = p
+        self.size = nb_bits(self.p)
+        super(DHKeyStore, self).__init__("DH Keystore", public, private)
+
+    @classmethod
+    def new_keypair(cls, g, p, private=None):
+        # Client private key
+        # Long story short, this provides 128bits of key space (sqrt(2**256)). TLS leaves this up to the implementation.
+        # Another option is to gather random.randint(0, 2**nb_bits(p) - 1), but has little added security
+        # In our case, since we don't care about security, it really doesn't matter what we pick
+        private = private or random.randint(0, 2 ** 256 - 1)
+        public = pow(g, private, p)
+        return cls(g, p, public, private)
+
+    def get_psk(self, public):
+        return pow(public, self.private, self.p)
+
+    def __str__(self):
+        template = """
+        {name}:
+            generator: {g}
+            modulus: {p}
+            size: {size}
+            public: {public}
+            private: {private}"""
+        return template.format(name=self.name, g=self.g, p=self.p, size=self.size, public=self.public,
+                               private=self.private)

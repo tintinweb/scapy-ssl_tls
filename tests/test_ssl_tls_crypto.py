@@ -7,6 +7,7 @@ import tinyec.ec as ec
 import tinyec.registry as reg
 import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
+import scapy_ssl_tls.ssl_tls_keystore as tlsk
 
 from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.Cipher import AES, DES3, PKCS1_v1_5
@@ -181,16 +182,19 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_client_dh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.crypto.server.dh.p = "\xdaX<\x16\xd9\x85\"\x89\xd0\xe4\xafuoL\xca\x92\xddK\xe53\xb8\x04\xfb\x0f\xed\x94\xef\x9c\x8aD\x03\xedWFP\xd3i\x99\xdb)\xd7v\'k\xa2\xd3\xd4\x12\xe2\x18\xf4\xdd\x1e\x08L\xf6\xd8\x00>|Gt\xe83"
-        tls_ctx.crypto.server.dh.g = "\x02"
-        tls_ctx.crypto.server.dh.y_s = "b\x1bF\xd4\xbe\xc6\x83d\x80\x1e\xeam\x86^\xcc!\xb2\x1b\x85+\xbd$j\xc9\x05\xf4\x14\x82 7\x8f_\x13\xcb\xef\xabyd\xb4\xc8\xda\xde\xac\xe8Zr\x8f\xb5\xfc\n\x16\xb0b\xf7\xd9!\x8d\x03\xef\n\r9\xd8\x87"
+        p = 11435638110073884015312138951374632602058080675070521707579703088370446597672067452229024566834732449017970455481029703480957707976441965258194321262569523L
+        g = 2
+        public = 5138256925703068273978027748090991496798559132548080008963338818789329120888330364361710579103845963013102056863555649866832856399945018230203391434938503L
+        tls_ctx.crypto.server.kex_keystore = tlsk.DHKeyStore(g, p, public)
         client_privkey = 5398526532442504864680398257365369432058147704829279760748758494328728516319L
         client_pubkey = tls_ctx.get_client_dh_pubkey(client_privkey)
         self.assertEqual(
-            "/T\xdc;\xc49\xa6\x8cD\xd4\xc1\x07I|\xb6\xc8\xaf\xb5\x04\xe9\xfb\t\x0e}\x14~\xa4\x1f\xdfo\x08u)Z\xb3\x0e\x1c^\xa3x0\x90\xa1\xd7\x82\x9dLT\xa6^\xcc\xf7\xae\x87\x97\x86vi\x02s\x10\xb3\xdbo",
+            ("/T\xdc;\xc49\xa6\x8cD\xd4\xc1\x07I|\xb6\xc8\xaf\xb5\x04\xe9\xfb\t\x0e}\x14~\xa4\x1f\xdfo\x08u)Z\xb3\x0e"
+             "\x1c^\xa3x0\x90\xa1\xd7\x82\x9dLT\xa6^\xcc\xf7\xae\x87\x97\x86vi\x02s\x10\xb3\xdbo"),
             client_pubkey)
         self.assertEqual(
-            "}\xcae\xd2y\xd7F$\xde\"\xa9s\xfbNR9v\x19t9\x87\xa8\xa3\x9c\xccb]\x13\xb7\x8a\x8f\xdf\x7fv\x05\xa6\xf1\xa7\xc8\xf4X\xe3\xd4\xac\xd6\x1e4\xb4\x1cc\xbb\xce\xbe\x94lQ\x91\xb9\xde\xb7\xa6gu_",
+            ("}\xcae\xd2y\xd7F$\xde\"\xa9s\xfbNR9v\x19t9\x87\xa8\xa3\x9c\xccb]\x13\xb7\x8a\x8f\xdf\x7fv\x05\xa6\xf1\xa7"
+             "\xc8\xf4X\xe3\xd4\xac\xd6\x1e4\xb4\x1cc\xbb\xce\xbe\x94lQ\x91\xb9\xde\xb7\xa6gu_"),
             tls_ctx.crypto.session.premaster_secret)
 
     def test_client_ecdh_parameters_generation_matches_fixed_data(self):

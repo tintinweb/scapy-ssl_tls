@@ -50,6 +50,10 @@ def int_to_str(int_):
     return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
 
 
+def str_to_int(str_):
+    return int(binascii.hexlify(str_), 16)
+
+
 def str_to_ec_point(ansi_str, ec_curve):
     if not ansi_str.startswith("\x04"):
         raise ValueError("ANSI octet string missing point prefix (0x04)")
@@ -99,30 +103,24 @@ class TLSSessionCtx(object):
         self.compression = namedtuple("compression", ["method"])
         self.compression.method = None
         self.crypto = namedtuple('crypto', ['client','server'])
-        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac", "keystore"])
+        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac", "keystore", "kex_keystore"])
         self.crypto.client.enc = None
         self.crypto.client.dec = None
         self.crypto.client.hmac = None
         self.crypto.client.keystore = tlsk.EmptyAsymKeystore()
+        self.crypto.client.kex_keystore = tlsk.EmptyKexKeystore()
 
-        self.crypto.client.dh = namedtuple("dh", ["x", "y_c"])
-        self.crypto.client.dh.x = None
-        self.crypto.client.dh.y_c = None
         self.crypto.client.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
         self.crypto.client.ecdh.curve_name = None
         self.crypto.client.ecdh.priv = None
         self.crypto.client.ecdh.pub = None
-        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac", "keystore"])
+        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac", "keystore", "kex_keystore"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
         self.crypto.server.hmac = None
         self.crypto.server.keystore = tlsk.EmptyAsymKeystore()
+        self.crypto.server.kex_keystore = tlsk.EmptyKexKeystore()
 
-        self.crypto.server.dh = namedtuple("dh", ["p", "g", "x", "y_s"])
-        self.crypto.server.dh.p = None
-        self.crypto.server.dh.g = None
-        self.crypto.server.dh.x = None
-        self.crypto.server.dh.y_s = None
         self.crypto.server.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
         self.crypto.server.ecdh.curve_name = None
         self.crypto.server.ecdh.priv = None
@@ -175,14 +173,9 @@ class TLSSessionCtx(object):
                   'crypto-server-dec':repr(self.crypto.server.dec),
 
                   "crypto-client-keystore": self.crypto.client.keystore,
+                  "crypto-client-kex_keystore": self.crypto.client.kex_keystore,
                   "crypto-server-keystore": self.crypto.server.keystore,
-
-                  "crypto-client-dh-x": repr(self.crypto.client.dh.x),
-                  "crypto-client-dh-y_c": repr(self.crypto.client.dh.y_c),
-                  "crypto-server-dh-p": repr(self.crypto.server.dh.p),
-                  "crypto-server-dh-g": repr(self.crypto.server.dh.g),
-                  "crypto-server-dh-x": repr(self.crypto.server.dh.x),
-                  "crypto-server-dh-y_s": repr(self.crypto.server.dh.y_s),
+                  "crypto-server-kex_keystore": self.crypto.server.kex_keystore,
 
                   "crypto-client-ecdh-curve_name": repr(self.crypto.client.ecdh.curve_name),
                   "crypto-client-ecdh-priv": repr(self.crypto.client.ecdh.priv),
@@ -229,14 +222,9 @@ class TLSSessionCtx(object):
         str_ +="\n\t crypto.server.dec=%(crypto-server-dec)s"
 
         str_ += "\n\t crypto.client.keystore=%(crypto-client-keystore)s"
+        str_ += "\n\t crypto.client.kex_keystore=%(crypto-client-kex_keystore)s"
         str_ += "\n\t crypto.server.keystore=%(crypto-server-keystore)s"
-
-        str_ += "\n\t crypto.client.dh.x=%(crypto-client-dh-x)s"
-        str_ += "\n\t crypto.client.dh.y_c=%(crypto-client-dh-y_c)s"
-        str_ += "\n\t crypto.server.dh.p=%(crypto-server-dh-p)s"
-        str_ += "\n\t crypto.server.dh.g=%(crypto-server-dh-g)s"
-        str_ += "\n\t crypto.server.dh.x=%(crypto-server-dh-x)s"
-        str_ += "\n\t crypto.server.dh.y_s=%(crypto-server-dh-y_s)s"
+        str_ += "\n\t crypto.server.kex_keystore=%(crypto-server-kex_keystore)s"
 
         str_ += "\n\t crypto.client.ecdh.curve_name=%(crypto-client-ecdh-curve_name)s"
         str_ += "\n\t crypto.client.ecdh.priv=%(crypto-client-ecdh-priv)s"
@@ -267,49 +255,49 @@ class TLSSessionCtx(object):
         str_ += "\n>"
         return str_ % params
 
-    def insert(self, p):
+    def insert(self, pkt):
         """
         add packet to context
         - unpack SSL.records and add them to history
         """
-        if p.haslayer(tls.SSL):
-            ps = p[tls.SSL].records
+        if pkt.haslayer(tls.SSL):
+            ps = pkt[tls.SSL].records
         else:
-            ps = [p]
+            ps = [pkt]
 
-        for p in ps:
-            self.packets.history.append(p)
-            self._process(p)    # fill structs
+        for pkt in ps:
+            self.packets.history.append(pkt)
+            self._process(pkt)    # fill structs
 
-    def _process(self,p):
+    def _process(self, pkt):
         """
         fill context
         """
-        if p.haslayer(tls.TLSHandshake):
+        if pkt.haslayer(tls.TLSHandshake):
             # requires handshake messages
-            if p.haslayer(tls.TLSClientHello):
+            if pkt.haslayer(tls.TLSClientHello):
                 if not self.params.handshake.client:
 
-                    self.params.handshake.client = p[tls.TLSClientHello]
-                    self.params.negotiated.version = p[tls.TLSClientHello].version
+                    self.params.handshake.client = pkt[tls.TLSClientHello]
+                    self.params.negotiated.version = pkt[tls.TLSClientHello].version
                     # fetch randombytes for crypto stuff
                     if not self.crypto.session.randombytes.client:
-                        self.crypto.session.randombytes.client = struct.pack("!I", p[tls.TLSClientHello].gmt_unix_time) + p[tls.TLSClientHello].random_bytes
+                        self.crypto.session.randombytes.client = struct.pack("!I", pkt[tls.TLSClientHello].gmt_unix_time) + pkt[tls.TLSClientHello].random_bytes
                     # Generate a random PMS. Overriden at decryption time if private key is provided
                     if self.crypto.session.premaster_secret is None:
                         self.crypto.session.premaster_secret = self._generate_random_pms(self.params.negotiated.version)
-            if p.haslayer(tls.TLSServerHello):
+            if pkt.haslayer(tls.TLSServerHello):
                 if not self.params.handshake.server:
-                    self.params.handshake.server = p[tls.TLSServerHello]
-                    self.params.negotiated.version = p[tls.TLSServerHello].version
+                    self.params.handshake.server = pkt[tls.TLSServerHello]
+                    self.params.negotiated.version = pkt[tls.TLSServerHello].version
                     self.crypto.session.prf = TLSPRF(self.params.negotiated.version)
                     #fetch randombytes
                     if not self.crypto.session.randombytes.server:
-                        self.crypto.session.randombytes.server = struct.pack("!I", p[tls.TLSServerHello].gmt_unix_time) + p[tls.TLSServerHello].random_bytes
+                        self.crypto.session.randombytes.server = struct.pack("!I", pkt[tls.TLSServerHello].gmt_unix_time) + pkt[tls.TLSServerHello].random_bytes
                 # negotiated params
                 if not self.params.negotiated.ciphersuite:
-                    self.params.negotiated.ciphersuite = p[tls.TLSServerHello].cipher_suite
-                    self.params.negotiated.compression = p[tls.TLSServerHello].compression_method
+                    self.params.negotiated.ciphersuite = pkt[tls.TLSServerHello].cipher_suite
+                    self.params.negotiated.compression = pkt[tls.TLSServerHello].compression_method
                     try:
                         self.params.negotiated.compression_algo = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["name"]
                         self.compression.method = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["type"]
@@ -328,11 +316,11 @@ class TLSSessionCtx(object):
                         warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" %
                                       self.params.negotiated.ciphersuite)
 
-            if p.haslayer(tls.TLSCertificateList):
+            if pkt.haslayer(tls.TLSCertificateList):
                 # TODO: Probably don't want to do that if rsa_load_priv*() is called
                 if self.params.negotiated.key_exchange is not None and (self.params.negotiated.key_exchange == tls.TLSKexNames.RSA or self.params.negotiated.sig == RSA):
                     # fetch server pubkey // PKCS1_v1_5
-                    cert = p[tls.TLSCertificateList].certificates[0].data
+                    cert = pkt[tls.TLSCertificateList].certificates[0].data
                     # If we have a default keystore, create an RSA keystore and populate it from data on the wire
                     if isinstance(self.crypto.server.keystore, tlsk.EmptyAsymKeystore):
                         self.crypto.server.keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
@@ -348,25 +336,27 @@ class TLSSessionCtx(object):
                     # Could move to cryptography.io which also supports TLS1.2 AES GCM modes
                     pass
 
-            if p.haslayer(tls.TLSServerKeyExchange):
+            if pkt.haslayer(tls.TLSServerKeyExchange):
                 # DHE case
-                if p.haslayer(tls.TLSServerDHParams):
-                    self.crypto.server.dh.p = p[tls.TLSServerDHParams].p
-                    self.crypto.server.dh.g = p[tls.TLSServerDHParams].g
-                    self.crypto.server.dh.y_s = p[tls.TLSServerDHParams].y_s
-                if p.haslayer(tls.TLSServerECDHParams):
+                if pkt.haslayer(tls.TLSServerDHParams):
+                    if isinstance(self.crypto.server.kex_keystore, tlsk.EmptyKexKeystore):
+                        p = str_to_int(pkt[tls.TLSServerDHParams].p)
+                        g = str_to_int(pkt[tls.TLSServerDHParams].g)
+                        public = str_to_int(pkt[tls.TLSServerDHParams].y_s)
+                        self.crypto.server.kex_keystore = tlsk.DHKeyStore(g, p, public)
+                if pkt.haslayer(tls.TLSServerECDHParams):
                     try:
-                        self.crypto.server.ecdh.curve_name = tls.TLS_ELLIPTIC_CURVES[p[tls.TLSServerECDHParams].curve_name]
+                        self.crypto.server.ecdh.curve_name = tls.TLS_ELLIPTIC_CURVES[pkt[tls.TLSServerECDHParams].curve_name]
                     # Unknown cuve case. Just record raw values, but do nothing with them
                     except KeyError:
-                        self.crypto.server.ecdh.curve_name = p[tls.TLSServerECDHParams].curve_name
-                        self.crypto.server.ecdh.pub = p[tls.TLSServerECDHParams].p
+                        self.crypto.server.ecdh.curve_name = pkt[tls.TLSServerECDHParams].curve_name
+                        self.crypto.server.ecdh.pub = pkt[tls.TLSServerECDHParams].p
                         warnings.warn("Unknown elliptic curve. Client KEX calculation is up to you")
                     # We are on a known curve
                     else:
                         # TODO: DO not assume uncompressed EC points!
                         # Uncompressed EC points are recorded in ANSI format => \x04 + x_point + y_point
-                        ansi_ec_point_str = p[tls.TLSServerECDHParams].p
+                        ansi_ec_point_str = pkt[tls.TLSServerECDHParams].p
                         try:
                             ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
                             self.crypto.server.ecdh.pub = str_to_ec_point(ansi_ec_point_str, ec_curve)
@@ -374,19 +364,28 @@ class TLSSessionCtx(object):
                             warnings.warn("Unsupported elliptic curve: %s" % self.crypto.server.ecdh.curve_name)
 
             # calculate key material
-            if p.haslayer(tls.TLSClientKeyExchange):
-                if p.haslayer(tls.TLSClientRSAParams):
-                    self.crypto.session.encrypted_premaster_secret = p[tls.TLSClientRSAParams].data
+            if pkt.haslayer(tls.TLSClientKeyExchange):
+                if pkt.haslayer(tls.TLSClientRSAParams):
+                    self.crypto.session.encrypted_premaster_secret = pkt[tls.TLSClientRSAParams].data
                     # If we have the private key, let's decrypt the PMS
                     private = self.crypto.server.keystore.private
                     if private is not None:
                         self.crypto.session.premaster_secret = PKCS1_v1_5.new(
                             private).decrypt(self.crypto.session.encrypted_premaster_secret, None)
-                elif p.haslayer(tls.TLSClientDHParams):
-                    self.crypto.client.dh.y_c = p[tls.TLSClientDHParams].data
-                elif p.haslayer(tls.TLSClientECDHParams):
+                elif pkt.haslayer(tls.TLSClientDHParams):
+                    # Check if we have an unitialized keystore, and if so build a new one
+                    if isinstance(self.crypto.client.kex_keystore, tlsk.EmptyKexKeystore):
+                        server_kex_keystore = self.crypto.server.kex_keystore
+                        # Check if server side is a DH keystore. Something is messed up otherwise
+                        if isinstance(server_kex_keystore, tlsk.DHKeyStore):
+                            client_public = str_to_int(pkt[tls.TLSClientDHParams].data)
+                            self.crypto.client.kex_keystore = tlsk.DHKeyStore(server_kex_keystore.g,
+                                                                              server_kex_keystore.p, client_public)
+                        else:
+                            raise RuntimeError("Server keystore is not a DH keystore")
+                elif pkt.haslayer(tls.TLSClientECDHParams):
                     ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
-                    self.crypto.client.ecdh.pub = str_to_ec_point(p[tls.TLSClientECDHParams].data, ec_curve)
+                    self.crypto.client.ecdh.pub = str_to_ec_point(pkt[tls.TLSClientECDHParams].data, ec_curve)
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
                 self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
@@ -453,27 +452,19 @@ class TLSSessionCtx(object):
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.crypto.session.encrypted_premaster_secret
 
-    def get_client_dh_pubkey(self, priv_key=None):
-        # ValueError is propagated to caller both if hex or int conversion fail
-        import math
-        import random
-        str_to_int = lambda x: int(binascii.hexlify(x), 16)
-        nb_bits = lambda x: int(math.ceil(math.log(x) / math.log(2)))
-        p = str_to_int(self.crypto.server.dh.p)
-        g = str_to_int(self.crypto.server.dh.g)
-        y_s = str_to_int(self.crypto.server.dh.y_s)
-        # Client private key
-        # Long story short, this provides 128bits of key space (sqrt(2**256)). TLS leaves this up to the implementation.
-        # Another option is to gather random.randint(0, 2**nb_bits(p) - 1), but has little added security
-        # In our case, since we don't care about security, it really doesn't matter what we pick
-        a = priv_key or random.randint(0, 2**256 - 1)
-        self.crypto.client.dh.x = int_to_str(a)
-        self.crypto.client.dh.y_c = int_to_str(pow(g, a, p))
+    def get_client_dh_pubkey(self, private=None):
+        if isinstance(self.crypto.server.kex_keystore, tlsk.EmptyKexKeystore):
+            raise RuntimeError("Unitialized DH server keystore")
+        g = self.crypto.server.kex_keystore.g
+        p = self.crypto.server.kex_keystore.p
+        public = self.crypto.server.kex_keystore.public
+        self.crypto.client.kex_keystore = tlsk.DHKeyStore.new_keypair(g, p, private)
+        pms = self.crypto.client.kex_keystore.get_psk(public)
         # Per RFC 4346 section 8.1.2
         # Leading bytes of Z that contain all zero bits are stripped before it is used as the
         # pre_master_secret.
-        self.crypto.session.premaster_secret = int_to_str(pow(y_s, a, p)).lstrip("\x00")
-        return self.crypto.client.dh.y_c
+        self.crypto.session.premaster_secret = int_to_str(pms).lstrip("\x00")
+        return int_to_str(self.crypto.client.kex_keystore.public)
 
     def get_client_ecdh_pubkey(self, priv_key=None):
         # Will raise ValueError for unknown curves
