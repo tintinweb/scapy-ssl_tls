@@ -7,6 +7,7 @@ import random
 from Crypto.PublicKey import RSA
 from Crypto.Util.asn1 import DerSequence
 from scapy.asn1.asn1 import ASN1_SEQUENCE
+import tinyec.ec as ec
 
 
 def rsa_public_from_der_certificate(certificate):
@@ -174,3 +175,33 @@ class DHKeyStore(KexKeyStore):
             private: {private}"""
         return template.format(name=self.name, g=self.g, p=self.p, size=self.size, public=self.public,
                                private=self.private)
+
+
+class ECDHKeyStore(KexKeyStore):
+    def __init__(self, curve, public, private=None):
+        self.curve = curve
+        self.public = public
+        self.private = private
+        if self.curve is None:
+            self.unknown_curve = True
+            self.size = 0
+            self.keys = (self.private, self.public)
+        else:
+            self.unknown_curve = False
+            self.size = nb_bits(self.curve.field.p)
+            self.keys = ec.Keypair(curve, self.private, self.public)
+        super(ECDHKeyStore, self).__init__("ECDH Keystore", public, private)
+
+    @classmethod
+    def from_keypair(cls, curve, keypair):
+        return cls(curve, keypair.pub, keypair.priv)
+
+    def __str__(self):
+        template = """
+        {name}:
+            curve: {curve}
+            size: {size}
+            public: {public}
+            private: {private}"""
+        curve_name = "Unknown" if self.unknown_curve else self.curve.name
+        return template.format(name=self.name, curve=curve_name, size=self.size, public=self.public, private=self.private)

@@ -54,15 +54,18 @@ def str_to_int(str_):
     return int(binascii.hexlify(str_), 16)
 
 
-def str_to_ec_point(ansi_str, ec_curve):
-    if not ansi_str.startswith("\x04"):
+def ansi_str_to_point(str_):
+    if not str_.startswith("\x04"):
         raise ValueError("ANSI octet string missing point prefix (0x04)")
-    ansi_str = ansi_str[1:]
-    if len(ansi_str) % 2 != 0:
+    str_ = str_[1:]
+    if len(str_) % 2 != 0:
         raise ValueError("Can't parse curve point. Odd ANSI string length")
-    str_to_int = lambda x: int(binascii.hexlify(x), 16)
-    x, y = str_to_int(ansi_str[:len(ansi_str) // 2]), str_to_int(ansi_str[len(ansi_str) // 2:])
-    return ec.Point(ec_curve, x, y)
+    half = len(str_) // 2
+    return str_to_int(str_[:half]), str_to_int(str_[half:])
+
+
+def point_to_ansi_str(point):
+    return "\x04%s%s" % (int_to_str(point.x), int_to_str(point.y))
 
 
 class TLSSessionCtx(object):
@@ -110,10 +113,6 @@ class TLSSessionCtx(object):
         self.crypto.client.asym_keystore = tlsk.EmptyAsymKeystore()
         self.crypto.client.kex_keystore = tlsk.EmptyKexKeystore()
 
-        self.crypto.client.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
-        self.crypto.client.ecdh.curve_name = None
-        self.crypto.client.ecdh.priv = None
-        self.crypto.client.ecdh.pub = None
         self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac", "asym_keystore", "kex_keystore"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
@@ -121,10 +120,6 @@ class TLSSessionCtx(object):
         self.crypto.server.asym_keystore = tlsk.EmptyAsymKeystore()
         self.crypto.server.kex_keystore = tlsk.EmptyKexKeystore()
 
-        self.crypto.server.ecdh = namedtuple("ecdh", ["curve_name", "priv", "pub"])
-        self.crypto.server.ecdh.curve_name = None
-        self.crypto.server.ecdh.priv = None
-        self.crypto.server.ecdh.pub = None
         self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
                                                      'premaster_secret',
                                                      'master_secret',
@@ -177,13 +172,6 @@ class TLSSessionCtx(object):
                   "crypto-server-asym_keystore": self.crypto.server.asym_keystore,
                   "crypto-server-kex_keystore": self.crypto.server.kex_keystore,
 
-                  "crypto-client-ecdh-curve_name": repr(self.crypto.client.ecdh.curve_name),
-                  "crypto-client-ecdh-priv": repr(self.crypto.client.ecdh.priv),
-                  "crypto-client-ecdh-pub": repr(self.crypto.client.ecdh.pub),
-                  "crypto-server-ecdh-curve_name": repr(self.crypto.server.ecdh.curve_name),
-                  "crypto-server-ecdh-priv": repr(self.crypto.server.ecdh.priv),
-                  "crypto-server-ecdh-pub": repr(self.crypto.server.ecdh.pub),
-
                   'crypto-session-encrypted_premaster_secret':repr(self.crypto.session.encrypted_premaster_secret),
                   'crypto-session-premaster_secret':repr(self.crypto.session.premaster_secret),
                   'crypto-session-master_secret':repr(self.crypto.session.master_secret),
@@ -225,13 +213,6 @@ class TLSSessionCtx(object):
         str_ += "\n\t crypto.client.kex_keystore=%(crypto-client-kex_keystore)s"
         str_ += "\n\t crypto.server.asym_keystore=%(crypto-server-asym_keystore)s"
         str_ += "\n\t crypto.server.kex_keystore=%(crypto-server-kex_keystore)s"
-
-        str_ += "\n\t crypto.client.ecdh.curve_name=%(crypto-client-ecdh-curve_name)s"
-        str_ += "\n\t crypto.client.ecdh.priv=%(crypto-client-ecdh-priv)s"
-        str_ += "\n\t crypto.client.ecdh.pub=%(crypto-client-ecdh-pub)s"
-        str_ += "\n\t crypto.server.ecdh.curve_name=%(crypto-server-ecdh-curve_name)s"
-        str_ += "\n\t crypto.server.ecdh.priv=%(crypto-server-ecdh-priv)s"
-        str_ += "\n\t crypto.server.ecdh.pub=%(crypto-server-ecdh-pub)s"
 
         str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
         str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
@@ -345,23 +326,26 @@ class TLSSessionCtx(object):
                         public = str_to_int(pkt[tls.TLSServerDHParams].y_s)
                         self.crypto.server.kex_keystore = tlsk.DHKeyStore(g, p, public)
                 if pkt.haslayer(tls.TLSServerECDHParams):
-                    try:
-                        self.crypto.server.ecdh.curve_name = tls.TLS_ELLIPTIC_CURVES[pkt[tls.TLSServerECDHParams].curve_name]
-                    # Unknown cuve case. Just record raw values, but do nothing with them
-                    except KeyError:
-                        self.crypto.server.ecdh.curve_name = pkt[tls.TLSServerECDHParams].curve_name
-                        self.crypto.server.ecdh.pub = pkt[tls.TLSServerECDHParams].p
-                        warnings.warn("Unknown elliptic curve. Client KEX calculation is up to you")
-                    # We are on a known curve
-                    else:
-                        # TODO: DO not assume uncompressed EC points!
-                        # Uncompressed EC points are recorded in ANSI format => \x04 + x_point + y_point
-                        ansi_ec_point_str = pkt[tls.TLSServerECDHParams].p
+                    if isinstance(self.crypto.server.kex_keystore, tlsk.EmptyKexKeystore):
                         try:
-                            ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
-                            self.crypto.server.ecdh.pub = str_to_ec_point(ansi_ec_point_str, ec_curve)
-                        except ValueError:
-                            warnings.warn("Unsupported elliptic curve: %s" % self.crypto.server.ecdh.curve_name)
+                            curve_id = pkt[tls.TLSServerECDHParams].curve_name
+                            # TODO: DO not assume uncompressed EC points!
+                            # Uncompressed EC points are recorded in ANSI format => \x04 + x_point + y_point
+                            point = ansi_str_to_point(pkt[tls.TLSServerECDHParams].p)
+                            curve_name = tls.TLS_ELLIPTIC_CURVES[curve_id]
+                        # Unknown curve case. Just record raw values, but do nothing with them
+                        except KeyError:
+                            self.crypto.server.kex_keystore = tlsk.ECDHKeyStore(None, point)
+                            warnings.warn("Unknown elliptic curve id: %d. Client KEX calculation is up to you" % curve_id)
+                        # We are on a known curve
+                        else:
+                            try:
+                                curve = ec_reg.get_curve(curve_name)
+                                self.crypto.server.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
+                            except ValueError:
+                                self.crypto.server.kex_keystore = tlsk.ECDHKeyStore(None, point)
+                                warnings.warn("Unsupported elliptic curve: %s" % curve_name)
+
 
             # calculate key material
             if pkt.haslayer(tls.TLSClientKeyExchange):
@@ -384,8 +368,14 @@ class TLSSessionCtx(object):
                         else:
                             raise RuntimeError("Server keystore is not a DH keystore")
                 elif pkt.haslayer(tls.TLSClientECDHParams):
-                    ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
-                    self.crypto.client.ecdh.pub = str_to_ec_point(pkt[tls.TLSClientECDHParams].data, ec_curve)
+                    # Check if we have an unitialized keystore, and if so build a new one
+                    if isinstance(self.crypto.client.kex_keystore, tlsk.EmptyKexKeystore):
+                        server_kex_keystore = self.crypto.server.kex_keystore
+                        # Check if server side is a ECDH keystore. Something is messed up otherwise
+                        if isinstance(server_kex_keystore, tlsk.ECDHKeyStore):
+                            curve = server_kex_keystore.curve
+                            point = ansi_str_to_point(pkt[tls.TLSClientECDHParams].data)
+                            self.crypto.client.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
 
                 explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
                 self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
@@ -453,8 +443,8 @@ class TLSSessionCtx(object):
         return self.crypto.session.encrypted_premaster_secret
 
     def get_client_dh_pubkey(self, private=None):
-        if isinstance(self.crypto.server.kex_keystore, tlsk.EmptyKexKeystore):
-            raise RuntimeError("Unitialized DH server keystore")
+        if not isinstance(self.crypto.server.kex_keystore, tlsk.DHKeyStore):
+            raise RuntimeError("Server keystore is not DH")
         g = self.crypto.server.kex_keystore.g
         p = self.crypto.server.kex_keystore.p
         public = self.crypto.server.kex_keystore.public
@@ -466,20 +456,24 @@ class TLSSessionCtx(object):
         self.crypto.session.premaster_secret = int_to_str(pms).lstrip("\x00")
         return int_to_str(self.crypto.client.kex_keystore.public)
 
-    def get_client_ecdh_pubkey(self, priv_key=None):
-        # Will raise ValueError for unknown curves
-        ec_curve = ec_reg.get_curve(self.crypto.server.ecdh.curve_name)
-        server_keypair = ec.Keypair(ec_curve, pub=self.crypto.server.ecdh.pub)
-        if priv_key is None:
-            client_keypair = ec.make_keypair(ec_curve)
+    def get_client_ecdh_pubkey(self, private=None):
+        if not isinstance(self.crypto.server.kex_keystore, tlsk.ECDHKeyStore):
+            raise RuntimeError("Server keystore is not ECDH")
+        if self.crypto.server.kex_keystore.unknown_curve:
+            raise RuntimeError("Unknown EC. KEX calculation is up to you")
+
+        curve = self.crypto.server.kex_keystore.curve
+        server_keypair = self.crypto.server.kex_keystore.keys
+        if private is None:
+            client_keypair = ec.make_keypair(curve)
         else:
-            client_keypair = ec.Keypair(ec_curve, priv_key)
-        self.crypto.client.ecdh.priv = int_to_str(client_keypair.priv)
-        self.crypto.client.ecdh.pub = client_keypair.pub
+            client_keypair = ec.Keypair(curve, private)
+        self.crypto.client.kex_keystore = tlsk.ECDHKeyStore.from_keypair(curve, client_keypair)
+
         secret_point = ec.ECDH(client_keypair).get_secret(server_keypair)
         # PMS is x coordinate of secret
         self.crypto.session.premaster_secret = int_to_str(secret_point.x)
-        return "\x04%s%s" % (int_to_str(client_keypair.pub.x), int_to_str(client_keypair.pub.y))
+        return point_to_ansi_str(client_keypair.pub)
 
     def get_client_kex_data(self, val=None):
         if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:

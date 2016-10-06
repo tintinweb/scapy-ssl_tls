@@ -199,19 +199,17 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_client_ecdh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.crypto.server.ecdh.curve_name = "secp256r1"
-        secp256r1 = reg.get_curve(tls_ctx.crypto.server.ecdh.curve_name)
-        tls_ctx.crypto.server.ecdh.pub = ec.Point(
-            secp256r1,
-            71312736565121892539464098105317518227531978702333415386264829982789952731614L,
-            108064706642599821618918248475955325719985341096102200103424860263181813987462L)
+        secp256r1 = reg.get_curve("secp256r1")
+        public = ec.Point(secp256r1, 71312736565121892539464098105317518227531978702333415386264829982789952731614L,
+                          108064706642599821618918248475955325719985341096102200103424860263181813987462L)
+        tls_ctx.crypto.server.kex_keystore = tlsk.ECDHKeyStore(secp256r1, public)
         client_privkey = 15320484772785058360598040144348894600917526501829289880527760633524785596585L
         client_keys = ec.Keypair(secp256r1, client_privkey)
         client_pubkey = tls_ctx.get_client_ecdh_pubkey(client_privkey)
         self.assertTrue(client_pubkey.startswith("\x04"))
         self.assertEqual("\x04%s%s" % (tlsc.int_to_str(client_keys.pub.x), tlsc.int_to_str(client_keys.pub.y)),
                          client_pubkey)
-        self.assertEqual(client_keys.pub, tls_ctx.crypto.client.ecdh.pub)
+        self.assertEqual(client_keys.pub, tls_ctx.crypto.client.kex_keystore.public)
         self.assertEqual("'(\x17\x94l\xd7AO\x03\xd4Fi\x05}mP\x1aX5C7\xf0_\xa9\xb0\xac\xba{r\x1f\x12\x8f",
                          tls_ctx.crypto.session.premaster_secret)
 
