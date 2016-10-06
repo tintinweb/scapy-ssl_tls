@@ -284,15 +284,15 @@ class TestTLSSecurityParameters(unittest.TestCase):
         client_hmac = sec_params.get_client_hmac()
         client_hmac.update("some secret")
         self.assertEqual(client_hmac.hexdigest(),
-                         HMAC.new(sec_params.client_write_MAC_key, "some secret", digestmod=SHA).hexdigest())
+                         HMAC.new(sec_params.client_keystore.hmac, "some secret", digestmod=SHA).hexdigest())
 
     def test_tls_1_1_and_above_iv_is_null(self):
         # RSA_WITH_AES_128_CBC_SHA
         cipher_suite = 0x2f
         sec_params = tlsc.TLSSecurityParameters(self.prf, cipher_suite, self.pre_master_secret, self.client_random,
                                                 self.server_random, explicit_iv=True)
-        self.assertEqual(sec_params.client_write_IV, "\x00" * 16)
-        self.assertEqual(sec_params.server_write_IV, "\x00" * 16)
+        self.assertEqual(sec_params.client_keystore.iv, "\x00" * 16)
+        self.assertEqual(sec_params.server_keystore.iv, "\x00" * 16)
 
     def test_load_rsa_privkey_from_pem_file(self):
         pem_file = env_local_file("openssl_1_0_1_f_server.pem")

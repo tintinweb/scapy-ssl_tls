@@ -106,19 +106,23 @@ class TLSSessionCtx(object):
         self.compression = namedtuple("compression", ["method"])
         self.compression.method = None
         self.crypto = namedtuple('crypto', ['client','server'])
-        self.crypto.client = namedtuple('client', ['enc', 'dec', "hmac", "asym_keystore", "kex_keystore"])
+        self.crypto.client = namedtuple("client", ["enc", "dec", "hmac", "asym_keystore", "kex_keystore",
+                                                   "sym_keystore"])
         self.crypto.client.enc = None
         self.crypto.client.dec = None
         self.crypto.client.hmac = None
         self.crypto.client.asym_keystore = tlsk.EmptyAsymKeystore()
         self.crypto.client.kex_keystore = tlsk.EmptyKexKeystore()
+        self.crypto.client.sym_keystore = tlsk.EmptySymKeyStore()
 
-        self.crypto.server = namedtuple('server', ['enc','dec','rsa', "hmac", "asym_keystore", "kex_keystore"])
+        self.crypto.server = namedtuple("server", ["enc", "dec", "hmac", "asym_keystore", "kex_keystore",
+                                                   "sym_keystore"])
         self.crypto.server.enc = None
         self.crypto.server.dec = None
         self.crypto.server.hmac = None
         self.crypto.server.asym_keystore = tlsk.EmptyAsymKeystore()
         self.crypto.server.kex_keystore = tlsk.EmptyKexKeystore()
+        self.crypto.server.sym_keystore = tlsk.EmptySymKeyStore()
 
         self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
                                                      'premaster_secret',
@@ -133,23 +137,12 @@ class TLSSessionCtx(object):
         self.crypto.session.randombytes.client = None
         self.crypto.session.randombytes.server = None
 
-        self.crypto.session.key = namedtuple('key',['client','server'])
-        self.crypto.session.key.server = namedtuple('server',['mac','encryption','iv', "seq_num"])
-        self.crypto.session.key.server.mac = None
-        self.crypto.session.key.server.encryption = None
-        self.crypto.session.key.server.iv = None
+        self.crypto.session.key = namedtuple("key", ["client", "server"])
+        self.crypto.session.key.server = namedtuple("server", ["seq_num"])
         self.crypto.session.key.server.seq_num = 0
 
-        self.crypto.session.key.client = namedtuple('client',['mac','encryption','iv', "seq_num"])
-        self.crypto.session.key.client.mac = None
-        self.crypto.session.key.client.encryption = None
-        self.crypto.session.key.client.iv = None
+        self.crypto.session.key.client = namedtuple("client", ["seq_num"])
         self.crypto.session.key.client.seq_num = 0
-
-        self.crypto.session.key.length = namedtuple('length',['mac','encryption','iv'])
-        self.crypto.session.key.length.mac = None
-        self.crypto.session.key.length.encryption = None
-        self.crypto.session.key.length.iv = None
 
     def __repr__(self):
         params = {'id':id(self),
@@ -169,8 +162,10 @@ class TLSSessionCtx(object):
 
                   "crypto-client-asym_keystore": self.crypto.client.asym_keystore,
                   "crypto-client-kex_keystore": self.crypto.client.kex_keystore,
+                  "crypto-client-sym_keystore": self.crypto.client.sym_keystore,
                   "crypto-server-asym_keystore": self.crypto.server.asym_keystore,
                   "crypto-server-kex_keystore": self.crypto.server.kex_keystore,
+                  "crypto-server-sym_keystore": self.crypto.server.sym_keystore,
 
                   'crypto-session-encrypted_premaster_secret':repr(self.crypto.session.encrypted_premaster_secret),
                   'crypto-session-premaster_secret':repr(self.crypto.session.premaster_secret),
@@ -178,18 +173,6 @@ class TLSSessionCtx(object):
 
                   'crypto-session-randombytes-client':repr(self.crypto.session.randombytes.client),
                   'crypto-session-randombytes-server':repr(self.crypto.session.randombytes.server),
-
-                  'crypto-session-key-server-mac':repr(self.crypto.session.key.server.mac),
-                  'crypto-session-key-server-encryption':repr(self.crypto.session.key.server.encryption),
-                  'crypto-session-key-server-iv':repr(self.crypto.session.key.server.iv),
-
-                  'crypto-session-key-client-mac':repr(self.crypto.session.key.client.mac),
-                  'crypto-session-key-client-encryption':repr(self.crypto.session.key.client.encryption),
-                  'crypto-session-key-client-iv':repr(self.crypto.session.key.client.iv),
-
-                  'crypto-session-key-length-mac':self.crypto.session.key.length.mac,
-                  'crypto-session-key-length-encryption':self.crypto.session.key.length.encryption,
-                  'crypto-session-key-length-iv':self.crypto.session.key.length.iv,
                   }
 
 
@@ -211,8 +194,10 @@ class TLSSessionCtx(object):
 
         str_ += "\n\t crypto.client.asym_keystore=%(crypto-client-asym_keystore)s"
         str_ += "\n\t crypto.client.kex_keystore=%(crypto-client-kex_keystore)s"
+        str_ += "\n\t crypto.client.sym_keystore=%(crypto-client-sym_keystore)s"
         str_ += "\n\t crypto.server.asym_keystore=%(crypto-server-asym_keystore)s"
         str_ += "\n\t crypto.server.kex_keystore=%(crypto-server-kex_keystore)s"
+        str_ += "\n\t crypto.server.sym_keystore=%(crypto-server-sym_keystore)s"
 
         str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
         str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
@@ -220,18 +205,6 @@ class TLSSessionCtx(object):
 
         str_ +="\n\t crypto.session.randombytes.client=%(crypto-session-randombytes-client)s"
         str_ +="\n\t crypto.session.randombytes.server=%(crypto-session-randombytes-server)s"
-
-        str_ +="\n\t crypto.session.key.client.mac=%(crypto-session-key-client-mac)s"
-        str_ +="\n\t crypto.session.key.client.encryption=%(crypto-session-key-client-encryption)s"
-        str_ +="\n\t crypto.session.key.cllient.iv=%(crypto-session-key-client-iv)s"
-
-        str_ +="\n\t crypto.session.key.server.mac=%(crypto-session-key-server-mac)s"
-        str_ +="\n\t crypto.session.key.server.encryption=%(crypto-session-key-server-encryption)s"
-        str_ +="\n\t crypto.session.key.server.iv=%(crypto-session-key-server-iv)s"
-
-        str_ +="\n\t crypto.session.key.length.mac=%(crypto-session-key-length-mac)s"
-        str_ +="\n\t crypto.session.key.length.encryption=%(crypto-session-key-length-encryption)s"
-        str_ +="\n\t crypto.session.key.length.iv=%(crypto-session-key-length-iv)s"
 
         str_ += "\n>"
         return str_ % params
@@ -384,22 +357,14 @@ class TLSSessionCtx(object):
                                                         self.crypto.session.randombytes.client,
                                                         self.crypto.session.randombytes.server,
                                                         explicit_iv)
+                if isinstance(self.crypto.client.sym_keystore, tlsk.EmptySymKeyStore):
+                    self.crypto.client.sym_keystore = self.sec_params.client_keystore
+                if isinstance(self.crypto.server.sym_keystore, tlsk.EmptySymKeyStore):
+                    self.crypto.server.sym_keystore = self.sec_params.server_keystore
                 self._assign_crypto_material(self.sec_params)
 
     def _assign_crypto_material(self, sec_params):
-        self.crypto.session.key.length.mac = sec_params.negotiated_crypto_param["hash"]["type"].digest_size
-        self.crypto.session.key.length.encryption = sec_params.negotiated_crypto_param["cipher"]["key_len"]
-        self.crypto.session.key.length.iv = sec_params.negotiated_crypto_param["cipher"]["type"].block_size
-
         self.crypto.session.master_secret = sec_params.master_secret
-
-        self.crypto.session.key.server.mac = sec_params.server_write_MAC_key
-        self.crypto.session.key.server.encryption = sec_params.server_write_key
-        self.crypto.session.key.server.iv = sec_params.server_write_IV
-
-        self.crypto.session.key.client.mac = sec_params.client_write_MAC_key
-        self.crypto.session.key.client.encryption = sec_params.client_write_key
-        self.crypto.session.key.client.iv = sec_params.client_write_IV
 
         # Retrieve ciphers used for client/server encryption and decryption
         self.crypto.client.enc = sec_params.get_client_enc_cipher()
@@ -588,7 +553,7 @@ class CryptoContainer(object):
         self.tls_ctx = tls_ctx
         is_cbc = self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None
         if self.tls_ctx.params.negotiated.version > tls.TLSVersion.TLS_1_0 and is_cbc:
-            self.explicit_iv = os.urandom(self.tls_ctx.crypto.session.key.length.iv)
+            self.explicit_iv = os.urandom(self.tls_ctx.crypto.server.sym_keystore.iv_size // 8)
         else:
             self.explicit_iv = ""
         self.data = data
@@ -793,7 +758,8 @@ class TLSSecurityParameters(object):
             self.iv_length = 0 if block_size == 1 else block_size
             self.explicit_iv = explicit_iv
             self.prf = prf
-            self.__init_crypto(pms, client_random, server_random, explicit_iv)
+            self.client_keystore, self.server_keystore = self.__init_crypto(pms, client_random, server_random,
+                                                                            explicit_iv)
 
     def get_client_hmac(self):
         return self.__client_hmac
@@ -803,46 +769,51 @@ class TLSSecurityParameters(object):
 
     def get_server_enc_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
+            return self.cipher_type.new(self.server_keystore.key, mode=self.cipher_mode, IV=self.server_keystore.iv)
         else:
             return self.__server_enc_cipher
 
     def get_server_dec_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
+            return self.cipher_type.new(self.server_keystore.key, mode=self.cipher_mode, IV=self.server_keystore.iv)
         else:
             return self.__server_dec_cipher
 
     def get_client_enc_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
+            return self.cipher_type.new(self.client_keystore.key, mode=self.cipher_mode, IV=self.client_keystore.iv)
         else:
             return self.__client_enc_cipher
 
     def get_client_dec_cipher(self):
         if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
+            return self.cipher_type.new(self.client_keystore.key, mode=self.cipher_mode, IV=self.client_keystore.iv)
         else:
             return self.__client_dec_cipher
 
     def __init_key_material(self, data, explicit_iv):
         i = 0
-        self.client_write_MAC_key = data[i:i+self.mac_key_length]
+        client_mac_key = data[i:i+self.mac_key_length]
         i += self.mac_key_length
-        self.server_write_MAC_key = data[i:i+self.mac_key_length]
+        server_mac_key = data[i:i+self.mac_key_length]
         i += self.mac_key_length
-        self.client_write_key = data[i:i+self.cipher_key_length]
+        client_key = data[i:i+self.cipher_key_length]
         i += self.cipher_key_length
-        self.server_write_key = data[i:i+self.cipher_key_length]
+        server_key = data[i:i+self.cipher_key_length]
         i += self.cipher_key_length
         if explicit_iv:
-            self.client_write_IV = "\x00"*self.iv_length
-            self.server_write_IV = "\x00"*self.iv_length
+            client_iv = "\x00"*self.iv_length
+            server_iv = "\x00"*self.iv_length
         else:
-            self.client_write_IV = data[i:i+self.iv_length]
+            client_iv = data[i:i+self.iv_length]
             i += self.iv_length
-            self.server_write_IV = data[i:i+self.iv_length]
+            server_iv = data[i:i+self.iv_length]
             i += self.iv_length
+        client_keystore = tlsk.CipherKeyStore(self.negotiated_crypto_param, client_key, client_mac_key,
+                                              client_iv)
+        server_keystore = tlsk.CipherKeyStore(self.negotiated_crypto_param, server_key, server_mac_key,
+                                              server_iv)
+        return client_keystore, server_keystore
 
     def __init_crypto(self, pms, client_random, server_random, explicit_iv):
         self.master_secret = self.prf.get_bytes(pms,
@@ -853,24 +824,29 @@ class TLSSecurityParameters(object):
                                           TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
                                           server_random + client_random,
                                           num_bytes=2*(self.mac_key_length + self.cipher_key_length + self.iv_length) )
-        self.__init_key_material(key_block, explicit_iv)
+        client_keystore, server_keystore = self.__init_key_material(key_block, explicit_iv)
         self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
         self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
         self.hash_type = self.negotiated_crypto_param["hash"]["type"]
         # Block ciphers
         if self.cipher_mode is not None:
-            self.__client_enc_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
-            self.__client_dec_cipher = self.cipher_type.new(self.client_write_key, mode=self.cipher_mode, IV=self.client_write_IV)
-            self.__server_enc_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
-            self.__server_dec_cipher = self.cipher_type.new(self.server_write_key, mode=self.cipher_mode, IV=self.server_write_IV)
+            self.__client_enc_cipher = self.cipher_type.new(client_keystore.key, mode=self.cipher_mode,
+                                                            IV=client_keystore.iv)
+            self.__client_dec_cipher = self.cipher_type.new(client_keystore.key, mode=self.cipher_mode,
+                                                            IV=client_keystore.iv)
+            self.__server_enc_cipher = self.cipher_type.new(server_keystore.key, mode=self.cipher_mode,
+                                                            IV=server_keystore.iv)
+            self.__server_dec_cipher = self.cipher_type.new(server_keystore.key, mode=self.cipher_mode,
+                                                            IV=server_keystore.iv)
         # Stream ciphers
         else:
-            self.__client_enc_cipher = self.cipher_type.new(self.client_write_key)
-            self.__client_dec_cipher = self.cipher_type.new(self.client_write_key)
-            self.__server_enc_cipher = self.cipher_type.new(self.server_write_key)
-            self.__server_dec_cipher = self.cipher_type.new(self.server_write_key)
-        self.__client_hmac = HMAC.new(self.client_write_MAC_key, digestmod=self.hash_type)
-        self.__server_hmac = HMAC.new(self.server_write_MAC_key, digestmod=self.hash_type)
+            self.__client_enc_cipher = self.cipher_type.new(client_keystore.key)
+            self.__client_dec_cipher = self.cipher_type.new(client_keystore.key)
+            self.__server_enc_cipher = self.cipher_type.new(server_keystore.key)
+            self.__server_dec_cipher = self.cipher_type.new(server_keystore.key)
+        self.__client_hmac = HMAC.new(client_keystore.hmac, digestmod=self.hash_type)
+        self.__server_hmac = HMAC.new(server_keystore.hmac, digestmod=self.hash_type)
+        return client_keystore, server_keystore
 
     def __str__(self):
         s=[]

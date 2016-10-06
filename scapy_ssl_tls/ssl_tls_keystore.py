@@ -204,4 +204,46 @@ class ECDHKeyStore(KexKeyStore):
             public: {public}
             private: {private}"""
         curve_name = "Unknown" if self.unknown_curve else self.curve.name
-        return template.format(name=self.name, curve=curve_name, size=self.size, public=self.public, private=self.private)
+        return template.format(name=self.name, curve=curve_name, size=self.size, public=self.public,
+                               private=self.private)
+
+
+class SymKeyStore(object):
+    def __init__(self, name, key=b""):
+        self.name = name
+        self.key = key
+        self.size = len(self.key) * 8
+
+
+class EmptySymKeyStore(SymKeyStore):
+    def __init__(self):
+        super(EmptySymKeyStore, self).__init__("Empty Symmetrical Keystore")
+
+
+class CipherKeyStore(SymKeyStore):
+    def __init__(self, properties, key, hmac, iv=b""):
+        self.properties = properties
+        # Be consistent and track everything in bits
+        self.block_size = self.properties["cipher"]["type"].block_size * 8
+        self.hmac = hmac
+        self.hmac_size = len(self.hmac) * 8
+        self.iv = iv
+        self.iv_size = len(self.iv) * 8
+        super(CipherKeyStore, self).__init__("%s Keystore" % self.properties["name"], key)
+
+    def __str__(self):
+        template = """
+        {name}:
+            {cipher_name} cipher:
+                mode: {mode}
+                key: {key}
+                size: {size}
+                block_size: {block_size}
+                iv: {iv}
+            {hmac_name} hmac:
+                key: {hmac_key}
+                size: {hmac_size}"""
+        return template.format(name=self.properties["name"], cipher_name=self.properties["cipher"]["name"],
+                               mode=self.properties["cipher"]["mode_name"], key=repr(self.key), size=self.size,
+                               block_size=self.block_size, iv=repr(self.iv), hmac_name=self.properties["hash"]["name"],
+                               hmac_key=repr(self.hmac), hmac_size=self.hmac_size)
