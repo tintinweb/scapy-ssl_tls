@@ -510,7 +510,7 @@ class TLSKeyExchange(Packet):
     def guess_payload_class(self, raw_bytes):
         next_layer = Raw
         if self.tls_ctx is not None:
-            kex = self.tls_ctx.params.negotiated.key_exchange
+            kex = self.tls_ctx.negotiated.key_exchange
             if kex is not None:
                 try:
                     next_layer = self.kex_payload_table[kex]
@@ -639,7 +639,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
         try:
             self.tls_ctx = fields["ctx"]
             del(fields["ctx"])
-            self.above_tls10 = self.tls_ctx.params.negotiated.version > TLSVersion.TLS_1_0
+            self.above_tls10 = self.tls_ctx.negotiated.version > TLSVersion.TLS_1_0
             if self.explicit_iv_field not in self.fields_desc and self.above_tls10:
                 self.fields_desc.append(self.explicit_iv_field)
             for field in self.decryptable_fields:
@@ -1011,16 +1011,16 @@ class SSL(Packet):
                 if encrypted_payload is not None:
                     try:
                         if self.tls_ctx.client:
-                            cleartext = self.tls_ctx.crypto.server.dec.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.server_ctx.dec.decrypt(encrypted_payload)
                         else:
-                            cleartext = self.tls_ctx.crypto.client.dec.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.client_ctx.dec.decrypt(encrypted_payload)
                         pkt = layer(cleartext, ctx=self.tls_ctx)
                         original_record = record
                         record[self.guessed_next_layer].payload = pkt
                         # If the encrypted is in the history packet list, update it with the unencrypted version
-                        if original_record in self.tls_ctx.packets.history:
-                            record_index = self.tls_ctx.packets.history.index(original_record)
-                            self.tls_ctx.packets.history[record_index] = record
+                        if original_record in self.tls_ctx.history:
+                            record_index = self.tls_ctx.history.index(original_record)
+                            self.tls_ctx.history[record_index] = record
                     # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
                     except ValueError as ve:
                         raise ValueError("Decryption failed: %s" % ve)
@@ -1041,7 +1041,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
 
     if tls_ctx is None:
         raise ValueError("A valid TLS session context must be provided")
-    comp_method = tls_ctx.compression.method
+    comp_method = tls_ctx.client_ctx.compression
 
     content_type, data = None, None
     for tls_proto, handler in cleartext_handler.iteritems():
@@ -1065,7 +1065,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
         ciphertext = crypto_container.encrypt()
 
     if include_record:
-        tls_ciphertext = TLSRecord(version=tls_ctx.params.negotiated.version, content_type=content_type)/ciphertext
+        tls_ciphertext = TLSRecord(version=tls_ctx.negotiated.version, content_type=content_type)/ciphertext
     else:
         tls_ciphertext = ciphertext
     return tls_ciphertext

@@ -88,9 +88,9 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
                                                                         cipher_suite=cipher_suite)
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.insert(pkt)
-        self.assertEqual(tls_ctx.params.negotiated.key_exchange,
+        self.assertEqual(tls_ctx.negotiated.key_exchange,
                          tlsc.TLSSecurityParameters.crypto_params[cipher_suite]["key_exchange"]["name"])
-        self.assertEqual(tls_ctx.params.negotiated.mac,
+        self.assertEqual(tls_ctx.negotiated.mac,
                          tlsc.TLSSecurityParameters.crypto_params[cipher_suite]["hash"]["name"])
 
     def test_negotiated_compression_method_is_used_in_context(self):
@@ -100,10 +100,11 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
                                                                         compression_method=compression_method)
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.insert(pkt)
-        self.assertEqual(tls_ctx.params.negotiated.compression_algo,
+        self.assertEqual(tls_ctx.negotiated.compression_algo,
                          tlsc.TLSCompressionParameters.comp_params[compression_method]["name"])
         input_ = "some data" * 16
-        self.assertEqual(tls_ctx.compression.method.decompress(tls_ctx.compression.method.compress(input_)), input_)
+        self.assertEqual(tls_ctx.client_ctx.compression.decompress(tls_ctx.client_ctx.compression.compress(input_)),
+                         input_)
 
     def test_encrypted_pms_is_only_available_after_server_certificate_is_presented(self):
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello()
@@ -123,20 +124,20 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         tls_ctx = tlsc.TLSSessionCtx()
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)
         tls_ctx.insert(pkt)
-        self.assertIsNotNone(tls_ctx.crypto.session.premaster_secret)
+        self.assertIsNotNone(tls_ctx.premaster_secret)
 
     def test_keys_are_set_in_context_when_loaded(self):
         tls_ctx = tlsc.TLSSessionCtx()
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)
         tls_ctx.insert(pkt)
         tls_ctx.rsa_load_keys(self.pem_priv_key)
-        self.assertIsNotNone(tls_ctx.crypto.server.asym_keystore.private)
-        self.assertIsNotNone(tls_ctx.crypto.server.asym_keystore.public)
+        self.assertIsNotNone(tls_ctx.server_ctx.asym_keystore.private)
+        self.assertIsNotNone(tls_ctx.server_ctx.asym_keystore.public)
         # Broken due to pycrypto bug: https://github.com/dlitz/pycrypto/issues/114
         # Uncomment when fixed upstream
         # self.assertTrue(tls_ctx.crypto.server.asym_keystore.private.can_decrypt())
         # self.assertTrue(tls_ctx.crypto.server.asym_keystore.public.can_decrypt())
-        self.assertTrue(tls_ctx.crypto.server.asym_keystore.private.can_encrypt())
+        self.assertTrue(tls_ctx.server_ctx.asym_keystore.private.can_encrypt())
         # TODO: Invertigate further: broken also in pycrypto. Should return False for public keys.
         # self.assertFalse(tls_ctx.crypto.server.asym_keystore.public.can_encrypt())
 
@@ -150,8 +151,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         tls_ctx.insert(pkt)
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=epms)
         tls_ctx.insert(pkt)
-        self.assertEqual(tls_ctx.crypto.session.encrypted_premaster_secret, epms)
-        self.assertEqual(tls_ctx.crypto.session.premaster_secret, self.priv_key.decrypt(epms, None))
+        self.assertEqual(tls_ctx.encrypted_premaster_secret, epms)
+        self.assertEqual(tls_ctx.premaster_secret, self.priv_key.decrypt(epms, None))
 
     def test_fixed_crypto_data_matches_verify_data(self):
         client_verify_data = "e23f73911909a86be9e93fdb"
@@ -163,7 +164,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         # Hello Request should be ignored in verify_data calculation
         tls_ctx.insert(tls.TLSHelloRequest())
         tls_ctx.insert(client_hello)
-        tls_ctx.crypto.session.premaster_secret = "B" * 48
+        tls_ctx.premaster_secret = "B" * 48
         epms = "C" * 256
         server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=1234,
                                                                                  session_id="",
@@ -185,7 +186,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         p = 11435638110073884015312138951374632602058080675070521707579703088370446597672067452229024566834732449017970455481029703480957707976441965258194321262569523L
         g = 2
         public = 5138256925703068273978027748090991496798559132548080008963338818789329120888330364361710579103845963013102056863555649866832856399945018230203391434938503L
-        tls_ctx.crypto.server.kex_keystore = tlsk.DHKeyStore(g, p, public)
+        tls_ctx.server_ctx.kex_keystore = tlsk.DHKeyStore(g, p, public)
         client_privkey = 5398526532442504864680398257365369432058147704829279760748758494328728516319L
         client_pubkey = tls_ctx.get_client_dh_pubkey(client_privkey)
         self.assertEqual(
@@ -195,23 +196,23 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(
             ("}\xcae\xd2y\xd7F$\xde\"\xa9s\xfbNR9v\x19t9\x87\xa8\xa3\x9c\xccb]\x13\xb7\x8a\x8f\xdf\x7fv\x05\xa6\xf1\xa7"
              "\xc8\xf4X\xe3\xd4\xac\xd6\x1e4\xb4\x1cc\xbb\xce\xbe\x94lQ\x91\xb9\xde\xb7\xa6gu_"),
-            tls_ctx.crypto.session.premaster_secret)
+            tls_ctx.premaster_secret)
 
     def test_client_ecdh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
         secp256r1 = reg.get_curve("secp256r1")
         public = ec.Point(secp256r1, 71312736565121892539464098105317518227531978702333415386264829982789952731614L,
                           108064706642599821618918248475955325719985341096102200103424860263181813987462L)
-        tls_ctx.crypto.server.kex_keystore = tlsk.ECDHKeyStore(secp256r1, public)
+        tls_ctx.server_ctx.kex_keystore = tlsk.ECDHKeyStore(secp256r1, public)
         client_privkey = 15320484772785058360598040144348894600917526501829289880527760633524785596585L
         client_keys = ec.Keypair(secp256r1, client_privkey)
         client_pubkey = tls_ctx.get_client_ecdh_pubkey(client_privkey)
         self.assertTrue(client_pubkey.startswith("\x04"))
         self.assertEqual("\x04%s%s" % (tlsc.int_to_str(client_keys.pub.x), tlsc.int_to_str(client_keys.pub.y)),
                          client_pubkey)
-        self.assertEqual(client_keys.pub, tls_ctx.crypto.client.kex_keystore.public)
+        self.assertEqual(client_keys.pub, tls_ctx.client_ctx.kex_keystore.public)
         self.assertEqual("'(\x17\x94l\xd7AO\x03\xd4Fi\x05}mP\x1aX5C7\xf0_\xa9\xb0\xac\xba{r\x1f\x12\x8f",
-                         tls_ctx.crypto.session.premaster_secret)
+                         tls_ctx.premaster_secret)
 
 
 class TestTLSSecurityParameters(unittest.TestCase):
@@ -298,8 +299,8 @@ class TestTLSSecurityParameters(unittest.TestCase):
         pem_file = env_local_file("openssl_1_0_1_f_server.pem")
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.rsa_load_keys_from_file(pem_file)
-        self.assertTrue(tls_ctx.crypto.server.asym_keystore.private)
-        self.assertTrue(tls_ctx.crypto.server.asym_keystore.public)
+        self.assertTrue(tls_ctx.server_ctx.asym_keystore.private)
+        self.assertTrue(tls_ctx.server_ctx.asym_keystore.public)
 
 
 class TestNullCompression(unittest.TestCase):
@@ -390,16 +391,16 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.tls_ctx.insert(self.client_kex)
 
     def test_crypto_container_increments_sequence_number(self):
-        client_seq_num = self.tls_ctx.crypto.session.key.client.seq_num
-        server_seq_num = self.tls_ctx.crypto.session.key.server.seq_num
+        client_seq_num = self.tls_ctx.client_ctx.sequence
+        server_seq_num = self.tls_ctx.server_ctx.sequence
         tlsc.CryptoContainer(self.tls_ctx)
         client_seq_num += 1
-        self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
-        self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num)
+        self.assertEqual(self.tls_ctx.client_ctx.sequence, client_seq_num)
+        self.assertEqual(self.tls_ctx.server_ctx.sequence, server_seq_num)
         self.tls_ctx.client = False
         tlsc.CryptoContainer(self.tls_ctx)
-        self.assertEqual(self.tls_ctx.crypto.session.key.client.seq_num, client_seq_num)
-        self.assertEqual(self.tls_ctx.crypto.session.key.server.seq_num, server_seq_num + 1)
+        self.assertEqual(self.tls_ctx.client_ctx.sequence, client_seq_num)
+        self.assertEqual(self.tls_ctx.server_ctx.sequence, server_seq_num + 1)
 
     def test_crypto_container_str_returns_cipher_payload(self):
         data = b"abcde"
@@ -418,7 +419,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
         cleartext = str(crypto_container)
         ciphertext = crypto_container.encrypt()
-        self.assertEqual(cleartext, self.tls_ctx.crypto.server.dec.decrypt(ciphertext))
+        self.assertEqual(cleartext, self.tls_ctx.server_ctx.dec.decrypt(ciphertext))
 
     def test_generated_mac_can_be_overiden(self):
         data = b"C" * 102

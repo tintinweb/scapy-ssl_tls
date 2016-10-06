@@ -113,7 +113,7 @@ class TestTLSDissector(unittest.TestCase):
     def _static_tls_handshake(self):
         # Setup static parameters, so PRF output is reproducible
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.crypto.session.premaster_secret = "\x03\x01" + "C" * 46
+        tls_ctx.premaster_secret = "\x03\x01" + "C" * 46
         client_hello = tls.TLSRecord(version="TLS_1_0") / tls.TLSHandshake() / tls.TLSClientHello(version="TLS_1_0",
                                                                                                   gmt_unix_time=1234,
                                                                                                   random_bytes="A" * 28,
@@ -257,7 +257,7 @@ class TestTLSDecryptablePacket(unittest.TestCase):
     def test_explicit_iv_is_added_for_tls_1_1_if_session_context_is_provided(self):
         data = "%s%s%s%s" % ("C" * AES.block_size, "A" * 2, "B" * SHA.digest_size, "\x03" * 4)
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.params.negotiated.version = tls.TLSVersion.TLS_1_1
+        tls_ctx.negotiated.version = tls.TLSVersion.TLS_1_1
         tls_ctx.sec_params = tlsc.TLSSecurityParameters(tlsc.TLSPRF(tls.TLSVersion.TLS_1_0),
                                                         tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA, "A" * 48, "B" * 32,
                                                         "C" * 32, True)
@@ -586,7 +586,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         record = tls.to_raw(pkt, self.tls_ctx, include_record=True)
         self.assertTrue(record.haslayer(tls.TLSRecord))
         self.assertEqual(record.content_type, 0x17)
-        self.assertEqual(record.version, self.tls_ctx.params.negotiated.version)
+        self.assertEqual(record.version, self.tls_ctx.negotiated.version)
 
     def test_format_of_tls_finished_is_as_specified_in_rfc(self):
         def encrypt(crypto_container):

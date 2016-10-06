@@ -68,146 +68,81 @@ def point_to_ansi_str(point):
     return "\x04%s%s" % (int_to_str(point.x), int_to_str(point.y))
 
 
+class TLSContext(object):
+    def __init__(self, name):
+        self.name = name
+        self.handshake = None
+        self.sequence = 0
+        self.random = None
+        self.session_id = None
+        self.enc = None
+        self.dec = None
+        self.hmac = None
+        self.compression = None
+        self.asym_keystore = tlsk.EmptyAsymKeystore()
+        self.kex_keystore = tlsk.EmptyKexKeystore()
+        self.sym_keystore = tlsk.EmptySymKeyStore()
+
+    def __str__(self):
+        template = """
+    {name}:
+        random: {random}
+        session_id: {sess_id}
+        {asym_ks}
+        {kex_ks}
+        {sym_ks}"""
+        return template.format(name=self.name, random=repr(self.random), sess_id=repr(self.session_id),
+                               asym_ks=self.asym_keystore, kex_ks=self.kex_keystore, sym_ks=self.sym_keystore)
+
+
 class TLSSessionCtx(object):
 
     def __init__(self, client=True):
         self.client = client
         self.server = not self.client
-        self.packets = namedtuple('packets',['history','client','server'])
-        self.packets.history=[]         #packet history
+        self.client_ctx = TLSContext("Client TLS context")
+        self.server_ctx = TLSContext("Server TLS context")
+        # packet history
+        self.history = []
         self.sec_params = None
-        self.packets.client = namedtuple('client',['sequence'])
-        self.packets.client.sequence=0
-        self.packets.server = namedtuple('server',['sequence'])
-        self.packets.server.sequence=0
 
-        self.params = namedtuple('params', ['handshake',
-                                            'negotiated',])
-        self.params.handshake = namedtuple('handshake',['client','server'])
-        self.params.handshake.client=None
-        self.params.handshake.server=None
-        self.params.negotiated = namedtuple('negotiated', ['ciphersuite',
-                                                            'key_exchange',
-                                                            'encryption',
-                                                            'mac',
-                                                            'compression',
-                                                            "compression_algo",
-                                                            "version",
-                                                            "sig"
-                                            ])
-        self.params.negotiated.ciphersuite=None
-        self.params.negotiated.key_exchange=None
-        self.params.negotiated.encryption=None
-        self.params.negotiated.mac=None
-        self.params.negotiated.compression=None
-        self.params.negotiated.compression_algo = None
-        self.params.negotiated.version = None
-        self.params.negotiated.sig = None
-        self.compression = namedtuple("compression", ["method"])
-        self.compression.method = None
-        self.crypto = namedtuple('crypto', ['client','server'])
-        self.crypto.client = namedtuple("client", ["enc", "dec", "hmac", "asym_keystore", "kex_keystore",
-                                                   "sym_keystore"])
-        self.crypto.client.enc = None
-        self.crypto.client.dec = None
-        self.crypto.client.hmac = None
-        self.crypto.client.asym_keystore = tlsk.EmptyAsymKeystore()
-        self.crypto.client.kex_keystore = tlsk.EmptyKexKeystore()
-        self.crypto.client.sym_keystore = tlsk.EmptySymKeyStore()
+        self.negotiated = namedtuple("negotiated", ["ciphersuite", "key_exchange", "encryption", "mac", "compression",
+                                                    "compression_algo", "version", "sig"])
+        self.negotiated.ciphersuite = None
+        self.negotiated.key_exchange = None
+        self.negotiated.encryption = None
+        self.negotiated.mac = None
+        self.negotiated.compression = None
+        self.negotiated.compression_algo = None
+        self.negotiated.version = None
+        self.negotiated.sig = None
 
-        self.crypto.server = namedtuple("server", ["enc", "dec", "hmac", "asym_keystore", "kex_keystore",
-                                                   "sym_keystore"])
-        self.crypto.server.enc = None
-        self.crypto.server.dec = None
-        self.crypto.server.hmac = None
-        self.crypto.server.asym_keystore = tlsk.EmptyAsymKeystore()
-        self.crypto.server.kex_keystore = tlsk.EmptyKexKeystore()
-        self.crypto.server.sym_keystore = tlsk.EmptySymKeyStore()
+        self.encrypted_premaster_secret = None
+        self.premaster_secret = None
+        self.master_secret = None
+        self.prf = None
 
-        self.crypto.session = namedtuple('session', ["encrypted_premaster_secret",
-                                                     'premaster_secret',
-                                                     'master_secret',
-                                                     "prf"])
-
-        self.crypto.session.encrypted_premaster_secret = None
-        self.crypto.session.premaster_secret = None
-        self.crypto.session.master_secret = None
-        self.crypto.session.prf = None
-        self.crypto.session.randombytes = namedtuple('randombytes',['client','server'])
-        self.crypto.session.randombytes.client = None
-        self.crypto.session.randombytes.server = None
-
-        self.crypto.session.key = namedtuple("key", ["client", "server"])
-        self.crypto.session.key.server = namedtuple("server", ["seq_num"])
-        self.crypto.session.key.server.seq_num = 0
-
-        self.crypto.session.key.client = namedtuple("client", ["seq_num"])
-        self.crypto.session.key.client.seq_num = 0
-
-    def __repr__(self):
-        params = {'id':id(self),
-                  'params-handshake-client':repr(self.params.handshake.client),
-                  'params-handshake-server':repr(self.params.handshake.server),
-                  "params-negotiated-version":tls.TLS_VERSIONS[self.params.negotiated.version],
-                  'params-negotiated-ciphersuite':tls.TLS_CIPHER_SUITES[self.params.negotiated.ciphersuite],
-                  'params-negotiated-key_exchange':self.params.negotiated.key_exchange,
-                  'params-negotiated-encryption':self.params.negotiated.encryption,
-                  'params-negotiated-mac':self.params.negotiated.mac,
-                  'params-negotiated-compression':tls.TLS_COMPRESSION_METHODS[self.params.negotiated.compression],
-
-                  'crypto-client-enc':repr(self.crypto.client.enc),
-                  'crypto-client-dec':repr(self.crypto.client.dec),
-                  'crypto-server-enc':repr(self.crypto.server.enc),
-                  'crypto-server-dec':repr(self.crypto.server.dec),
-
-                  "crypto-client-asym_keystore": self.crypto.client.asym_keystore,
-                  "crypto-client-kex_keystore": self.crypto.client.kex_keystore,
-                  "crypto-client-sym_keystore": self.crypto.client.sym_keystore,
-                  "crypto-server-asym_keystore": self.crypto.server.asym_keystore,
-                  "crypto-server-kex_keystore": self.crypto.server.kex_keystore,
-                  "crypto-server-sym_keystore": self.crypto.server.sym_keystore,
-
-                  'crypto-session-encrypted_premaster_secret':repr(self.crypto.session.encrypted_premaster_secret),
-                  'crypto-session-premaster_secret':repr(self.crypto.session.premaster_secret),
-                  'crypto-session-master_secret':repr(self.crypto.session.master_secret),
-
-                  'crypto-session-randombytes-client':repr(self.crypto.session.randombytes.client),
-                  'crypto-session-randombytes-server':repr(self.crypto.session.randombytes.server),
-                  }
-
-
-        str_ = "<TLSSessionCtx: id=%(id)s"
-
-        str_ +="\n\t params.handshake.client=%(params-handshake-client)s"
-        str_ +="\n\t params.handshake.server=%(params-handshake-server)s"
-        str_ +="\n\t params.negotiated.version=%(params-negotiated-version)s"
-        str_ +="\n\t params.negotiated.ciphersuite=%(params-negotiated-ciphersuite)s"
-        str_ +="\n\t params.negotiated.key_exchange=%(params-negotiated-key_exchange)s"
-        str_ +="\n\t params.negotiated.encryption=%(params-negotiated-encryption)s"
-        str_ +="\n\t params.negotiated.mac=%(params-negotiated-mac)s"
-        str_ +="\n\t params.negotiated.compression=%(params-negotiated-compression)s"
-
-        str_ +="\n\t crypto.client.enc=%(crypto-client-enc)s"
-        str_ +="\n\t crypto.client.dec=%(crypto-client-dec)s"
-        str_ +="\n\t crypto.server.enc=%(crypto-server-enc)s"
-        str_ +="\n\t crypto.server.dec=%(crypto-server-dec)s"
-
-        str_ += "\n\t crypto.client.asym_keystore=%(crypto-client-asym_keystore)s"
-        str_ += "\n\t crypto.client.kex_keystore=%(crypto-client-kex_keystore)s"
-        str_ += "\n\t crypto.client.sym_keystore=%(crypto-client-sym_keystore)s"
-        str_ += "\n\t crypto.server.asym_keystore=%(crypto-server-asym_keystore)s"
-        str_ += "\n\t crypto.server.kex_keystore=%(crypto-server-kex_keystore)s"
-        str_ += "\n\t crypto.server.sym_keystore=%(crypto-server-sym_keystore)s"
-
-        str_ +="\n\t crypto.session.encrypted_premaster_secret=%(crypto-session-encrypted_premaster_secret)s"
-        str_ +="\n\t crypto.session.premaster_secret=%(crypto-session-premaster_secret)s"
-        str_ +="\n\t crypto.session.master_secret=%(crypto-session-master_secret)s"
-
-        str_ +="\n\t crypto.session.randombytes.client=%(crypto-session-randombytes-client)s"
-        str_ +="\n\t crypto.session.randombytes.server=%(crypto-session-randombytes-server)s"
-
-        str_ += "\n>"
-        return str_ % params
+    def __str__(self):
+        template = """
+TLS Session Context:
+    negotiated.version: {version}
+    negotiated.ciphersuite: {cipher}
+    negotiated.key_exchange: {kex}
+    negotiated.encryption: {enc}
+    negotiated.mac: {hmac}
+    negotiated.compression: {comp}
+    encrypted_premaster_secret: {epms}
+    premaster_secret: {pms}
+    master_secret: {ms}
+    {client_ctx}
+    {server_ctx}"""
+        return template.format(version=tls.TLS_VERSIONS[self.negotiated.version],
+                               cipher=tls.TLS_CIPHER_SUITES[self.negotiated.ciphersuite],
+                               kex=self.negotiated.key_exchange, enc=self.negotiated.encryption,
+                               hmac=self.negotiated.mac,
+                               comp=tls.TLS_COMPRESSION_METHODS[self.negotiated.compression],
+                               epms=repr(self.encrypted_premaster_secret), pms=repr(self.premaster_secret),
+                               ms=repr(self.master_secret), client_ctx=self.client_ctx, server_ctx=self.server_ctx)
 
     def insert(self, pkt):
         """
@@ -220,8 +155,26 @@ class TLSSessionCtx(object):
             ps = [pkt]
 
         for pkt in ps:
-            self.packets.history.append(pkt)
+            self.history.append(pkt)
             self._process(pkt)    # fill structs
+
+    def __handle_server_hello(self, server_hello):
+        self.negotiated.version = server_hello.version
+        self.negotiated.ciphersuite = server_hello.cipher_suite
+        self.negotiated.compression = server_hello.compression_method
+        self.prf = TLSPRF(self.negotiated.version)
+        try:
+            self.negotiated.key_exchange = \
+                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["key_exchange"]["name"]
+            self.negotiated.sig = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["key_exchange"][
+                "sig"]
+            self.negotiated.encryption = (
+                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["name"],
+                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["key_len"],
+                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["mode_name"])
+            self.negotiated.mac = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["hash"]["name"]
+        except KeyError:
+            warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % self.negotiated.ciphersuite)
 
     def _process(self, pkt):
         """
@@ -230,59 +183,40 @@ class TLSSessionCtx(object):
         if pkt.haslayer(tls.TLSHandshake):
             # requires handshake messages
             if pkt.haslayer(tls.TLSClientHello):
-                if not self.params.handshake.client:
-
-                    self.params.handshake.client = pkt[tls.TLSClientHello]
-                    self.params.negotiated.version = pkt[tls.TLSClientHello].version
-                    # fetch randombytes for crypto stuff
-                    if not self.crypto.session.randombytes.client:
-                        self.crypto.session.randombytes.client = struct.pack("!I", pkt[tls.TLSClientHello].gmt_unix_time) + pkt[tls.TLSClientHello].random_bytes
-                    # Generate a random PMS. Overriden at decryption time if private key is provided
-                    if self.crypto.session.premaster_secret is None:
-                        self.crypto.session.premaster_secret = self._generate_random_pms(self.params.negotiated.version)
+                self.client_ctx.handshake = pkt[tls.TLSClientHello]
+                self.client_ctx.session_id = pkt[tls.TLSClientHello].session_id
+                self.client_ctx.random = struct.pack("!I", pkt[tls.TLSClientHello].gmt_unix_time) + pkt[tls.TLSClientHello].random_bytes
+                # Generate a random PMS. Overriden at decryption time if private key is provided
+                if self.premaster_secret is None:
+                    self.premaster_secret = self._generate_random_pms(pkt[tls.TLSClientHello].version)
             if pkt.haslayer(tls.TLSServerHello):
-                if not self.params.handshake.server:
-                    self.params.handshake.server = pkt[tls.TLSServerHello]
-                    self.params.negotiated.version = pkt[tls.TLSServerHello].version
-                    self.crypto.session.prf = TLSPRF(self.params.negotiated.version)
-                    #fetch randombytes
-                    if not self.crypto.session.randombytes.server:
-                        self.crypto.session.randombytes.server = struct.pack("!I", pkt[tls.TLSServerHello].gmt_unix_time) + pkt[tls.TLSServerHello].random_bytes
-                # negotiated params
-                if not self.params.negotiated.ciphersuite:
-                    self.params.negotiated.ciphersuite = pkt[tls.TLSServerHello].cipher_suite
-                    self.params.negotiated.compression = pkt[tls.TLSServerHello].compression_method
-                    try:
-                        self.params.negotiated.compression_algo = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["name"]
-                        self.compression.method = TLSCompressionParameters.comp_params[self.params.negotiated.compression]["type"]
-                    except KeyError:
-                        warnings.warn("Compression method 0x%02x not supported. Compression operations will fail" %
-                                      self.params.negotiated.compression)
-                    # Raises RuntimeError if we do not handle the cipher
-                    try:
-                        self.params.negotiated.key_exchange = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["key_exchange"]["name"]
-                        self.params.negotiated.sig = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["key_exchange"]["sig"]
-                        self.params.negotiated.encryption = (TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["name"],
-                                                         TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["key_len"],
-                                                         TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["cipher"]["mode_name"])
-                        self.params.negotiated.mac = TLSSecurityParameters.crypto_params[self.params.negotiated.ciphersuite]["hash"]["name"]
-                    except KeyError:
-                        warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" %
-                                      self.params.negotiated.ciphersuite)
+                self.server_ctx.handshake = pkt[tls.TLSServerHello]
+                self.server_ctx.session_id = pkt[tls.TLSServerHello].session_id
+                self.server_ctx.random = struct.pack("!I", pkt[tls.TLSServerHello].gmt_unix_time) + pkt[tls.TLSServerHello].random_bytes
+
+                self.__handle_server_hello(pkt[tls.TLSServerHello])
+
+                try:
+                    self.negotiated.compression_algo = TLSCompressionParameters.comp_params[self.negotiated.compression]["name"]
+                    self.server_ctx.compression = TLSCompressionParameters.comp_params[self.negotiated.compression]["type"]
+                    self.client_ctx.compression = TLSCompressionParameters.comp_params[self.negotiated.compression]["type"]
+                except KeyError:
+                    warnings.warn("Compression method 0x%02x not supported. Compression operations will fail" %
+                                  self.negotiated.compression)
 
             if pkt.haslayer(tls.TLSCertificateList):
                 # TODO: Probably don't want to do that if rsa_load_priv*() is called
-                if self.params.negotiated.key_exchange is not None and (self.params.negotiated.key_exchange == tls.TLSKexNames.RSA or self.params.negotiated.sig == RSA):
+                if self.negotiated.key_exchange is not None and (self.negotiated.key_exchange == tls.TLSKexNames.RSA or self.negotiated.sig == RSA):
                     # fetch server pubkey // PKCS1_v1_5
                     cert = pkt[tls.TLSCertificateList].certificates[0].data
                     # If we have a default keystore, create an RSA keystore and populate it from data on the wire
-                    if isinstance(self.crypto.server.asym_keystore, tlsk.EmptyAsymKeystore):
-                        self.crypto.server.asym_keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
+                    if isinstance(self.server_ctx.asym_keystore, tlsk.EmptyAsymKeystore):
+                        self.server_ctx.asym_keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
                     # Else keystore was assigned by user. Just add cert from the wire to the store
                     else:
-                        self.crypto.server.asym_keystore.certificate = str(cert)
+                        self.server_ctx.asym_keystore.certificate = str(cert)
                     # TODO: In the future also handle kex = DH and extract static DH params from cert
-                elif self.params.negotiated.key_exchange is not None and self.params.negotiated.sig == DSA:
+                elif self.negotiated.key_exchange is not None and self.negotiated.sig == DSA:
                     # TODO: Handle DSA sig key loading here to allow sig checks
                     # Pycrypto doesn't currently have an interface to this.
                     # Filed bug https://github.com/dlitz/pycrypto/issues/137
@@ -293,13 +227,13 @@ class TLSSessionCtx(object):
             if pkt.haslayer(tls.TLSServerKeyExchange):
                 # DHE case
                 if pkt.haslayer(tls.TLSServerDHParams):
-                    if isinstance(self.crypto.server.kex_keystore, tlsk.EmptyKexKeystore):
+                    if isinstance(self.server_ctx.kex_keystore, tlsk.EmptyKexKeystore):
                         p = str_to_int(pkt[tls.TLSServerDHParams].p)
                         g = str_to_int(pkt[tls.TLSServerDHParams].g)
                         public = str_to_int(pkt[tls.TLSServerDHParams].y_s)
-                        self.crypto.server.kex_keystore = tlsk.DHKeyStore(g, p, public)
+                        self.server_ctx.kex_keystore = tlsk.DHKeyStore(g, p, public)
                 if pkt.haslayer(tls.TLSServerECDHParams):
-                    if isinstance(self.crypto.server.kex_keystore, tlsk.EmptyKexKeystore):
+                    if isinstance(self.server_ctx.kex_keystore, tlsk.EmptyKexKeystore):
                         try:
                             curve_id = pkt[tls.TLSServerECDHParams].curve_name
                             # TODO: DO not assume uncompressed EC points!
@@ -308,71 +242,75 @@ class TLSSessionCtx(object):
                             curve_name = tls.TLS_ELLIPTIC_CURVES[curve_id]
                         # Unknown curve case. Just record raw values, but do nothing with them
                         except KeyError:
-                            self.crypto.server.kex_keystore = tlsk.ECDHKeyStore(None, point)
+                            self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
                             warnings.warn("Unknown elliptic curve id: %d. Client KEX calculation is up to you" % curve_id)
                         # We are on a known curve
                         else:
                             try:
                                 curve = ec_reg.get_curve(curve_name)
-                                self.crypto.server.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
+                                self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
                             except ValueError:
-                                self.crypto.server.kex_keystore = tlsk.ECDHKeyStore(None, point)
+                                self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
                                 warnings.warn("Unsupported elliptic curve: %s" % curve_name)
-
 
             # calculate key material
             if pkt.haslayer(tls.TLSClientKeyExchange):
                 if pkt.haslayer(tls.TLSClientRSAParams):
-                    self.crypto.session.encrypted_premaster_secret = pkt[tls.TLSClientRSAParams].data
+                    self.encrypted_premaster_secret = pkt[tls.TLSClientRSAParams].data
                     # If we have the private key, let's decrypt the PMS
-                    private = self.crypto.server.asym_keystore.private
+                    private = self.server_ctx.asym_keystore.private
                     if private is not None:
-                        self.crypto.session.premaster_secret = PKCS1_v1_5.new(
-                            private).decrypt(self.crypto.session.encrypted_premaster_secret, None)
+                        # I have no clue why pycrypto started failing after refactoring, missing this function
+                        # Probably related to https://github.com/dlitz/pycrypto/issues/160
+                        # TODO: workaround for now... Find root cause of pycrypto bug
+                        from Crypto import Random
+                        private._randfunc = Random.new().read
+                        self.premaster_secret = PKCS1_v1_5.new(private).decrypt(self.encrypted_premaster_secret, None)
                 elif pkt.haslayer(tls.TLSClientDHParams):
                     # Check if we have an unitialized keystore, and if so build a new one
-                    if isinstance(self.crypto.client.kex_keystore, tlsk.EmptyKexKeystore):
-                        server_kex_keystore = self.crypto.server.kex_keystore
+                    if isinstance(self.client_ctx.kex_keystore, tlsk.EmptyKexKeystore):
+                        server_kex_keystore = self.server_ctx.kex_keystore
                         # Check if server side is a DH keystore. Something is messed up otherwise
                         if isinstance(server_kex_keystore, tlsk.DHKeyStore):
                             client_public = str_to_int(pkt[tls.TLSClientDHParams].data)
-                            self.crypto.client.kex_keystore = tlsk.DHKeyStore(server_kex_keystore.g,
+                            self.client_ctx.kex_keystore = tlsk.DHKeyStore(server_kex_keystore.g,
                                                                               server_kex_keystore.p, client_public)
                         else:
                             raise RuntimeError("Server keystore is not a DH keystore")
                 elif pkt.haslayer(tls.TLSClientECDHParams):
                     # Check if we have an unitialized keystore, and if so build a new one
-                    if isinstance(self.crypto.client.kex_keystore, tlsk.EmptyKexKeystore):
-                        server_kex_keystore = self.crypto.server.kex_keystore
+                    if isinstance(self.client_ctx.kex_keystore, tlsk.EmptyKexKeystore):
+                        server_kex_keystore = self.server_ctx.kex_keystore
                         # Check if server side is a ECDH keystore. Something is messed up otherwise
                         if isinstance(server_kex_keystore, tlsk.ECDHKeyStore):
                             curve = server_kex_keystore.curve
                             point = ansi_str_to_point(pkt[tls.TLSClientECDHParams].data)
-                            self.crypto.client.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
+                            self.client_ctx.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
 
-                explicit_iv = True if self.params.negotiated.version > tls.TLSVersion.TLS_1_0 else False
-                self.sec_params = TLSSecurityParameters(self.crypto.session.prf,
-                                                        self.params.negotiated.ciphersuite,
-                                                        self.crypto.session.premaster_secret,
-                                                        self.crypto.session.randombytes.client,
-                                                        self.crypto.session.randombytes.server,
+                explicit_iv = True if self.negotiated.version > tls.TLSVersion.TLS_1_0 else False
+                self.sec_params = TLSSecurityParameters(self.prf,
+                                                        self.negotiated.ciphersuite,
+                                                        self.premaster_secret,
+                                                        self.client_ctx.random,
+                                                        self.server_ctx.random,
                                                         explicit_iv)
-                if isinstance(self.crypto.client.sym_keystore, tlsk.EmptySymKeyStore):
-                    self.crypto.client.sym_keystore = self.sec_params.client_keystore
-                if isinstance(self.crypto.server.sym_keystore, tlsk.EmptySymKeyStore):
-                    self.crypto.server.sym_keystore = self.sec_params.server_keystore
+                if isinstance(self.client_ctx.sym_keystore, tlsk.EmptySymKeyStore):
+                    self.client_ctx.sym_keystore = self.sec_params.client_keystore
+                if isinstance(self.server_ctx.sym_keystore, tlsk.EmptySymKeyStore):
+                    self.server_ctx.sym_keystore = self.sec_params.server_keystore
                 self._assign_crypto_material(self.sec_params)
 
     def _assign_crypto_material(self, sec_params):
-        self.crypto.session.master_secret = sec_params.master_secret
+        self.master_secret = sec_params.master_secret
 
         # Retrieve ciphers used for client/server encryption and decryption
-        self.crypto.client.enc = sec_params.get_client_enc_cipher()
-        self.crypto.client.dec = sec_params.get_client_dec_cipher()
-        self.crypto.client.hmac = sec_params.get_client_hmac()
-        self.crypto.server.enc = sec_params.get_server_enc_cipher()
-        self.crypto.server.dec = sec_params.get_server_dec_cipher()
-        self.crypto.server.hmac = sec_params.get_server_hmac()
+
+        self.client_ctx.enc = sec_params.get_client_enc_cipher()
+        self.client_ctx.dec = sec_params.get_client_dec_cipher()
+        self.client_ctx.hmac = sec_params.get_client_hmac()
+        self.server_ctx.enc = sec_params.get_server_enc_cipher()
+        self.server_ctx.dec = sec_params.get_server_dec_cipher()
+        self.server_ctx.hmac = sec_params.get_server_hmac()
 
     def rsa_load_keys_from_file(self, priv_key_file, client=False):
         with open(priv_key_file,'r') as f:
@@ -381,9 +319,9 @@ class TLSSessionCtx(object):
             for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
                 try:
                     if client:
-                        self.crypto.client.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+                        self.client_ctx.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
                     else:
-                        self.crypto.server.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+                        self.server_ctx.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
                     return
                 except ValueError:
                     pass
@@ -391,67 +329,67 @@ class TLSSessionCtx(object):
 
     def rsa_load_keys(self, private, client=False):
         if client:
-            self.crypto.client.asym_keystore = tlsk.RSAKeystore.from_private(private)
+            self.client_ctx.asym_keystore = tlsk.RSAKeystore.from_private(private)
         else:
-            self.crypto.server.asym_keystore = tlsk.RSAKeystore.from_private(private)
+            self.server_ctx.asym_keystore = tlsk.RSAKeystore.from_private(private)
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))
 
     def get_encrypted_pms(self, pms=None):
-        cleartext = pms or self.crypto.session.premaster_secret
-        public = self.crypto.server.asym_keystore.public
+        cleartext = pms or self.premaster_secret
+        public = self.server_ctx.asym_keystore.public
         if public is not None:
-            self.crypto.session.encrypted_premaster_secret = PKCS1_v1_5.new(public).encrypt(cleartext)
+            self.encrypted_premaster_secret = PKCS1_v1_5.new(public).encrypt(cleartext)
         else:
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
-        return self.crypto.session.encrypted_premaster_secret
+        return self.encrypted_premaster_secret
 
     def get_client_dh_pubkey(self, private=None):
-        if not isinstance(self.crypto.server.kex_keystore, tlsk.DHKeyStore):
+        if not isinstance(self.server_ctx.kex_keystore, tlsk.DHKeyStore):
             raise RuntimeError("Server keystore is not DH")
-        g = self.crypto.server.kex_keystore.g
-        p = self.crypto.server.kex_keystore.p
-        public = self.crypto.server.kex_keystore.public
-        self.crypto.client.kex_keystore = tlsk.DHKeyStore.new_keypair(g, p, private)
-        pms = self.crypto.client.kex_keystore.get_psk(public)
+        g = self.server_ctx.kex_keystore.g
+        p = self.server_ctx.kex_keystore.p
+        public = self.server_ctx.kex_keystore.public
+        self.client_ctx.kex_keystore = tlsk.DHKeyStore.new_keypair(g, p, private)
+        pms = self.client_ctx.kex_keystore.get_psk(public)
         # Per RFC 4346 section 8.1.2
         # Leading bytes of Z that contain all zero bits are stripped before it is used as the
         # pre_master_secret.
-        self.crypto.session.premaster_secret = int_to_str(pms).lstrip("\x00")
-        return int_to_str(self.crypto.client.kex_keystore.public)
+        self.premaster_secret = int_to_str(pms).lstrip("\x00")
+        return int_to_str(self.client_ctx.kex_keystore.public)
 
     def get_client_ecdh_pubkey(self, private=None):
-        if not isinstance(self.crypto.server.kex_keystore, tlsk.ECDHKeyStore):
+        if not isinstance(self.server_ctx.kex_keystore, tlsk.ECDHKeyStore):
             raise RuntimeError("Server keystore is not ECDH")
-        if self.crypto.server.kex_keystore.unknown_curve:
+        if self.server_ctx.kex_keystore.unknown_curve:
             raise RuntimeError("Unknown EC. KEX calculation is up to you")
 
-        curve = self.crypto.server.kex_keystore.curve
-        server_keypair = self.crypto.server.kex_keystore.keys
+        curve = self.server_ctx.kex_keystore.curve
+        server_keypair = self.server_ctx.kex_keystore.keys
         if private is None:
             client_keypair = ec.make_keypair(curve)
         else:
             client_keypair = ec.Keypair(curve, private)
-        self.crypto.client.kex_keystore = tlsk.ECDHKeyStore.from_keypair(curve, client_keypair)
+        self.client_ctx.kex_keystore = tlsk.ECDHKeyStore.from_keypair(curve, client_keypair)
 
         secret_point = ec.ECDH(client_keypair).get_secret(server_keypair)
         # PMS is x coordinate of secret
-        self.crypto.session.premaster_secret = int_to_str(secret_point.x)
+        self.premaster_secret = int_to_str(secret_point.x)
         return point_to_ansi_str(client_keypair.pub)
 
     def get_client_kex_data(self, val=None):
-        if self.params.negotiated.key_exchange == tls.TLSKexNames.RSA:
+        if self.negotiated.key_exchange == tls.TLSKexNames.RSA:
             return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientRSAParams(data=self.get_encrypted_pms(val))
-        elif self.params.negotiated.key_exchange == tls.TLSKexNames.DHE:
+        elif self.negotiated.key_exchange == tls.TLSKexNames.DHE:
             return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientDHParams(data=self.get_client_dh_pubkey(val))
-        elif self.params.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
+        elif self.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
             return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
         else:
             raise NotImplementedError("Key exchange unknown or currently not supported")
 
     def _walk_handshake_msgs(self):
-        for pkt in self.packets.history:
+        for pkt in self.history:
             for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
                 if not handshake.haslayer(tls.TLSHelloRequest):
                     yield handshake
@@ -473,12 +411,12 @@ class TLSSessionCtx(object):
         else:
             verify_data = [data]
 
-        if self.params.negotiated.version == tls.TLSVersion.TLS_1_2:
-            prf_verify_data = self.crypto.session.prf.get_bytes(self.crypto.session.master_secret, label,
+        if self.negotiated.version == tls.TLSVersion.TLS_1_2:
+            prf_verify_data = self.prf.get_bytes(self.master_secret, label,
                                                                 SHA256.new("".join(verify_data)).digest(),
                                                                 num_bytes=12)
         else:
-            prf_verify_data = self.crypto.session.prf.get_bytes(self.crypto.session.master_secret, label,
+            prf_verify_data = self.prf.get_bytes(self.master_secret, label,
                                                                 "%s%s" % (MD5.new("".join(verify_data)).digest(),
                                                                           SHA.new("".join(verify_data)).digest()),
                                                                 num_bytes=12)
@@ -490,13 +428,13 @@ class TLSSessionCtx(object):
         return hash_
 
     def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=None):
-        if self.crypto.client.asym_keystore.private is None:
+        if self.client_ctx.asym_keystore.private is None:
             raise RuntimeError("Missing client private key. Can't sign")
         msg_hash = self.get_handshake_hash(hash_)
         if pre_sign_hook is not None:
             msg_hash = pre_sign_hook(msg_hash)
         # Will throw exception if we can't sign or if data is larger the modulus
-        return Sig_PKCS1_v1_5.new(self.crypto.client.asym_keystore.private).sign(msg_hash)
+        return Sig_PKCS1_v1_5.new(self.client_ctx.asym_keystore.private).sign(msg_hash)
 
     def set_mode(self, client=None, server=None):
         self.client = client if client else not server
@@ -552,25 +490,25 @@ class CryptoContainer(object):
             raise ValueError("Valid TLS session context required")
         self.tls_ctx = tls_ctx
         is_cbc = self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None
-        if self.tls_ctx.params.negotiated.version > tls.TLSVersion.TLS_1_0 and is_cbc:
-            self.explicit_iv = os.urandom(self.tls_ctx.crypto.server.sym_keystore.iv_size // 8)
+        if self.tls_ctx.negotiated.version > tls.TLSVersion.TLS_1_0 and is_cbc:
+            self.explicit_iv = os.urandom(self.tls_ctx.server_ctx.sym_keystore.iv_size // 8)
         else:
             self.explicit_iv = ""
         self.data = data
-        self.version = tls_ctx.params.negotiated.version
+        self.version = tls_ctx.negotiated.version
         self.content_type = content_type
         self.pkcs7 = pkcs7.PKCS7Encoder()
         if self.tls_ctx.client:
             # TODO: Needs concurrent safety if this ever goes concurrent
-            self.hmac_handler = tls_ctx.crypto.client.hmac
-            self.enc_cipher = tls_ctx.crypto.client.enc
-            self.seq_number = tls_ctx.crypto.session.key.client.seq_num
-            self.tls_ctx.crypto.session.key.client.seq_num += 1
+            self.hmac_handler = tls_ctx.client_ctx.hmac
+            self.enc_cipher = tls_ctx.client_ctx.enc
+            self.seq_number = tls_ctx.client_ctx.sequence
+            self.tls_ctx.client_ctx.sequence += 1
         else:
-            self.hmac_handler = tls_ctx.crypto.server.hmac
-            self.enc_cipher = tls_ctx.crypto.server.enc
-            self.seq_number = tls_ctx.crypto.session.key.server.seq_num
-            self.tls_ctx.crypto.session.key.server.seq_num += 1
+            self.hmac_handler = tls_ctx.server_ctx.hmac
+            self.enc_cipher = tls_ctx.server_ctx.enc
+            self.seq_number = tls_ctx.server_ctx.sequence
+            self.tls_ctx.server_ctx.sequence += 1
         # CBC mode
         self.hmac()
         if is_cbc:

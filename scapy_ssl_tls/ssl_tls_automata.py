@@ -186,7 +186,7 @@ class TLSClientAutomata(Automaton):
     @hookable
     @ATMT.action(send_client_key_exchange)
     def do_send_client_key_exchange(self):
-        tls_version = self.tlssock.tls_ctx.params.negotiated.version
+        tls_version = self.tlssock.tls_ctx.negotiated.version
         client_key_exchange = TLSRecord(version=tls_version) / TLSHandshake() / self.tlssock.tls_ctx.get_client_kex_data()
         self.tlssock.sendall(client_key_exchange)
 
@@ -198,7 +198,7 @@ class TLSClientAutomata(Automaton):
     @hookable
     @ATMT.condition(CLIENT_KEY_EXCHANGE_SENT)
     def send_client_change_cipher_spec(self):
-        tls_version = self.tlssock.tls_ctx.params.negotiated.version
+        tls_version = self.tlssock.tls_ctx.negotiated.version
         client_ccs = TLSRecord(version=tls_version) / TLSChangeCipherSpec()
         self.tlssock.sendall(client_ccs)
         raise self.CLIENT_CHANGE_CIPHERSPEC_SENT()
@@ -385,7 +385,7 @@ class TLSServerAutomata(Automaton):
         
         pemo = pem_get_objects(self.pemkey)
         for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
-            self.srv_tls_sock.tls_ctx.crypto.server.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+            self.srv_tls_sock.tls_ctx.server_ctx.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
             break
 
     @hookable
@@ -514,7 +514,7 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_ccs)
     def do_send_server_ccs(self):
-        tls_version = self.tlssock.tls_ctx.params.negotiated.version
+        tls_version = self.tlssock.tls_ctx.negotiated.version
         client_ccs = TLSRecord(version=tls_version) / TLSChangeCipherSpec()
         self.tlssock.sendall(client_ccs)
 

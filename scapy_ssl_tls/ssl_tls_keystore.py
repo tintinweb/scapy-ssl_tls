@@ -88,8 +88,7 @@ class AsymKeyStore(object):
         raise NotImplementedError()
 
     def __str__(self):
-        template = """
-        {name}:
+        template = """{name}:
             certificate: {certificate}
             size: {size}
             public: {public}
@@ -166,8 +165,7 @@ class DHKeyStore(KexKeyStore):
         return pow(public, self.private, self.p)
 
     def __str__(self):
-        template = """
-        {name}:
+        template = """{name}:
             generator: {g}
             modulus: {p}
             size: {size}
@@ -197,8 +195,7 @@ class ECDHKeyStore(KexKeyStore):
         return cls(curve, keypair.pub, keypair.priv)
 
     def __str__(self):
-        template = """
-        {name}:
+        template = """{name}:
             curve: {curve}
             size: {size}
             public: {public}
@@ -232,8 +229,7 @@ class CipherKeyStore(SymKeyStore):
         super(CipherKeyStore, self).__init__("%s Keystore" % self.properties["name"], key)
 
     def __str__(self):
-        template = """
-        {name}:
+        template = """{name}:
             {cipher_name} cipher:
                 mode: {mode}
                 key: {key}
@@ -243,7 +239,7 @@ class CipherKeyStore(SymKeyStore):
             {hmac_name} hmac:
                 key: {hmac_key}
                 size: {hmac_size}"""
-        return template.format(name=self.properties["name"], cipher_name=self.properties["cipher"]["name"],
+        return template.format(name=self.name, cipher_name=self.properties["cipher"]["name"],
                                mode=self.properties["cipher"]["mode_name"], key=repr(self.key), size=self.size,
                                block_size=self.block_size, iv=repr(self.iv), hmac_name=self.properties["hash"]["name"],
                                hmac_key=repr(self.hmac), hmac_size=self.hmac_size)
