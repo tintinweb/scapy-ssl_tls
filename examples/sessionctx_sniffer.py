@@ -50,10 +50,9 @@ class L4TcpReassembler(object):
         def __init__(self, pkt):
             self.pktlist = []
             self.stream_id = L4TcpReassembler.TCPStream.stream_id(pkt)
-
+            
             if not pkt[TCP].flags & L4TcpReassembler.TCPFlags.SYN:
-                #raise Exception("NOT THE BEGINNING OF A STREAM: %s"%repr(self.stream_id))
-                return
+                raise Exception("NOT THE BEGINNING OF A STREAM: %s"%repr(self.stream_id))
 
             self.syn = pkt[TCP]
             self.syn.payload=None   # strip payload
@@ -103,8 +102,11 @@ class L4TcpReassembler(object):
         stream_id = L4TcpReassembler.TCPStream.stream_id(pkt)
         stream_obj = self.streams.get(stream_id)                # get stream tracker
         if not stream_obj:
-            stream_obj = L4TcpReassembler.TCPStream(pkt)
-            self.streams[stream_id]=stream_obj
+            try:
+                stream_obj = L4TcpReassembler.TCPStream(pkt)
+                self.streams[stream_id]=stream_obj
+            except:
+                pass # not a valid stream, or in the middle of a stream
         return stream_obj
 
     def reassemble(self, pktlist):
@@ -118,6 +120,8 @@ class L4TcpReassembler(object):
                 continue
             # get Stream object
             stream = self.get_stream(pkt)
+            if not stream:
+                continue
             p = stream.process(pkt)
             if not p:
                 # assume stream not complete
