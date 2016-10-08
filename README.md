@@ -7,23 +7,27 @@ Scapy-SSL/TLS
 
 SSL/TLS and DTLS layers and TLS utiltiy functions for [Scapy](http://www.secdev.org/projects/scapy/).
 
-An offensive stack for SSLv2, SSLv3 (TLS), TLS, DTLS penetration testing providing easy access to packet crafting, automatic dissection, encryption, decryption, session tracking, automated handshakes, TLSSocket abstraction, cryptography containers, predefined hooks, SSL sniffing including minimalistic PCAP stream decryption (RSA_WITH_*), fuzzing and security scanning (Renegotiation, Heartbleed, Poodle, Logjam/Freak, various Buffer overflows, ...).
+An offensive stack for SSLv2, SSLv3 (TLS), TLS, DTLS penetration testing providing easy access to packet crafting, automatic dissection, encryption, decryption, session tracking, basic TLS state machines, automated handshakes, TLSSocket abstraction, cryptography containers, predefined hooks, SSL sniffing including minimalistic PCAP stream decryption (RSA_WITH_\*), fuzzing and security scanning (*Renegotiation, Heartbleed, Poodle, Logjam/Freak, DROWN, various Buffer overflows, ...*).
 
 
 Features
 ---------
-* TLS 1.2
-* TLS 1.1
-* TLS 1.0
-* SSLv3/TLS records
-* SSLv2 handshake
-* DTLS records
-* TLS Session Context / Session Tracking
- * Key sniffing (master_key, ...)
-* Sniffing / PCAP processing and decryption
-* State Machines / Automata
- * TLS Client
 
+* Protocol Support
+ * TLS 1.2
+ * TLS 1.1
+ * TLS 1.0
+ * SSLv3/TLS Records
+ * SSLv2 Handshake
+ * DTLS Records
+* TLS Session Context
+ * Session Tracking
+ * Key sniffing (master_key, ...)
+* Client and Server support
+* Sniffer / PCAP processor and decryptor
+* State Machines
+ * TLS Client Scapy Automata
+ * TLS Server Scapy Automata
 
 Installation
 ------------
@@ -74,6 +78,16 @@ Installation
 	>>> TLSRecord
 	<class 'scapy.layers.ssl_tls.TLSRecord'>
 ```
+
+Troubleshooting
+-----------
+
+**Q:** `sessionctx_sniffer.py` does not seem to detect `SSL/TLS` or does not show any sniffed `SSL/TLS` sessions.  
+**A:** This is problem caused by the import magic in `sessionctx_sniffer.py` where the example might mix up imports from the projects directory with the ones installed with `pip` or via `setup.py install`. Make sure to update to `>=v1.2.3`, or run `sessionctx_sniffer.py` from a different directory, or uninstall scapy-ssl_tls to use it directly from the project directory, or remove the `from scapy_ssl_tls.ssl_tls import *` import lines from the example.  
+**Note:** This has been addressed with `>=v1.2.3` where the system-wide import has preference.
+
+**Q:** `sessionctx_sniffer.py` does not seem to dissect large `SSL/TLS` records properly.  
+**A:** In order to fully reconstruct *sniffed* `SSL/TLS` records one needs to `defragment` the sniffed IP packets and `reassemble` them to TCP segments. Since TCP Stream reassembly is not an easy task (retransmissions, out-of-order segments, ...) - and therefore out of scope for this project - the `sessionctx_sniffer.py` example implements a very limited tcp stream reassembly algorithm that only tries to reconstruct consecutive segments not taking into account any type of flow-control (ordering, retransmissions, ...). 
 
 
 ## Examples
