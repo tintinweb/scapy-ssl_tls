@@ -258,6 +258,7 @@ class TestTLSDecryptablePacket(unittest.TestCase):
         data = "%s%s%s%s" % ("C" * AES.block_size, "A" * 2, "B" * SHA.digest_size, "\x03" * 4)
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.negotiated.version = tls.TLSVersion.TLS_1_1
+        tls_ctx.requires_iv = True
         tls_ctx.sec_params = tlsc.TLSSecurityParameters(tlsc.TLSPRF(tls.TLSVersion.TLS_1_0),
                                                         tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA, "A" * 48, "B" * 32,
                                                         "C" * 32, True)

@@ -639,8 +639,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
         try:
             self.tls_ctx = fields["ctx"]
             del(fields["ctx"])
-            self.above_tls10 = self.tls_ctx.negotiated.version > TLSVersion.TLS_1_0
-            if self.explicit_iv_field not in self.fields_desc and self.above_tls10:
+            if self.explicit_iv_field not in self.fields_desc and self.tls_ctx.requires_iv:
                 self.fields_desc.append(self.explicit_iv_field)
             for field in self.decryptable_fields:
                 if field not in self.fields_desc:
@@ -660,7 +659,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
                     self.padding_len = ord(raw_bytes[-1])
                     self.padding = raw_bytes[-self.padding_len - 1:-1]
                     self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
-                    if self.above_tls10:
+                    if self.tls_ctx.requires_iv:
                         self.explicit_iv = raw_bytes[:iv_size]
                         data = raw_bytes[iv_size:-self.padding_len - hash_size - 1]
                     else:
@@ -1041,7 +1040,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
 
     if tls_ctx is None:
         raise ValueError("A valid TLS session context must be provided")
-    comp_method = tls_ctx.client_ctx.compression
+    comp_method = tls_ctx.server_ctx.compression
 
     content_type, data = None, None
     for tls_proto, handler in cleartext_handler.iteritems():
