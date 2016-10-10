@@ -15,10 +15,11 @@ from Crypto.PublicKey import RSA
 
 
 def env_local_file(file):
-    return os.path.join(os.path.dirname(__file__), 'files', file)
+    return os.path.join(os.path.dirname(__file__), "files", file)
 
 
 class TestNullCiper(unittest.TestCase):
+
     def test_null_cipher_returns_cleartext_on_encrypt(self):
         null_cipher = tlsc.NullCipher.new(key="junk_key", iv="junk_iv")
         cleartext = "cleartext"
@@ -32,6 +33,7 @@ class TestNullCiper(unittest.TestCase):
 
 
 class TestNullHash(unittest.TestCase):
+
     def test_null_hash_always_returns_empty_string(self):
         null_hash = tlsc.NullHash.new("initial_junk")
         null_hash.update("some more junk")
@@ -46,6 +48,7 @@ class TestNullHash(unittest.TestCase):
 
 
 class TestTLSSessionCtx(unittest.TestCase):
+
     def setUp(self):
         self.pem_priv_key = """-----BEGIN PRIVATE KEY-----
 MIIEwAIBADANBgkqhkiG9w0BAQEFAASCBKowggSmAgEAAoIBAQDDLrmt4lKRpm6P
@@ -171,7 +174,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
                                                                                  random_bytes="A" * 28)
         tls_ctx.insert(server_hello)
         client_kex = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange() /\
-                     tls.TLSClientRSAParams(data=epms)
+            tls.TLSClientRSAParams(data=epms)
         tls_ctx.insert(client_kex)
         self.assertEqual(client_verify_data, binascii.hexlify(tls_ctx.get_verify_data()))
         # Make sure that client finish is included in server finish calculation
@@ -183,11 +186,11 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_client_dh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        p = 11435638110073884015312138951374632602058080675070521707579703088370446597672067452229024566834732449017970455481029703480957707976441965258194321262569523L
+        p = 11435638110073884015312138951374632602058080675070521707579703088370446597672067452229024566834732449017970455481029703480957707976441965258194321262569523
         g = 2
-        public = 5138256925703068273978027748090991496798559132548080008963338818789329120888330364361710579103845963013102056863555649866832856399945018230203391434938503L
+        public = 5138256925703068273978027748090991496798559132548080008963338818789329120888330364361710579103845963013102056863555649866832856399945018230203391434938503
         tls_ctx.server_ctx.kex_keystore = tlsk.DHKeyStore(g, p, public)
-        client_privkey = 5398526532442504864680398257365369432058147704829279760748758494328728516319L
+        client_privkey = 5398526532442504864680398257365369432058147704829279760748758494328728516319
         client_pubkey = tls_ctx.get_client_dh_pubkey(client_privkey)
         self.assertEqual(
             ("/T\xdc;\xc49\xa6\x8cD\xd4\xc1\x07I|\xb6\xc8\xaf\xb5\x04\xe9\xfb\t\x0e}\x14~\xa4\x1f\xdfo\x08u)Z\xb3\x0e"
@@ -201,10 +204,10 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_client_ecdh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
         secp256r1 = reg.get_curve("secp256r1")
-        public = ec.Point(secp256r1, 71312736565121892539464098105317518227531978702333415386264829982789952731614L,
-                          108064706642599821618918248475955325719985341096102200103424860263181813987462L)
+        public = ec.Point(secp256r1, 71312736565121892539464098105317518227531978702333415386264829982789952731614,
+                          108064706642599821618918248475955325719985341096102200103424860263181813987462)
         tls_ctx.server_ctx.kex_keystore = tlsk.ECDHKeyStore(secp256r1, public)
-        client_privkey = 15320484772785058360598040144348894600917526501829289880527760633524785596585L
+        client_privkey = 15320484772785058360598040144348894600917526501829289880527760633524785596585
         client_keys = ec.Keypair(secp256r1, client_privkey)
         client_pubkey = tls_ctx.get_client_ecdh_pubkey(client_privkey)
         self.assertTrue(client_pubkey.startswith("\x04"))
@@ -304,6 +307,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
 
 
 class TestNullCompression(unittest.TestCase):
+
     def test_null_compression_returns_input_on_compress(self):
         null_compression = tlsc.NullCompression()
         input_ = "some text"
@@ -316,6 +320,7 @@ class TestNullCompression(unittest.TestCase):
 
 
 class TestTLSCompressionParameters(unittest.TestCase):
+
     def test_input_message_matches_decompressed_message_with_deflate(self):
         # DEFLATE
         compression_method = 0x1
@@ -332,6 +337,7 @@ class TestTLSCompressionParameters(unittest.TestCase):
 
 
 class TestCryptoContainer(unittest.TestCase):
+
     def setUp(self):
         self._do_kex(tls.TLSVersion.TLS_1_0)
         unittest.TestCase.setUp(self)
@@ -387,7 +393,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
         self.client_kex = tls.TLSRecord(version=self.version) / tls.TLSHandshake() / tls.TLSClientKeyExchange() /\
-                          tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())
+            tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())
         self.tls_ctx.insert(self.client_kex)
 
     def test_crypto_container_increments_sequence_number(self):

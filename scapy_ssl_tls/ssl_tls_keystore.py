@@ -72,6 +72,7 @@ def nb_bits(int_):
 
 
 class AsymKeyStore(object):
+
     def __init__(self, name, public, private=None):
         self.name = name
         self.private = private
@@ -98,11 +99,13 @@ class AsymKeyStore(object):
 
 
 class EmptyAsymKeystore(AsymKeyStore):
+
     def __init__(self):
         super(EmptyAsymKeystore, self).__init__("Empty Asymmetrical Keystore", None, None)
 
 
 class RSAKeystore(AsymKeyStore):
+
     def __init__(self, public, private=None):
         super(RSAKeystore, self).__init__("RSA Keystore", public, private)
 
@@ -128,11 +131,13 @@ class RSAKeystore(AsymKeyStore):
 
 
 class DSAKeystore(AsymKeyStore):
+
     def __init__(self, public, private=None):
         super(DSAKeystore, self).__init__("DSA Keystore", public, private)
 
 
 class KexKeyStore(object):
+
     def __init__(self, name, public, private=None):
         self.name = name
         self.public = public
@@ -140,11 +145,13 @@ class KexKeyStore(object):
 
 
 class EmptyKexKeystore(KexKeyStore):
+
     def __init__(self):
         super(EmptyKexKeystore, self).__init__("Empty Kex Keystore", None, None)
 
 
 class DHKeyStore(KexKeyStore):
+
     def __init__(self, g, p, public, private=None):
         self.g = g
         self.p = p
@@ -176,6 +183,7 @@ class DHKeyStore(KexKeyStore):
 
 
 class ECDHKeyStore(KexKeyStore):
+
     def __init__(self, curve, public, private=None):
         self.curve = curve
         self.public = public
@@ -206,6 +214,7 @@ class ECDHKeyStore(KexKeyStore):
 
 
 class SymKeyStore(object):
+
     def __init__(self, name, key=b""):
         self.name = name
         self.key = key
@@ -213,11 +222,13 @@ class SymKeyStore(object):
 
 
 class EmptySymKeyStore(SymKeyStore):
+
     def __init__(self):
         super(EmptySymKeyStore, self).__init__("Empty Symmetrical Keystore")
 
 
 class CipherKeyStore(SymKeyStore):
+
     def __init__(self, properties, key, hmac, iv=b""):
         self.properties = properties
         # Be consistent and track everything in bits

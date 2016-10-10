@@ -7,6 +7,7 @@ import scapy_ssl_tls.ssl_tls_keystore as tlsk
 
 
 class TestAsymKeyStore(unittest.TestCase):
+
     def setUp(self):
         self.pem_priv_key = """-----BEGIN PRIVATE KEY-----
         MIIEwAIBADANBgkqhkiG9w0BAQEFAASCBKowggSmAgEAAoIBAQDDLrmt4lKRpm6P
