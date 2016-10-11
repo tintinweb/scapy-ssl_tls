@@ -38,7 +38,8 @@ with TLSSocket(socket.socket(), client=True) as tls_socket:
     tls_ctx = tls_socket.tls_ctx
     tls_socket.tls_ctx.resume_session(master_secret)
 
-    pkt = TLSRecord() / TLSHandshake() / TLSClientHello(version=version, cipher_suites=[cipher],
+    pkt = TLSRecord() / TLSHandshake() / TLSClientHello(version=version,
+                                                        cipher_suites=[cipher],
                                                         extensions=[TLSExtension() / TLSExtSessionTicketTLS(data=ticket)])
     tls_socket.sendall(pkt)
     resp = tls_socket.recvall()
@@ -48,5 +49,3 @@ with TLSSocket(socket.socket(), client=True) as tls_socket:
     tls_socket.recvall()
 
 print("Resumed session context: %s" % tls_ctx)
-
-

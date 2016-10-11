@@ -11,6 +11,7 @@ from setuptools import setup
 from setuptools.command.install import install as _install
 import site as _site
 
+
 def get_site_packages():
     """
     This is a hack to work around site.getsitepackages() not working in
@@ -52,7 +53,7 @@ def get_scapy_locations(sites):
                             for dir_ in dirs:
                                 if dir_ == "layers":
                                     scapy_locations.append(root)
-    print("INFO: Installing scapy-ssl_tls layers to: %s"%repr(scapy_locations))
+    print("INFO: Installing scapy-ssl_tls layers to: %s" % repr(scapy_locations))
     return scapy_locations
 
 
@@ -107,12 +108,14 @@ def _post_install(dir_):
                 else:
                     print(line, end="")
 
+
 def os_install_requires():
     dependencies = ["scapy", "pycrypto", "tinyec"]
     # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
     if platform.system() == "Darwin":
         dependencies.extend(("dnet", "pcapy"))
     return dependencies
+
 
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()

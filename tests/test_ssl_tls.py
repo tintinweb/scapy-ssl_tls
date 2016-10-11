@@ -22,6 +22,7 @@ def env_local_file(file):
 
 
 class TestTLSRecord(unittest.TestCase):
+
     def setUp(self):
         self.server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello()
         self.cert_list = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSCertificateList()
@@ -105,6 +106,7 @@ class TestTLSRecord(unittest.TestCase):
 
 
 class TestTLSDissector(unittest.TestCase):
+
     def setUp(self):
         self.payload = binascii.unhexlify(
             "160301004a02000046030155514d08929c06119d291bae09ec50ba48f52069c840673c76721aa5c53bc352202de1c20c707ba9b083282d2eba3d95bdfb5847eb9241f252173a04c9f990d508002f0016030104080b0004040004010003fe308203fa308202e2a003020102020900980ceed2480234b2300d06092a864886f70d0101050500305b310b3009060355040613025553311330110603550408130a43616c69666f726e696131173015060355040a130e4369747269782053797374656d73311e301c06035504031315616d73736c2e656e672e636974726974652e6e6574301e170d3135303432343233313435395a170d3235303432313233313435395a305b310b3009060355040613025553311330110603550408130a43616c69666f726e696131173015060355040a130e4369747269782053797374656d73311e301c06035504031315616d73736c2e656e672e636974726974652e6e657430820122300d06092a864886f70d01010105000382010f003082010a0282010100c0e2f8d4d4423ef7ce3e6ea789ad83c831fd679a8745bfe7d3628a544b7f04fec8bb8eb72737a6334764b68e796fbd70f19a1754776aba2f5d9685f2931b57456825ca75baca540c34de26115037d76d1a6fabbab6cd666af98fcb6b9c2fc714fd523828babae067f9ad7da51100306b4a5783a1402a4d80524dc14d0867f526e055dbd32e6f9f785072d72b8c36994bb56c2cdbf74e2149e7c625fed1c6405e205289c2b4608bd28704303764227f4540b95054c115be9185223b8a815462818090c6c933ce4c39d4049197106fe84918048adfd185fc7d64167804ccafbae8b84dc81d0288f4078c736a4ccc04c27184ffb45b14b4bd79ab472dba8877c20f0203010001a381c03081bd301d0603551d0e041604141979840d258e11dad71d942fe77e567fc0bbb48430818d0603551d2304818530818280141979840d258e11dad71d942fe77e567fc0bbb484a15fa45d305b310b3009060355040613025553311330110603550408130a43616c69666f726e696131173015060355040a130e4369747269782053797374656d73311e301c06035504031315616d73736c2e656e672e636974726974652e6e6574820900980ceed2480234b2300c0603551d13040530030101ff300d06092a864886f70d010105050003820101006fbd05d20b74d33b727fb2ccfebf3f36950278631bf87e77f503ce8e9a080925b6276f32218cadd0a43d40d89ba0e5fd9897ac536a079440385ba59e2593100df52224a8f8b786561466558d435d9ea5e4f320028ee7afa005f09b64b16f3e6b787af31b28d623edd480a50dd64fc6f0da0eab0c38c5d8965504c9c3d5c2c85514b7b1f8df9ee2d9116ac05781dbef26a66e98679f84b0378a1f8857f69e72cf72c11e836e0144153bd412dcfb506ed9e4a6181208b92be3ba9ec13f3c5b19eb700884e04a051603f2f2302d542e094afcce6694c5e46452a486b9ba339578e0f530f98824872eef62a23d685e9710c47362a034b699b7f9e1521b135e1e950d16030100040e000000")
@@ -114,14 +116,15 @@ class TestTLSDissector(unittest.TestCase):
         # Setup static parameters, so PRF output is reproducible
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.premaster_secret = "\x03\x01" + "C" * 46
-        client_hello = tls.TLSRecord(version="TLS_1_0") / tls.TLSHandshake() / tls.TLSClientHello(version="TLS_1_0",
-                                                                                                  gmt_unix_time=1234,
-                                                                                                  random_bytes="A" * 28,
-                                                                                                  session_id="",
-                                                                                                  compression_methods=[
-                                                                                                      0],
-                                                                                                  cipher_suites=(
-                                                                                                  tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA))
+        client_hello = tls.TLSRecord(
+            version="TLS_1_0") / tls.TLSHandshake() / tls.TLSClientHello(
+            version="TLS_1_0",
+            gmt_unix_time=1234,
+            random_bytes="A" * 28,
+            session_id="",
+            compression_methods=[0],
+            cipher_suites=(
+                tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA))
         tls_ctx.insert(client_hello)
         server_hello = binascii.unhexlify(
             "160301004a02000046030155662cd45fade845839a3c8dba0e46f1abcd2fd941f4e95e75ab6d61811abcf420960ccadc00abc7043cca458d9a1df1cb877a5005b53f754ac80d392990fae3c7002f00160301047c0b0004780004750004723082046e30820356a003020102020900d1e1f53a9203251a300d06092a864886f70d0101050500308180310b3009060355040613025553311330110603550408130a536f6d652d53746174653112301006035504071309536f6d652d6369747931153013060355040a130c536f6d652d636f6d70616e793110300e060355040b1307536f6d652d4f55311f301d06035504031316736f6d652d7365727665722e736f6d652e7768657265301e170d3135303532323139313631325a170d3235303531393139313631325a308180310b3009060355040613025553311330110603550408130a536f6d652d53746174653112301006035504071309536f6d652d6369747931153013060355040a130c536f6d652d636f6d70616e793110300e060355040b1307536f6d652d4f55311f301d06035504031316736f6d652d7365727665722e736f6d652e776865726530820122300d06092a864886f70d01010105000382010f003082010a0282010100cd7b7165ee7528f107cf666edc673eedc863544ebe8cc3741346015eea182a73a9e18e26f6f1553d83843d2bdacdd4501faec7b4f5446b8790053f152e23f70d121ca7f63a22a657536ee4b50b8777568ef469905ce05211178dd9ebe223b21246cce4baf351d0b81b464830e15fb7178cf5f39e7673de7779e5dbbd7a3d2ea98589b0d6003635447693ed2ec632c3dbb632ac254e3b8cd78e1ea160982627e2cd3a369c4bb43c486141b97fbbd9d3cb014b92e0ec6ecf46ded64749bbecfb6f98d0d2f459d5cf0054a6522280af961dfcbe1650937180f43decf2f8725b94eeec10248cdc70acad63bcc3cd5370d0dc0f3cba8d369909c6b917f243e5e5bc270203010001a381e83081e5301d0603551d0e041604143cc2f7fc85dbbe4b0566b35bde744484438ae83e3081b50603551d230481ad3081aa80143cc2f7fc85dbbe4b0566b35bde744484438ae83ea18186a48183308180310b3009060355040613025553311330110603550408130a536f6d652d53746174653112301006035504071309536f6d652d6369747931153013060355040a130c536f6d652d636f6d70616e793110300e060355040b1307536f6d652d4f55311f301d06035504031316736f6d652d7365727665722e736f6d652e7768657265820900d1e1f53a9203251a300c0603551d13040530030101ff300d06092a864886f70d0101050500038201010001738e2985692d8239fb1795e6ea0718755cf106cd739f7113afd3a074add07f981b06f34b9df3e1658c153355c5061b369d60d341eb4ccefdd98d6d6790be499cde8bd5705d1a8a89bb141599f3319914f8539e294848c106386218d8679da46ba90a2ce7587265cb55d6a629569b65581ee2e88ded264b81dff1c11e2c55728efe170dfe4f76706fbbda137b02e0fa987355b0cfdb3f8637e35473e4a6eccdcbc27d55d1f956a5f2c454e937df71d42e21d45d227477e26053b8be003fa527746b163b3d4b9a585d2860e5080ed9737d4c5fa5a32eee45a4e56d8a03542349619084580cc9c6c25b1ac7f3854b501423eafdd32896af92ce8ca6923947d77c16030100040e000000")
@@ -212,6 +215,7 @@ class TestTLSDissector(unittest.TestCase):
 
 
 class TestTLSDecryptablePacket(unittest.TestCase):
+
     def test_packet_does_not_contain_mac_or_padding_if_not_received_encrypted(self):
         pkt = tls.TLSRecord() / tls.TLSChangeCipherSpec()
         records = tls.TLS(str(pkt))
@@ -269,34 +273,35 @@ class TestTLSDecryptablePacket(unittest.TestCase):
 
 
 class TestTLSClientHello(unittest.TestCase):
+
     def setUp(self):
         self.pkt = tls.TLSRecord() / \
-                   tls.TLSHandshake() / \
-                   tls.TLSClientHello(extensions=[ \
-                       tls.TLSExtension() / \
-                       tls.TLSExtServerNameIndication(server_names=[tls.TLSServerName(data="www.github.com"),
-                                                                    tls.TLSServerName(data="github.com")]), \
-                       tls.TLSExtension() / \
-                       tls.TLSExtALPN(protocol_name_list=[tls.TLSALPNProtocol(data="http/1.1"),
-                                                          tls.TLSALPNProtocol(data="http/1.0")]),
-                       tls.TLSExtension() / \
-                       tls.TLSExtALPN(protocol_name_list=[tls.TLSALPNProtocol(data="http/2.0"), ]),
-                       tls.TLSExtension() / \
-                       tls.TLSExtMaxFragmentLength(fragment_length=0x03),
-                       tls.TLSExtension() / \
-                       tls.TLSExtCertificateURL(
-                           certificate_urls=[tls.TLSURLAndOptionalHash(url="http://www.github.com/tintinweb")]),
-                       tls.TLSExtension() / \
-                       tls.TLSExtECPointsFormat(ec_point_formats=[tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2]),
-                       tls.TLSExtension() / \
-                       tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSEllipticCurve.SECT571R1, ]),
-                       tls.TLSExtension() / \
-                       tls.TLSExtHeartbeat(mode=tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND),
-                       tls.TLSExtension() / \
-                       tls.TLSExtSessionTicketTLS(data="myticket"),
-                       tls.TLSExtension() / \
-                       tls.TLSExtRenegotiationInfo(data="myreneginfo"),
-                       ], )
+            tls.TLSHandshake() / \
+            tls.TLSClientHello(extensions=[
+                tls.TLSExtension() /
+                tls.TLSExtServerNameIndication(server_names=[tls.TLSServerName(data="www.github.com"),
+                                                             tls.TLSServerName(data="github.com")]),
+                tls.TLSExtension() /
+                tls.TLSExtALPN(protocol_name_list=[tls.TLSALPNProtocol(data="http/1.1"),
+                                                   tls.TLSALPNProtocol(data="http/1.0")]),
+                tls.TLSExtension() /
+                tls.TLSExtALPN(protocol_name_list=[tls.TLSALPNProtocol(data="http/2.0"), ]),
+                tls.TLSExtension() /
+                tls.TLSExtMaxFragmentLength(fragment_length=0x03),
+                tls.TLSExtension() /
+                tls.TLSExtCertificateURL(
+                    certificate_urls=[tls.TLSURLAndOptionalHash(url="http://www.github.com/tintinweb")]),
+                tls.TLSExtension() /
+                tls.TLSExtECPointsFormat(ec_point_formats=[tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2]),
+                tls.TLSExtension() /
+                tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSEllipticCurve.SECT571R1, ]),
+                tls.TLSExtension() /
+                tls.TLSExtHeartbeat(mode=tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND),
+                tls.TLSExtension() /
+                tls.TLSExtSessionTicketTLS(data="myticket"),
+                tls.TLSExtension() /
+                tls.TLSExtRenegotiationInfo(data="myreneginfo"),
+            ], )
         unittest.TestCase.setUp(self)
 
     def test_dissect_contains_client_hello(self):
@@ -357,6 +362,7 @@ class TestTLSClientHello(unittest.TestCase):
 
 
 class TestTLSPlaintext(unittest.TestCase):
+
     def test_built_plaintext_has_no_mac_and_padding_when_unspecified(self):
         plaintext = tls.TLSPlaintext(data="AAAA")
         self.assertEqual(str(plaintext), "AAAA")
@@ -374,6 +380,7 @@ class TestTLSPlaintext(unittest.TestCase):
 
 
 class TestPCAP(unittest.TestCase):
+
     def setUp(self):
         self.records = []
         self.pkts = (p for p in rdpcap(env_local_file('RSA_WITH_AES_128_CBC_SHA.pcap')) if p.haslayer(tls.SSL))
@@ -436,8 +443,12 @@ class TestPCAP(unittest.TestCase):
         # TODO: Client and Server KEX cannot be dissected without a TLS context
         # self.assertTrue(record.haslayer(tls.TLSClientRSAParams))
         # self.assertEqual(record[tls.TLSClientRSAParams].data)
-        self.assertEqual(str(record[tls.TLSClientKeyExchange])[2:],
-                         '\x9es\xdf\xe0\xf2\xd0@2D\x9a4\x7fW\x86\x10\xea=\xc5\xe2\xf9\xa5iC\xc9\x0b\x00~\x911W\xfc\xc5e\x18\rD\xfdQ\xf8\xda\x8az\xab\x16\x03\xeb\xac#n\x8d\xdd\xbb\xf4u\xe7\xb7\xa3\xce\xdbgk}0*')
+        self.assertEqual(
+            str(
+                record[
+                    tls.TLSClientKeyExchange])[
+                2:],
+            '\x9es\xdf\xe0\xf2\xd0@2D\x9a4\x7fW\x86\x10\xea=\xc5\xe2\xf9\xa5iC\xc9\x0b\x00~\x911W\xfc\xc5e\x18\rD\xfdQ\xf8\xda\x8az\xab\x16\x03\xeb\xac#n\x8d\xdd\xbb\xf4u\xe7\xb7\xa3\xce\xdbgk}0*')
         # Change Cipher Spec
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
@@ -449,8 +460,10 @@ class TestPCAP(unittest.TestCase):
         self.assertEquals(record[tls.TLSRecord].content_type, tls.TLSContentType.HANDSHAKE)
         self.assertTrue(record.haslayer(tls.TLSCiphertext))
         self.assertEqual(record[tls.TLSRecord].length, 0x30)
-        self.assertEqual(record[tls.TLSCiphertext].data,
-                         "\x15\xcbz[-\xc0'\t(b\x95D\x9f\xa1\x1eNj\xfbI\x9dj$D\xc6\x8e&\xbc\xc1(\x8c'\xcc\xa2\xba\xec8cnd\xd8R\x94\x17\x96a\xfd\x9cT")
+        self.assertEqual(
+            record[
+                tls.TLSCiphertext].data,
+            "\x15\xcbz[-\xc0'\t(b\x95D\x9f\xa1\x1eNj\xfbI\x9dj$D\xc6\x8e&\xbc\xc1(\x8c'\xcc\xa2\xba\xec8cnd\xd8R\x94\x17\x96a\xfd\x9cT")
         # Handshake - new session ticket
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
@@ -458,8 +471,10 @@ class TestPCAP(unittest.TestCase):
         self.assertTrue(record.haslayer(tls.TLSSessionTicket))
         self.assertEqual(record[tls.TLSSessionTicket].lifetime, 7200)
         self.assertEqual(record[tls.TLSSessionTicket].ticket_length, 0xa0)
-        self.assertEqual(record[tls.TLSSessionTicket].ticket,
-                         '\xd4\xee\xb0\x9b\xb5\xa2\xd3\x00W\x84Y\xec\r\xbf\x05\x0c\xd5\xb9\xe2\xf82\xb5\xec\xce\xe2\x9c%%\xd9>J\x94[\xca\x18+\x0f_\xf6s8b\xcd\xcc\xf129\xe4^0\xf3\x94\xf5\xc5\x94:\x8c\x8e\xe5\x12J\x1e\xd81\xb5\x17\t\xa6Li\xca\xae\xfb\x04\x17dT\x9e\xc2\xfa\xf3m\xe9\xa5\xed\xa6e\xfe/\xf3\xc6\xcex@\xf7e\xe0\x13\xd3w\xc7\xc5y\x16VL0\x94\xcf\xb0<\x00\x91\xbd\x86\x08\x9f/\x05g\x03o\xa7;\xb96\xf2\x80O`]L\xc4B]\x02D\xba1\x8f9\x8e\x0c\x1e\xa8&O>\x01\x96\xb3o\xc6%\xe40\x03\xd6:}')
+        self.assertEqual(
+            record[
+                tls.TLSSessionTicket].ticket,
+            '\xd4\xee\xb0\x9b\xb5\xa2\xd3\x00W\x84Y\xec\r\xbf\x05\x0c\xd5\xb9\xe2\xf82\xb5\xec\xce\xe2\x9c%%\xd9>J\x94[\xca\x18+\x0f_\xf6s8b\xcd\xcc\xf129\xe4^0\xf3\x94\xf5\xc5\x94:\x8c\x8e\xe5\x12J\x1e\xd81\xb5\x17\t\xa6Li\xca\xae\xfb\x04\x17dT\x9e\xc2\xfa\xf3m\xe9\xa5\xed\xa6e\xfe/\xf3\xc6\xcex@\xf7e\xe0\x13\xd3w\xc7\xc5y\x16VL0\x94\xcf\xb0<\x00\x91\xbd\x86\x08\x9f/\x05g\x03o\xa7;\xb96\xf2\x80O`]L\xc4B]\x02D\xba1\x8f9\x8e\x0c\x1e\xa8&O>\x01\x96\xb3o\xc6%\xe40\x03\xd6:}')
         # Change Cipher Spec
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
@@ -470,8 +485,10 @@ class TestPCAP(unittest.TestCase):
         self.assertTrue(record.haslayer(tls.TLSRecord))
         self.assertEquals(record[tls.TLSRecord].content_type, tls.TLSContentType.HANDSHAKE)
         self.assertTrue(record.haslayer(tls.TLSCiphertext))
-        self.assertEqual(record[tls.TLSCiphertext].data,
-                         '%\xb8X\xc1\xa6?\xf8\xbd\xe6\xae\xbd\x98\xd4u\xa5E\x1b\xd8jpy\x86)NOd\xba\xe7\x1f\xcaK\x96\x9b\xf7\x0bP\xf5O\xfd\xda\xda\xcd\xcdK\x12.\xdf\xd5')
+        self.assertEqual(
+            record[
+                tls.TLSCiphertext].data,
+            '%\xb8X\xc1\xa6?\xf8\xbd\xe6\xae\xbd\x98\xd4u\xa5E\x1b\xd8jpy\x86)NOd\xba\xe7\x1f\xcaK\x96\x9b\xf7\x0bP\xf5O\xfd\xda\xda\xcd\xcdK\x12.\xdf\xd5')
         # some more encrypted traffic
         for _ in xrange(6):
             # Application data - encrypted - 6 times
@@ -486,6 +503,7 @@ class TestPCAP(unittest.TestCase):
 
 
 class TestToRaw(unittest.TestCase):
+
     def setUp(self):
         self.pem_priv_key = """-----BEGIN PRIVATE KEY-----
 MIIEwAIBADANBgkqhkiG9w0BAQEFAASCBKowggSmAgEAAoIBAQDDLrmt4lKRpm6P
@@ -537,8 +555,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
             version=self.hello_version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.hello_version) / tls.TLSHandshake() / tls.TLSClientKeyExchange() / \
-                          tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())
+        self.client_kex = tls.TLSRecord(version=self.hello_version) / tls.TLSHandshake() / \
+            tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())
         self.tls_ctx.insert(self.client_kex)
         unittest.TestCase.setUp(self)
 
@@ -599,11 +617,13 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         client_finished = tls.TLSRecord(content_type=0x16) / tls.to_raw(tls.TLSFinished(), self.tls_ctx,
                                                                         include_record=False, encrypt_hook=encrypt)
         pkt = tls.TLS(str(client_finished))
-        # 4 bytes of TLSHandshake header, 12 bytes of verify_data, 20 bytes of HMAC SHA1, 11 bytes of padding, 1 padding length byte
+        # 4 bytes of TLSHandshake header, 12 bytes of verify_data, 20 bytes of
+        # HMAC SHA1, 11 bytes of padding, 1 padding length byte
         self.assertEqual(pkt[tls.TLSRecord].length, len(tls.TLSHandshake()) + 12 + SHA.digest_size + 11 + 1)
 
 
 class TestTLSCertificate(unittest.TestCase):
+
     def setUp(self):
         '''
         //default openssl 1.0.1f server.pem
@@ -743,6 +763,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 
 
 class TestTLSTopLevelFunctions(unittest.TestCase):
+
     def test_tls_payload_fragmentation_raises_error_with_negative_size(self):
         with self.assertRaises(ValueError):
             tls.tls_fragment_payload("AAAA", size=-1)

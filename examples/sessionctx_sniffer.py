@@ -11,7 +11,8 @@ client:
 """
 
 from __future__ import print_function
-import sys, os
+import sys
+import os
 try:
     from scapy.all import *
 except ImportError:
@@ -31,7 +32,9 @@ except ImportError:
 
 import socket
 
+
 class L4TcpReassembler(object):
+
     """ WARNING - this is not a valid TCP Stream Reassembler.
                   It is not L5+ aware and only operates at L4
                   Only works for the assumption that a consecutive stream will be split in segments of the max segment size (mss). It will concat segments == mss until a segment < mss is found. it will then spit out a reassembled (fake) TCP packet with the full payload.
@@ -47,21 +50,22 @@ class L4TcpReassembler(object):
         CWR = 0x80
 
     class TCPStream(object):
+
         def __init__(self, pkt):
             self.pktlist = []
             self.stream_id = L4TcpReassembler.TCPStream.stream_id(pkt)
-            
+
             if not pkt[TCP].flags & L4TcpReassembler.TCPFlags.SYN:
-                raise Exception("NOT THE BEGINNING OF A STREAM: %s"%repr(self.stream_id))
+                raise Exception("NOT THE BEGINNING OF A STREAM: %s" % repr(self.stream_id))
 
             self.syn = pkt[TCP]
-            self.syn.payload=None   # strip payload
+            self.syn.payload = None   # strip payload
             self.initial_seq = pkt[TCP].seq
 
             self.last_seq = self.initial_seq
             self.relative_seq = 0
 
-            self.mss = ( option[1] for option in pkt[TCP].options if option[0]=="MSS").next()
+            self.mss = (option[1] for option in pkt[TCP].options if option[0] == "MSS").next()
 
         @staticmethod
         def stream_id(pkt):
@@ -73,17 +77,18 @@ class L4TcpReassembler(object):
 
             if payload_size < self.mss:
                 # flush pktlist as [pkt stack, current_pkt]
-                if len(self.pktlist)>1:
+                if len(self.pktlist) > 1:
                     # create fake packet
                     p_reassembled = pkt
                     del p_reassembled[IP].len
                     del p_reassembled[IP].chksum
                     del p_reassembled[TCP].chksum
                     #p_reassembled.name = "TCPReassembled"
-                    p_reassembled[TCP].payload = ''.join(str(p[TCP].payload) for p in self.pktlist) + str(p_reassembled[TCP].payload)
+                    p_reassembled[TCP].payload = ''.join(str(p[TCP].payload)
+                                                         for p in self.pktlist) + str(p_reassembled[TCP].payload)
                     p_reassembled[TCP] = TCP(str(p_reassembled[TCP]))       # force re-dissect
 
-                    self.pktlist=[]
+                    self.pktlist = []
                     return p_reassembled
                 # otherwise just return current pkt
                 return pkt
@@ -92,7 +97,13 @@ class L4TcpReassembler(object):
             return None
 
         def __repr__(self, *args, **kwargs):
-            return "<<TCPSTream: %s | mss=%s seq_init=%s seq_last=%s seq_diff=%s pktlist=%s>>"%(repr(self.stream_id),self.mss,self.initial_seq, self.last_seq, self.last_seq-self.initial_seq,self.pktlist )
+            return "<<TCPSTream: %s | mss=%s seq_init=%s seq_last=%s seq_diff=%s pktlist=%s>>" % (repr(
+                self.stream_id),
+                self.mss,
+                self.initial_seq,
+                self.last_seq,
+                self.last_seq - self.initial_seq,
+                self.pktlist)
 
     def __init__(self):
         # track streams
@@ -104,9 +115,9 @@ class L4TcpReassembler(object):
         if not stream_obj:
             try:
                 stream_obj = L4TcpReassembler.TCPStream(pkt)
-                self.streams[stream_id]=stream_obj
+                self.streams[stream_id] = stream_obj
             except:
-                pass # not a valid stream, or in the middle of a stream
+                pass  # not a valid stream, or in the middle of a stream
         return stream_obj
 
     def reassemble(self, pktlist):
@@ -129,12 +140,15 @@ class L4TcpReassembler(object):
             # assume stream complete
             yield p
 
+
 class Sniffer(object):
+
     """ Sniffer()
         .rdpcap(pcap)
         or
         .sniff()
     """
+
     def __init__(self):
         self.ssl_session_map = {}
 
@@ -147,73 +161,76 @@ class Sniffer(object):
             print ("* load servers privatekey for ciphertext decryption (RSA key only): %s" % keyfile)
             session.rsa_load_keys_from_file(keyfile)
 
-            session.printed=False
-            self.ssl_session_map[target]=session
+            session.printed = False
+            self.ssl_session_map[target] = session
         else:
             print ("!! missing private key")
 
     def process_ssl(self, p):
-            if not p.haslayer(SSL):
-                return
-            session = self.ssl_session_map.get((p[IP].dst,p[TCP].dport)) or self.ssl_session_map.get((p[IP].src,p[TCP].sport))
-            if not session:
-                print (
-                "|   %-16s:%-5d => %-16s:%-5d | %s" % (p[IP].src, p[TCP].sport, p[IP].dst, p[TCP].dport, repr(p[SSL])))
-                return
-            p_ssl = p[SSL]
-            source = (p[IP].src,p[TCP].sport)
-
-            if p_ssl.haslayer(SSLv2Record):
-                print ("SSLv2 not supported - skipping..", repr(p))
-                return
-
-            if p_ssl.haslayer(TLSServerHello):
-                    session.printed=False
-                    session.crypto.session.master_secret=None
-                    session.match_server = source
-                    #reset the session and print it next time
-            if p_ssl.haslayer(TLSClientHello):
-                session.match_client = source
-
-            session.insert(p_ssl)
-
-            if session.crypto.session.master_secret and session.printed==False:
-                print (repr(session))
-                session.printed = True
-
+        if not p.haslayer(SSL):
+            return
+        session = self.ssl_session_map.get(
+            (p[IP].dst, p[TCP].dport)) or self.ssl_session_map.get(
+            (p[IP].src, p[TCP].sport))
+        if not session:
             print (
+                "|   %-16s:%-5d => %-16s:%-5d | %s" % (p[IP].src, p[TCP].sport, p[IP].dst, p[TCP].dport, repr(p[SSL])))
+            return
+        p_ssl = p[SSL]
+        source = (p[IP].src, p[TCP].sport)
+
+        if p_ssl.haslayer(SSLv2Record):
+            print ("SSLv2 not supported - skipping..", repr(p))
+            return
+
+        if p_ssl.haslayer(TLSServerHello):
+            session.printed = False
+            session.crypto.session.master_secret = None
+            session.match_server = source
+            # reset the session and print it next time
+        if p_ssl.haslayer(TLSClientHello):
+            session.match_client = source
+
+        session.insert(p_ssl)
+
+        if session.crypto.session.master_secret and session.printed == False:
+            print (repr(session))
+            session.printed = True
+
+        print (
             "|   %-16s:%-5d => %-16s:%-5d | %s" % (p[IP].src, p[TCP].sport, p[IP].dst, p[TCP].dport, repr(p_ssl)))
-            if p.haslayer(TLSCiphertext) or (p.haslayer(TLSAlert) and p.haslayer(Raw)):
-                if source == session.match_client:
-                    session.set_mode(server=True)
-                elif source == session.match_server:
-                    session.set_mode(client=True)
-                else:
-                    Exception("src packet mismatch: %s"%repr(source))
-                try:
-                    p = SSL(str(p_ssl),ctx=session)
-                    print ("|-> %-48s | %s" % ("decrypted record", repr(p)))
-                except ValueError as ve:
-                    print ("Exception:", repr(ve))
+        if p.haslayer(TLSCiphertext) or (p.haslayer(TLSAlert) and p.haslayer(Raw)):
+            if source == session.match_client:
+                session.set_mode(server=True)
+            elif source == session.match_server:
+                session.set_mode(client=True)
+            else:
+                Exception("src packet mismatch: %s" % repr(source))
+            try:
+                p = SSL(str(p_ssl), ctx=session)
+                print ("|-> %-48s | %s" % ("decrypted record", repr(p)))
+            except ValueError as ve:
+                print ("Exception:", repr(ve))
 
     def sniff(self, target, keyfile=None, iface=None):
         self._tcp_reassembler = L4TcpReassembler()
+
         def reassemble(p):
             for rp in (pkt for pkt in self._tcp_reassembler.reassemble([p]) if pkt.haslayer(SSL)):
                 self.process_ssl(rp)
         if iface:
-            conf.iface=iface
-        self._create_context(target=target,keyfile=keyfile)
+            conf.iface = iface
+        self._create_context(target=target, keyfile=keyfile)
         while True:
-            sniff(filter="host %s and tcp port %d"%(target[0],target[1]),prn=reassemble,store=0,timeout=3)
+            sniff(filter="host %s and tcp port %d" % (target[0], target[1]), prn=reassemble, store=0, timeout=3)
 
     def rdpcap(self, target, keyfile, pcap):
-        self._create_context(target=target,keyfile=keyfile)
+        self._create_context(target=target, keyfile=keyfile)
         for p in (pkt for pkt in L4TcpReassembler().reassemble(rdpcap(pcap)) if pkt.haslayer(SSL)):
             self.process_ssl(p)
 
 
-def main(target,pcap=None, iface=None, keyfile=None):
+def main(target, pcap=None, iface=None, keyfile=None):
     sniffer = Sniffer()
     if pcap:
         print ("* pcap ready!")
@@ -224,8 +241,8 @@ def main(target,pcap=None, iface=None, keyfile=None):
         # sniffer mainloop
         sniffer.sniff(target=target, keyfile=keyfile, iface=iface)
 
-if __name__=="__main__":
-    if len(sys.argv)<=3:
+if __name__ == "__main__":
+    if len(sys.argv) <= 3:
         print ("USAGE: <host> <port> <inteface or pcap>")
         print ("\navailable interfaces:")
         for i in get_if_list():
@@ -233,19 +250,19 @@ if __name__=="__main__":
         print ("* default")
         exit(1)
 
-    pcap=None
-    iface=None
-    keyfile=None
-    if len(sys.argv)>3:
+    pcap = None
+    iface = None
+    keyfile = None
+    if len(sys.argv) > 3:
         if os.path.isfile(sys.argv[3]):
-            pcap=sys.argv[3]
+            pcap = sys.argv[3]
         elif sys.argv[3] in get_if_list():
-            iface=sys.argv[3]
+            iface = sys.argv[3]
         else:
             raise Exception("Unknown interface or invalid path to pcap.")
-    if len(sys.argv)>4:
+    if len(sys.argv) > 4:
         if not os.path.isfile(sys.argv[4]):
-            raise Exception("PrivateKey File not Found! %s"%sys.argv[4])
+            raise Exception("PrivateKey File not Found! %s" % sys.argv[4])
         keyfile = sys.argv[4]
 
-    main((sys.argv[1],int(sys.argv[2])), iface=iface, pcap=pcap, keyfile=keyfile)
+    main((sys.argv[1], int(sys.argv[2])), iface=iface, pcap=pcap, keyfile=keyfile)

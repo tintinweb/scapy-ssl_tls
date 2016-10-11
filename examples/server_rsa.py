@@ -5,7 +5,7 @@ import os
 import socket
 import sys
 
-basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
+basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 try:
     # This import works from the project directory
     from scapy_ssl_tls.ssl_tls import *
@@ -47,5 +47,3 @@ c_socket.sendall(to_raw(TLSPlaintext(data="It works!\n"), c_socket.tls_ctx))
 c_socket.sendall(to_raw(TLSAlert(), c_socket.tls_ctx))
 
 print(c_socket.tls_ctx)
-
-
