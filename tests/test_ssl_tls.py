@@ -12,7 +12,7 @@ import scapy_ssl_tls.ssl_tls_keystore as tlsk
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto.Hash import MD5, SHA
 from Crypto.PublicKey import RSA
-from scapy.all import conf, rdpcap
+from scapy.all import conf, rdpcap, Raw
 from scapy.layers import x509
 from scapy.layers.inet import IP, TCP
 
@@ -20,6 +20,38 @@ from scapy.layers.inet import IP, TCP
 def env_local_file(file):
     return os.path.join(os.path.dirname(__file__), 'files', file)
 
+
+class TestSSLv2Record(unittest.TestCase):
+    def setUp(self):
+        self.client_hello = tls.SSLv2Record(length=1234)/tls.SSLv2ClientHello(challenge="12345")/"TEST"
+        self.client_hello_serialized_expected = '\x84\xd2\x01\x00\x02\x00\x00\x00\x00\x00\x0512345TEST'
+        # this is: http://www.pcapr.net/view/mu/ssl-v2-2.pcap.html
+        self.real_client_hello = '\x801\x01\x00\x02\x00\x18\x00\x00\x00\x10\x07\x00\xc0\x05\x00\x80\x03\x00\x80\x01\x00\x80\x08\x00\x80\x06\x00@\x04\x00\x80\x02\x00\x80vdu-\xa7\x98\xfe\xc9\x12\x92\xc1/4\x84 \xc5'
+
+    def test_sslv2_de_serialize(self):
+        pkt_serialized = str(tls.SSL(records=self.client_hello))
+        self.assertEqual(pkt_serialized, self.client_hello_serialized_expected)
+        pkt = tls.SSL(pkt_serialized)
+        self.assertTrue(pkt.haslayer(tls.SSL))
+        self.assertTrue(pkt.haslayer(tls.SSLv2Record))
+        self.assertTrue(pkt.haslayer(Raw))
+        self.assertEqual(pkt[tls.SSLv2Record].length, 1234)
+        self.assertEqual(pkt[tls.SSLv2ClientHello].challenge, "12345")
+        self.assertEqual(pkt[Raw].load, "TEST")
+
+    def test_sslv2_real_client_hello(self):
+        pkt = tls.SSL(self.real_client_hello)
+        self.assertTrue(pkt.haslayer(tls.SSL))
+        self.assertTrue(pkt.haslayer(tls.SSLv2Record))
+        self.assertEqual(pkt[tls.SSLv2Record].length, 0x31)
+        self.assertEqual(pkt[tls.SSLv2ClientHello].version, tls.TLSVersion.SSL_2_0)
+        self.assertEqual(pkt[tls.SSLv2ClientHello].challenge, 'vdu-\xa7\x98\xfe\xc9\x12\x92\xc1/4\x84 \xc5')
+        self.assertEqual(pkt[tls.SSLv2ClientHello].challenge_length, len('vdu-\xa7\x98\xfe\xc9\x12\x92\xc1/4\x84 \xc5'))
+        self.assertEqual(pkt[tls.SSLv2ClientHello].cipher_suites_length, 0x18)
+        self.assertEqual(pkt[tls.SSLv2ClientHello].cipher_suites, [0x700c0, 0x50080, 0x30080, 0x10080, 0x80080, 0x60040, 0x40080, 0x20080])
+        self.assertEqual(len(pkt[tls.SSLv2ClientHello].cipher_suites), 8)
+        self.assertEqual(pkt[tls.SSLv2ClientHello].session_id, '')
+        self.assertEqual(pkt[tls.SSLv2ClientHello].session_id_length, 0x0)
 
 class TestTLSRecord(unittest.TestCase):
 
