@@ -109,9 +109,8 @@ class TLSSessionCtx(object):
         self.history = []
         self.requires_iv = False
         self.sec_params = None
-
         self.negotiated = namedtuple("negotiated", ["ciphersuite", "key_exchange", "encryption", "mac", "compression",
-                                                    "compression_algo", "version", "sig"])
+                                                    "compression_algo", "version", "sig", "resumption"])
         self.negotiated.ciphersuite = None
         self.negotiated.key_exchange = None
         self.negotiated.encryption = None
@@ -120,6 +119,7 @@ class TLSSessionCtx(object):
         self.negotiated.compression_algo = None
         self.negotiated.version = None
         self.negotiated.sig = None
+        self.negotiated.resumption = False
 
         self.encrypted_premaster_secret = None
         self.premaster_secret = None
@@ -135,6 +135,7 @@ TLS Session Context:
     negotiated.encryption: {enc}
     negotiated.mac: {hmac}
     negotiated.compression: {comp}
+    negotiated.compression: {resume}
     encrypted_premaster_secret: {epms}
     premaster_secret: {pms}
     master_secret: {ms}
@@ -145,8 +146,9 @@ TLS Session Context:
                                kex=self.negotiated.key_exchange, enc=self.negotiated.encryption,
                                hmac=self.negotiated.mac,
                                comp=tls.TLS_COMPRESSION_METHODS[self.negotiated.compression],
-                               epms=repr(self.encrypted_premaster_secret), pms=repr(self.premaster_secret),
-                               ms=repr(self.master_secret), client_ctx=self.client_ctx, server_ctx=self.server_ctx)
+                               resume=self.negotiated.resumption, epms=repr(self.encrypted_premaster_secret),
+                               pms=repr(self.premaster_secret), ms=repr(self.master_secret), client_ctx=self.client_ctx,
+                               server_ctx=self.server_ctx)
 
     def insert(self, pkt):
         """
@@ -202,6 +204,15 @@ TLS Session Context:
             self.negotiated.mac = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["hash"]["name"]
         except KeyError:
             warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % self.negotiated.ciphersuite)
+        if self.negotiated.resumption:
+            self.prf = TLSPRF(self.negotiated.version)
+            self.sec_params = TLSSecurityParameters.from_master_secret(self.prf,
+                                                                       self.negotiated.ciphersuite,
+                                                                       self.master_secret,
+                                                                       self.client_ctx.random,
+                                                                       self.server_ctx.random,
+                                                                       self.requires_iv)
+            self.__generate_secrets()
 
     def __handle_cert_list(self, cert_list):
         if self.negotiated.key_exchange is not None and (
@@ -287,28 +298,24 @@ TLS Session Context:
                 # TODO: Calculate PMS
         else:
             warnings.warn("Unknown client key exchange")
-        self.sec_params = self.__generate_secrets()
+        self.sec_params = TLSSecurityParameters.from_pre_master_secret(self.prf, self.negotiated.ciphersuite,
+                                                                       self.premaster_secret, self.client_ctx.random,
+                                                                       self.server_ctx.random, self.requires_iv)
+        self.__generate_secrets()
 
     def __generate_secrets(self):
-        sec_params = TLSSecurityParameters(self.prf,
-                                           self.negotiated.ciphersuite,
-                                           self.premaster_secret,
-                                           self.client_ctx.random,
-                                           self.server_ctx.random,
-                                           self.requires_iv)
         if isinstance(self.client_ctx.sym_keystore, tlsk.EmptySymKeyStore):
-            self.client_ctx.sym_keystore = sec_params.client_keystore
+            self.client_ctx.sym_keystore = self.sec_params.client_keystore
         if isinstance(self.server_ctx.sym_keystore, tlsk.EmptySymKeyStore):
-            self.server_ctx.sym_keystore = sec_params.server_keystore
-        self.master_secret = sec_params.master_secret
+            self.server_ctx.sym_keystore = self.sec_params.server_keystore
+        self.master_secret = self.sec_params.master_secret
         # Retrieve ciphers used for client/server encryption and decryption
-        self.client_ctx.enc = sec_params.get_client_enc_cipher()
-        self.client_ctx.dec = sec_params.get_client_dec_cipher()
-        self.client_ctx.hmac = sec_params.get_client_hmac()
-        self.server_ctx.enc = sec_params.get_server_enc_cipher()
-        self.server_ctx.dec = sec_params.get_server_dec_cipher()
-        self.server_ctx.hmac = sec_params.get_server_hmac()
-        return sec_params
+        self.client_ctx.enc = self.sec_params.get_client_enc_cipher()
+        self.client_ctx.dec = self.sec_params.get_client_dec_cipher()
+        self.client_ctx.hmac = self.sec_params.get_client_hmac()
+        self.server_ctx.enc = self.sec_params.get_server_enc_cipher()
+        self.server_ctx.dec = self.sec_params.get_server_dec_cipher()
+        self.server_ctx.hmac = self.sec_params.get_server_hmac()
 
     def _process(self, pkt):
         """
@@ -454,6 +461,10 @@ TLS Session Context:
     def set_mode(self, client=None, server=None):
         self.client = client if client else not server
         self.server = not self.client
+
+    def resume_session(self, master_secret):
+        self.master_secret = master_secret
+        self.negotiated.resumption = True
 
 
 class TLSPRF(object):
@@ -692,16 +703,12 @@ class TLSSecurityParameters(object):
 #     0xc0ae: "ECDHE_ECDSA_WITH_AES_128_CCM_8",
 #     0xc0af: "ECDHE_ECDSA_WITH_AES_256_CCM_8",
 
-    def __init__(self, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
-        """ /!\ This class is not thread safe
-        """
+    def __init__(self, prf, cipher_suite, client_random, server_random, explicit_iv=False):
         try:
             self.negotiated_crypto_param = self.crypto_params[cipher_suite]
         except KeyError:
             raise RuntimeError("Cipher 0x%04x not supported" % cipher_suite)
         else:
-            # Not validating lengths here, since sending a longuer PMS might be interesting
-            self.pms = pms
             if len(client_random) != 32:
                 raise ValueError("Client random must be 32 bytes")
             self.client_random = client_random
@@ -715,8 +722,26 @@ class TLSSecurityParameters(object):
             self.iv_length = 0 if block_size == 1 else block_size
             self.explicit_iv = explicit_iv
             self.prf = prf
-            self.client_keystore, self.server_keystore = self.__init_crypto(pms, client_random, server_random,
-                                                                            explicit_iv)
+            self.pms = b""
+            self.master_secret = b""
+            self.client_keystore, self.server_keystore = [tlsk.EmptySymKeyStore()] * 2
+
+    @classmethod
+    def from_pre_master_secret(cls, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
+        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+        sec_params.pms = pms
+        sec_params.generate_master_secret(pms, client_random, server_random)
+        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_crypto(client_random, server_random,
+                                                                                        explicit_iv)
+        return sec_params
+
+    @classmethod
+    def from_master_secret(cls, prf, cipher_suite, master_secret, client_random, server_random, explicit_iv=False):
+        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+        sec_params.master_secret = master_secret
+        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_crypto(client_random, server_random,
+                                                                                        explicit_iv)
+        return sec_params
 
     def get_client_hmac(self):
         return self.__client_hmac
@@ -772,16 +797,18 @@ class TLSSecurityParameters(object):
                                               server_iv)
         return client_keystore, server_keystore
 
-    def __init_crypto(self, pms, client_random, server_random, explicit_iv):
-        self.master_secret = self.prf.get_bytes(pms,
-                                                TLSPRF.TLS_MD_MASTER_SECRET_CONST,
-                                                client_random + server_random,
-                                                num_bytes=48)
-        key_block = self.prf.get_bytes(self.master_secret,
-                                       TLSPRF.TLS_MD_KEY_EXPANSION_CONST,
-                                       server_random + client_random,
+    def generate_master_secret(self, pms, client_random, server_random):
+        self.master_secret = self.prf.get_bytes(pms, TLSPRF.TLS_MD_MASTER_SECRET_CONST,
+                                                client_random + server_random, num_bytes=48)
+        return self.master_secret
+
+    def init_crypto(self, client_random, server_random, explicit_iv, master_secret=None):
+        if master_secret is None:
+            master_secret = self.master_secret
+        key_block = self.prf.get_bytes(master_secret, TLSPRF.TLS_MD_KEY_EXPANSION_CONST, server_random + client_random,
                                        num_bytes=2 * (self.mac_key_length + self.cipher_key_length + self.iv_length))
         client_keystore, server_keystore = self.__init_key_material(key_block, explicit_iv)
+
         self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
         self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
         self.hash_type = self.negotiated_crypto_param["hash"]["type"]
