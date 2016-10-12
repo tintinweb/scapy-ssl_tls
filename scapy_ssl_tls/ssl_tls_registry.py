@@ -16,7 +16,7 @@ TLS_CLIENTCERTIFICATETYPE_IDENTIFIERS_REGISTRY = {
     0x40: 'ecdsa_sign',
     0x41: 'rsa_fixed_ecdh',
     0x42: 'ecdsa_fixed_ecdh',
-    }
+}
 TLS_CIPHER_SUITE_REGISTRY = {
     0x0000: 'NULL_WITH_NULL_NULL',
     0x0001: 'RSA_WITH_NULL_MD5',
@@ -344,14 +344,14 @@ TLS_CIPHER_SUITE_REGISTRY = {
     0xccac: 'ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256',
     0xccad: 'DHE_PSK_WITH_CHACHA20_POLY1305_SHA256',
     0xccae: 'RSA_PSK_WITH_CHACHA20_POLY1305_SHA256',
-    }
+}
 TLS_CONTENTTYPE_REGISTRY = {
     0x14: 'change_cipher_spec',
     0x15: 'alert',
     0x16: 'handshake',
     0x17: 'application_data',
     0x18: 'heartbeat',
-    }
+}
 TLS_ALERT_REGISTRY = {
     0x00: 'close_notify',
     0x0a: 'unexpected_message',
@@ -384,7 +384,7 @@ TLS_ALERT_REGISTRY = {
     0x71: 'bad_certificate_status_response',
     0x72: 'bad_certificate_hash_value',
     0x73: 'unknown_psk_identity',
-    }
+}
 TLS_HANDSHAKETYPE_REGISTRY = {
     0x00: 'hello_request',
     0x01: 'client_hello',
@@ -401,7 +401,7 @@ TLS_HANDSHAKETYPE_REGISTRY = {
     0x15: 'certificate_url',
     0x16: 'certificate_status',
     0x17: 'supplemental_data',
-    }
+}
 SUPPORTED_GROUPS_REGISTRY = {
     0x00: 'Unassigned',
     0x01: 'sect163k1',
@@ -442,31 +442,31 @@ SUPPORTED_GROUPS_REGISTRY = {
     0xff00: 'Unassigned',
     0xff01: 'arbitrary_explicit_prime_curves',
     0xff02: 'arbitrary_explicit_char2_curves',
-    }
+}
 EC_POINT_FORMAT_REGISTRY = {
     0x00: 'uncompressed',
     0x01: 'ansiX962_compressed_prime',
     0x02: 'ansiX962_compressed_char2',
-    }
+}
 EC_CURVE_TYPE_REGISTRY = {
     0x00: 'Unassigned',
     0x01: 'explicit_prime',
     0x02: 'explicit_char2',
     0x03: 'named_curve',
-    }
+}
 TLS_SUPPLEMENTAL_DATA_FORMATS = {
     0x00: 'user_mapping_data',
     0x4002: 'authz_data',
-    }
+}
 TLS_USERMAPPINGTYPE_VALUES = {
     0x40: 'upn_domain_hint',
-    }
+}
 TLS_SIGNATUREALGORITHM_REGISTRY = {
     0x00: 'anonymous',
     0x01: 'rsa',
     0x02: 'dsa',
     0x03: 'ecdsa',
-    }
+}
 TLS_HASHALGORITHM_REGISTRY = {
     0x00: 'none',
     0x01: 'md5',
@@ -475,7 +475,7 @@ TLS_HASHALGORITHM_REGISTRY = {
     0x04: 'sha256',
     0x05: 'sha384',
     0x06: 'sha512',
-    }
+}
 # Skipping: AttributeError("'NoneType' object has no attribute 'text'",)
 # Skipping: AttributeError("'NoneType' object has no attribute 'text'",)
 # Skipping: AttributeError("'NoneType' object has no attribute 'text'",)
@@ -493,7 +493,7 @@ TLS_HASHALGORITHM_REGISTRY = {
 # Skipping: AttributeError("'NoneType' object has no attribute 'text'",)
 # Skipping: AttributeError("'NoneType' object has no attribute 'text'",)
 TLS_EXPORTER_LABEL_REGISTRY = {
-    }
+}
 TLS_AUTHORIZATION_DATA_FORMATS = {
     0x00: 'x509_attr_cert',
     0x01: 'saml_assertion',
@@ -502,19 +502,19 @@ TLS_AUTHORIZATION_DATA_FORMATS = {
     0x40: 'keynote_assertion_list',
     0x41: 'keynote_assertion_list_url',
     0x42: 'dtcp_authorization',
-    }
+}
 HEARTBEAT_MESSAGE_TYPES = {
     0x00: 'Reserved',
     0x01: 'heartbeat_request',
     0x02: 'heartbeat_response',
     0xff: 'Reserved',
-    }
+}
 HEARTBEAT_MODES = {
     0x00: 'Reserved',
     0x01: 'peer_allowed_to_send',
     0x02: 'peer_not_allowed_to_send',
     0xff: 'Reserved',
-    }
+}
 # Generator: fetch_iana_tls_registry.py
 # date:      2016-09-28
 # sources:   https://www.iana.org/assignments/comp-meth-ids/comp-meth-ids.xml
@@ -524,7 +524,7 @@ TLS_COMPRESSION_METHOD_IDENTIFIERS = {
     0x00: 'NULL',
     0x01: 'DEFLATE',
     0x40: 'LZS',
-    }
+}
 # Generator: fetch_iana_tls_registry.py
 # date:      2016-09-28
 # sources:   https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xml
@@ -559,17 +559,17 @@ EXTENSIONTYPE_VALUES = {
     0x19: 'cached_info',
     0x23: 'SessionTicket_TLS',
     0xff01: 'renegotiation_info',
-    }
+}
 TLS_CERTIFICATE_TYPES = {
     0x00: 'X_509',
     0x01: 'OpenPGP',
     0x02: 'Raw_Public_Key',
-    }
+}
 TLS_CERTIFICATE_STATUS_TYPES = {
     0x00: 'Reserved',
     0x01: 'ocsp',
     0x02: 'ocsp_multi',
-    }
+}
 APPLICATION_LAYER_PROTOCOL_NEGOTIATION_PROTOCOL_IDS = {
     'c-webrtc': 'Confidential_WebRTC_Media_and_Data',
     'ftp': 'FTP',
@@ -582,9 +582,9 @@ APPLICATION_LAYER_PROTOCOL_NEGOTIATION_PROTOCOL_IDS = {
     'stun.nat-discovery': 'NAT_discovery_using_Session_Traversal_Utilities_for_NAT',
     'stun.turn': 'Traversal_Using_Relays_around_NAT',
     'webrtc': 'WebRTC_Media_and_Data',
-    }
+}
 TLS_CACHEDINFORMATIONTYPE_VALUES = {
     0x00: 'Reserved',
     0x01: 'cert',
     0x02: 'cert_req',
-    }
+}

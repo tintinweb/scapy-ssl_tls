@@ -5,7 +5,7 @@ import os
 import socket
 import sys
 
-basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
+basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 try:
     # This import works from the project directory
     from scapy_ssl_tls.ssl_tls import *
@@ -25,7 +25,7 @@ socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
 tls_socket = TLSSocket(socket_, client=False)
 tls_socket.bind(("", 8443))
 tls_socket.listen(1)
-tls_socket.tls_ctx.rsa_load_keys_from_file(os.path.join(basedir, "tests/integration/keys/key.pem"))
+tls_socket.tls_ctx.server_ctx.load_rsa_keys_from_file(os.path.join(basedir, "tests/integration/keys/key.pem"))
 c_socket, _ = tls_socket.accept()
 
 r = c_socket.recvall()
@@ -47,5 +47,3 @@ c_socket.sendall(to_raw(TLSPlaintext(data="It works!\n"), c_socket.tls_ctx))
 c_socket.sendall(to_raw(TLSAlert(), c_socket.tls_ctx))
 
 print(c_socket.tls_ctx)
-
-

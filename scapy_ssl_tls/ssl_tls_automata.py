@@ -10,14 +10,15 @@ from ssl_tls_crypto import *
 
 from scapy.automaton import Automaton, ATMT
 
+
 def hookable(f):
     @functools.wraps(f)
     def wrapped_f(*args, **kwargs):
-        if args and isinstance(args[0],Automaton):
+        if args and isinstance(args[0], Automaton):
             obj = args[0]
-            cb_f = obj.callbacks.get(f.__name__.rsplit("_wrapper",1)[0], None)
+            cb_f = obj.callbacks.get(f.__name__.rsplit("_wrapper", 1)[0], None)
             if cb_f:
-                obj.debug(1, "*** CALLBACK *** calling '%s' -> %s"%(f.__name__, cb_f))
+                obj.debug(1, "*** CALLBACK *** calling '%s' -> %s" % (f.__name__, cb_f))
                 return cb_f(*args, **kwargs)
         return f(*args, **kwargs)
 
@@ -34,15 +35,15 @@ def hookable(f):
                  of the unwrapped function.
                 this way, ATMT.graph() works fine as long as it is called before
                 ATMT.run()
-        '''  
+        '''
         f.wrapper_f = wrapped_f
         return f
     else:
         return wrapped_f
 
 
-
 class TLSClientAutomata(Automaton):
+
     """"A Simple TLS Client Automata
 
         TLSClientAutomata.graph()
@@ -56,20 +57,21 @@ class TLSClientAutomata(Automaton):
                                  request="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n")
         auto_cli.run()
     """
+
     def __init__(self, *args, **kwargs):
-        self.callbacks = {} # fname:func
+        self.callbacks = {}  # fname:func
         Automaton.__init__(self, *args, **kwargs)
         self.STATES = {TLSClientHello: 'CLIENT_HELLO_SENT',
-                        TLSServerHello: 'SERVER_HELLO_RECV',
-                        TLSCertificate: 'SERVER_HELLO_RECV',
-                        TLSCertificateList: 'SERVER_HELLO_RECV',
-                        TLSServerHelloDone: 'SERVER_HELLO_RECV',
-                        TLSFinished: 'CLIENT_FINISH_SENT',
-                        TLSChangeCipherSpec: 'CLIENT_CHANGE_CIPHERSPEC_SENT',
-                        TLSClientKeyExchange: 'CLIENT_KEY_EXCHANGE_SENT',
-                        #TLSServerKeyExchange: 'xxx',
-                        TLSPlaintext: 'CLIENT_APPDATA_SENT',
-                        TLSDecryptablePacket: 'CLIENT_APPDATA_SENT',
+                       TLSServerHello: 'SERVER_HELLO_RECV',
+                       TLSCertificate: 'SERVER_HELLO_RECV',
+                       TLSCertificateList: 'SERVER_HELLO_RECV',
+                       TLSServerHelloDone: 'SERVER_HELLO_RECV',
+                       TLSFinished: 'CLIENT_FINISH_SENT',
+                       TLSChangeCipherSpec: 'CLIENT_CHANGE_CIPHERSPEC_SENT',
+                       TLSClientKeyExchange: 'CLIENT_KEY_EXCHANGE_SENT',
+                       # TLSServerKeyExchange: 'xxx',
+                       TLSPlaintext: 'CLIENT_APPDATA_SENT',
+                       TLSDecryptablePacket: 'CLIENT_APPDATA_SENT',
                        }
         self.ACTIONS = {TLSClientHello: 'send_client_hello',
                         TLSServerHello: 'recv_server_hello',
@@ -79,11 +81,11 @@ class TLSClientAutomata(Automaton):
                         TLSFinished: 'send_client_finish',
                         TLSChangeCipherSpec: 'send_client_change_cipher_spec',
                         TLSClientKeyExchange: 'send_client_key_exchange',
-                        #TLSServerKeyExchange: 'xxx',
+                        # TLSServerKeyExchange: 'xxx',
                         TLSPlaintext: 'send_client_appdata',
                         TLSDecryptablePacket: 'send_client_appdata',
                         }
-        
+
     def parse_args(self,
                    target,
                    tls_version='TLS_1_1',
@@ -98,19 +100,19 @@ class TLSClientAutomata(Automaton):
         self.cipher_suites = cipher_suites
         self.timeout = timeout
         self.tlssock = None
-        
+
     def register_callback(self, fname, f):
-        self.debug(1,"register callback: %s - %s"%(fname, repr(f)))
+        self.debug(1, "register callback: %s - %s" % (fname, repr(f)))
         self.callbacks[fname] = f
-        
+
     def run(self, *args, **kwargs):
         """tin: ugly hack Part II:
                 fix {state:condition_funcs} map to use hookable(f) instead of f
         """
         for name in self.conditions:
-            self.conditions[name] = [getattr(cf,'wrapper_f', cf) for cf in self.conditions[name]]
+            self.conditions[name] = [getattr(cf, 'wrapper_f', cf) for cf in self.conditions[name]]
         return Automaton.run(self, *args, **kwargs)
-    
+
     # GENERIC BEGIN
     @hookable
     @ATMT.state(initial=1)
@@ -129,15 +131,15 @@ class TLSClientAutomata(Automaton):
     def not_connected(self):
         if not self.tlssock:
             raise self.CONNECTED()
-    
+
     @hookable
     @ATMT.action(not_connected)
     def do_connect(self):
-        sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect(self.target)
-        self.debug(1,"connected")
+        self.debug(1, "connected")
         self.tlssock = TLSSocket(sock, client=True)
-    
+
     @hookable
     @ATMT.state()
     def CONNECTED(self):
@@ -148,15 +150,19 @@ class TLSClientAutomata(Automaton):
     @ATMT.condition(CONNECTED)
     def send_client_hello(self):
         raise self.CLIENT_HELLO_SENT()
-    
+
     @hookable
     @ATMT.action(send_client_hello)
     def do_send_client_hello(self):
-        client_hello = TLSRecord(version=self.tls_version) / TLSHandshake() / TLSClientHello(version=self.tls_version,
-                                                                                             compression_methods=[TLSCompressionMethod.NULL,],
-                                                                                             cipher_suites=self.cipher_suites)
+        client_hello = TLSRecord(
+            version=self.tls_version) / TLSHandshake() / TLSClientHello(
+            version=self.tls_version,
+            compression_methods=[
+                TLSCompressionMethod.NULL,
+            ],
+            cipher_suites=self.cipher_suites)
         self.tlssock.sendall(client_hello)
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_HELLO_SENT(self):
@@ -169,9 +175,14 @@ class TLSClientAutomata(Automaton):
         p = self.tlssock.recvall(timeout=self.timeout)
         if not p.haslayer(TLSServerHello):
             raise self.ERROR(p)
-        self.debug(10,"CIPHER: %s"%TLS_CIPHER_SUITES.get(p[TLSServerHello].cipher_suite,p[TLSServerHello].cipher_suite))
+        self.debug(
+            10,
+            "CIPHER: %s" %
+            TLS_CIPHER_SUITES.get(
+                p[TLSServerHello].cipher_suite,
+                p[TLSServerHello].cipher_suite))
         raise self.SERVER_HELLO_RECV()
-    
+
     @hookable
     @ATMT.state()
     def SERVER_HELLO_RECV(self):
@@ -182,27 +193,28 @@ class TLSClientAutomata(Automaton):
     @ATMT.condition(SERVER_HELLO_RECV)
     def send_client_key_exchange(self):
         raise self.CLIENT_KEY_EXCHANGE_SENT()
-    
+
     @hookable
     @ATMT.action(send_client_key_exchange)
     def do_send_client_key_exchange(self):
-        tls_version = self.tlssock.tls_ctx.params.negotiated.version
-        client_key_exchange = TLSRecord(version=tls_version) / TLSHandshake() / self.tlssock.tls_ctx.get_client_kex_data()
+        tls_version = self.tlssock.tls_ctx.negotiated.version
+        client_key_exchange = TLSRecord(
+            version=tls_version) / TLSHandshake() / self.tlssock.tls_ctx.get_client_kex_data()
         self.tlssock.sendall(client_key_exchange)
 
     @hookable
     @ATMT.state()
     def CLIENT_KEY_EXCHANGE_SENT(self):
         pass
-    
+
     @hookable
     @ATMT.condition(CLIENT_KEY_EXCHANGE_SENT)
     def send_client_change_cipher_spec(self):
-        tls_version = self.tlssock.tls_ctx.params.negotiated.version
+        tls_version = self.tlssock.tls_ctx.negotiated.version
         client_ccs = TLSRecord(version=tls_version) / TLSChangeCipherSpec()
         self.tlssock.sendall(client_ccs)
         raise self.CLIENT_CHANGE_CIPHERSPEC_SENT()
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_CHANGE_CIPHERSPEC_SENT(self):
@@ -214,7 +226,7 @@ class TLSClientAutomata(Automaton):
         finished = to_raw(TLSFinished(), self.tlssock.tls_ctx)
         self.tlssock.sendall(finished)
         raise self.CLIENT_FINISH_SENT()
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_FINISH_SENT(self):
@@ -225,11 +237,11 @@ class TLSClientAutomata(Automaton):
     @ATMT.condition(CLIENT_FINISH_SENT)
     def recv_server_finish(self):
         p = self.tlssock.recvall(timeout=self.timeout)
-        if not (p.haslayer(TLSFinished) or
-                (p.haslayer(TLSPlaintext) and SSL(str(TLSRecord(content_type='handshake')/p[TLSPlaintext].data)).haslayer(TLSFinished))):
+        if not (p.haslayer(TLSFinished) or (p.haslayer(TLSPlaintext) and SSL(
+                str(TLSRecord(content_type='handshake') / p[TLSPlaintext].data)).haslayer(TLSFinished))):
             raise self.ERROR(p)
         raise self.SERVER_FINISH_RECV()
-    
+
     @hookable
     @ATMT.state()
     def SERVER_FINISH_RECV(self):
@@ -240,7 +252,7 @@ class TLSClientAutomata(Automaton):
     @ATMT.condition(SERVER_FINISH_RECV)
     def send_client_appdata(self):
         raise self.CLIENT_APPDATA_SENT()
-    
+
     @hookable
     @ATMT.action(recv_server_finish)
     def do_send_client_appdata(self):
@@ -256,10 +268,10 @@ class TLSClientAutomata(Automaton):
     @ATMT.condition(CLIENT_APPDATA_SENT)
     def recv_server_appdata(self):
         p = self.tlssock.recvall(timeout=self.timeout)
-        if not (p.haslayer(TLSRecord) and p[TLSRecord].content_type==TLSContentType.APPLICATION_DATA):
+        if not (p.haslayer(TLSRecord) and p[TLSRecord].content_type == TLSContentType.APPLICATION_DATA):
             raise self.ERROR(p)
         raise self.SERVER_APPDATA_RECV(p)
-    
+
     @hookable
     @ATMT.state()
     def SERVER_APPDATA_RECV(self, p=None):
@@ -281,10 +293,12 @@ class TLSClientAutomata(Automaton):
             return ''.join(pkt[TLSPlaintext].data for pkt in p.records)
         except AttributeError:
             return p
-        
+
+
 class TLSServerAutomata(Automaton):
+
     """"A Simple TLS Server Automata
-    
+
         TLSServerAutomata.graph()
         with open(server_pem,'r') as f:
             pemcert = f.read()
@@ -296,20 +310,21 @@ class TLSServerAutomata(Automaton):
                                  response="HTTP/1.1 200 OK\r\n\r\n")
         auto_srv.run()
     """
+
     def __init__(self, *args, **kwargs):
-        self.callbacks = {} # fname:func
+        self.callbacks = {}  # fname:func
         Automaton.__init__(self, *args, **kwargs)
         self.STATES = {TLSClientHello: 'CLIENT_HELLO_RECV',
-                        TLSServerHello: 'SERVER_HELLO_SENT',
-                        TLSCertificate: 'SERVER_CERTIFICATES_SENT',
-                        TLSCertificateList: 'SERVER_CERTIFICATES_SENT',
-                        TLSServerHelloDone: 'SERVER_HELLO_DONE_SENT',
-                        TLSFinished: 'SERVER_FINISH_SENT',
-                        TLSChangeCipherSpec: 'SERVER_CCS_SENT',
-                        TLSClientKeyExchange: 'CLIENT_KEY_EXCHANGE_RECV',
-                        TLSServerKeyExchange: 'SERVER_KEY_EXCHANGE_SENT',
-                        TLSPlaintext: 'SERVER_APPDATA_SENT',
-                        TLSDecryptablePacket: 'SERVER_APPDATA_SENT',
+                       TLSServerHello: 'SERVER_HELLO_SENT',
+                       TLSCertificate: 'SERVER_CERTIFICATES_SENT',
+                       TLSCertificateList: 'SERVER_CERTIFICATES_SENT',
+                       TLSServerHelloDone: 'SERVER_HELLO_DONE_SENT',
+                       TLSFinished: 'SERVER_FINISH_SENT',
+                       TLSChangeCipherSpec: 'SERVER_CCS_SENT',
+                       TLSClientKeyExchange: 'CLIENT_KEY_EXCHANGE_RECV',
+                       TLSServerKeyExchange: 'SERVER_KEY_EXCHANGE_SENT',
+                       TLSPlaintext: 'SERVER_APPDATA_SENT',
+                       TLSDecryptablePacket: 'SERVER_APPDATA_SENT',
                        }
         self.ACTIONS = {TLSClientHello: 'recv_client_hello',
                         TLSServerHello: 'send_server_hello',
@@ -323,14 +338,14 @@ class TLSServerAutomata(Automaton):
                         TLSPlaintext: 'send_server_appdata',
                         TLSDecryptablePacket: 'send_server_appdata',
                         }
-    
-    def parse_args(self, 
-                   bind, 
+
+    def parse_args(self,
+                   bind,
                    pemcert,
                    pemkey=None,
-                   response="HTTP/1.1 200 OK\r\n\r\n", 
+                   response="HTTP/1.1 200 OK\r\n\r\n",
                    cipher_suite=TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA,
-                   timeout=4.0, 
+                   timeout=4.0,
                    **kwargs):
         Automaton.parse_args(self, **kwargs)
         self.bind = bind
@@ -343,58 +358,59 @@ class TLSServerAutomata(Automaton):
         self.tlssock = None
         self.srv_sock = None
         self.peer = None
-        
+
         pemo = pem_get_objects(self.pemcert)
         for key_pk in (k for k in pemo.keys() if "CERTIFICATE" in k.upper()):
-            self.dercert = ''.join(line for line in pemo[key_pk].get("full").strip().split("\n") if not "-" in line).decode("base64")
+            self.dercert = ''.join(
+                line for line in pemo[key_pk].get("full").strip().split("\n") if not "-" in line).decode("base64")
             break
-        self.debug(1,"parse_args - done")
-        
+        self.debug(1, "parse_args - done")
+
     def register_callback(self, fname, f):
-        self.debug(1,"register callback: %s - %s"%(fname, repr(f)))
+        self.debug(1, "register callback: %s - %s" % (fname, repr(f)))
         self.callbacks[fname] = f
-        
+
     def run(self, *args, **kwargs):
         """tin: ugly hack Part II:
                 fix {state:condition_funcs} map to use hookable(f) instead of f
         """
         for name in self.conditions:
-            self.conditions[name] = [getattr(cf,'wrapper_f', cf) for cf in self.conditions[name]]
+            self.conditions[name] = [getattr(cf, 'wrapper_f', cf) for cf in self.conditions[name]]
         return Automaton.run(self, *args, **kwargs)
 
     # GENERIC BEGIN
     @hookable
     @ATMT.state(initial=1)
     def BEGIN(self):
-        self.debug(1,"BEGIN")
-    
+        self.debug(1, "BEGIN")
+
     @hookable
     @ATMT.condition(BEGIN)
     def listen(self):
         raise self.WAIT_FOR_CLIENT_CONNECTION()
-    
+
     @hookable
     @ATMT.action(listen)
     def do_bind(self):
-        self.debug(1,"dobind %s "%repr(self.bind))
-        self.srv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        self.debug(1, "dobind %s " % repr(self.bind))
+        self.srv_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.srv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
         self.srv_tls_sock = TLSSocket(self.srv_sock, client=False)
         self.srv_tls_sock.bind(self.bind)
         self.srv_tls_sock.listen(1)
-        
+
         pemo = pem_get_objects(self.pemkey)
         for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
-            self.srv_tls_sock.tls_ctx.crypto.server.rsa.privkey, self.srv_tls_sock.tls_ctx.crypto.server.rsa.pubkey = self.srv_tls_sock.tls_ctx._rsa_load_keys(pemo[key_pk].get("full"))
+            self.srv_tls_sock.tls_ctx.server_ctx.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
             break
 
     @hookable
     @ATMT.state()
     def WAIT_FOR_CLIENT_CONNECTION(self):
-        self.debug(1,"accept")
+        self.debug(1, "accept")
         self.tlssock, self.peer = self.srv_tls_sock.accept()
-        self.debug(1,"new connection: %s"%repr(self.peer))
-    
+        self.debug(1, "new connection: %s" % repr(self.peer))
+
     @hookable
     @ATMT.condition(WAIT_FOR_CLIENT_CONNECTION)
     def recv_client_hello(self):
@@ -405,54 +421,55 @@ class TLSServerAutomata(Automaton):
             raise self.ERROR(p)
         self.tls_version = p[TLSClientHello].version
         raise self.CLIENT_HELLO_RECV()
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_HELLO_RECV(self):
         pass
-    
+
     @ATMT.condition(CLIENT_HELLO_RECV)
     def send_server_hello(self):
         raise self.SERVER_HELLO_SENT()
-    
+
     @hookable
     @ATMT.action(send_server_hello)
     def do_send_server_hello(self):
         rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        server_hello = rec_hs/TLSServerHello(version=self.tls_version, 
-                                             compression_method=TLSCompressionMethod.NULL,
-                                             cipher_suite=self.cipher_suite)
+        server_hello = rec_hs / TLSServerHello(version=self.tls_version,
+                                               compression_method=TLSCompressionMethod.NULL,
+                                               cipher_suite=self.cipher_suite)
         server_hello.show()
         self.tlssock.sendall(server_hello)
-    
+
     @hookable
     @ATMT.state()
     def SERVER_HELLO_SENT(self):
         pass
-    
+
     @hookable
     @ATMT.condition(SERVER_HELLO_SENT)
     def send_server_certificates(self):
         raise self.SERVER_CERTIFICATES_SENT()
-    
+
     @hookable
     @ATMT.action(send_server_certificates)
     def do_send_server_certificates(self):
         rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        server_certificates = rec_hs / TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])
+        server_certificates = rec_hs / \
+            TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])
         server_certificates.show()
         self.tlssock.sendall(server_certificates)
-        
+
     @hookable
     @ATMT.state()
     def SERVER_CERTIFICATES_SENT(self):
         pass
-    
+
     @hookable
     @ATMT.condition(SERVER_CERTIFICATES_SENT)
     def send_server_hello_done(self):
         raise self.SERVER_HELLO_DONE_SENT()
-    
+
     @hookable
     @ATMT.action(send_server_hello_done)
     def do_send_server_hello_done(self):
@@ -460,12 +477,12 @@ class TLSServerAutomata(Automaton):
         (rec_hs / TLSServerHelloDone()).show2()
         server_hello_done = TLSRecord(version=self.tls_version) / TLSHandshake(type=TLSHandshakeType.SERVER_HELLO_DONE)
         self.tlssock.sendall(server_hello_done)
-    
+
     @hookable
     @ATMT.state()
     def SERVER_HELLO_DONE_SENT(self):
         pass
-    
+
     @hookable
     @ATMT.condition(SERVER_HELLO_DONE_SENT)
     def recv_client_key_exchange(self):
@@ -475,27 +492,27 @@ class TLSServerAutomata(Automaton):
         if not p.haslayer(TLSClientKeyExchange):
             raise self.ERROR(p)
         raise self.CLIENT_KEY_EXCHANGE_RECV()
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_KEY_EXCHANGE_RECV(self):
         raise self.CLIENT_CHANGE_CIPHERSPEC_RECV()
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_CHANGE_CIPHERSPEC_RECV(self):
         raise self.CLIENT_FINISH_RECV()
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_FINISH_RECV(self):
         pass
-    
+
     @hookable
     @ATMT.condition(CLIENT_FINISH_RECV)
     def send_server_key_exchange(self):
         raise self.SERVER_KEY_EXCHANGE_SENT()
-    
+
     @hookable
     @ATMT.action(send_server_key_exchange)
     def do_send_server_key_exchange(self):
@@ -504,8 +521,8 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.state()
     def SERVER_KEY_EXCHANGE_SENT(self):
-        pass   
-    
+        pass
+
     @hookable
     @ATMT.condition(SERVER_KEY_EXCHANGE_SENT)
     def send_server_ccs(self):
@@ -514,7 +531,7 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_ccs)
     def do_send_server_ccs(self):
-        tls_version = self.tlssock.tls_ctx.params.negotiated.version
+        tls_version = self.tlssock.tls_ctx.negotiated.version
         client_ccs = TLSRecord(version=tls_version) / TLSChangeCipherSpec()
         self.tlssock.sendall(client_ccs)
 
@@ -522,64 +539,64 @@ class TLSServerAutomata(Automaton):
     @ATMT.state()
     def SERVER_CCS_SENT(self):
         pass
- 
+
     @hookable
     @ATMT.condition(SERVER_CCS_SENT)
     def send_server_finish(self):
         raise self.SERVER_FINISH_SENT()
-    
+
     @hookable
     @ATMT.action(send_server_finish)
     def do_send_server_finish(self):
-        #TODO: fix server finish calculation
+        # TODO: fix server finish calculation
         finished = to_raw(TLSFinished(), self.tlssock.tls_ctx)
         self.tlssock.sendall(finished)
-    
+
     @hookable
     @ATMT.state()
     def SERVER_FINISH_SENT(self):
         pass
-    
+
     @hookable
     @ATMT.condition(SERVER_FINISH_SENT)
     def recv_client_appdata(self):
         chunk_p = True
         p = SSL()
-        self.debug(1,"polling in 5sec intervals until data arrives.")
+        self.debug(1, "polling in 5sec intervals until data arrives.")
         while chunk_p:
             chunk_p = self.tlssock.recvall(timeout=5)
             if chunk_p.haslayer(SSL) and len(chunk_p[SSL].records) > 0:
                 p.records.append(chunk_p)
             else:
-                if len(p[SSL].records)>0:
+                if len(p[SSL].records) > 0:
                     break
-            
+
         if self.debug_level >= 1:
             p.show()
-        if not (p.haslayer(TLSRecord) and p[TLSRecord].content_type ==TLSContentType.APPLICATION_DATA):
+        if not (p.haslayer(TLSRecord) and p[TLSRecord].content_type == TLSContentType.APPLICATION_DATA):
             raise self.ERROR(p)
         raise self.CLIENT_APPDATA_RECV()
-    
+
     @hookable
     @ATMT.state()
     def CLIENT_APPDATA_RECV(self):
         pass
-    
+
     @hookable
     @ATMT.condition(CLIENT_APPDATA_RECV)
     def send_server_appdata(self):
         raise self.SERVER_APPDATA_SENT()
-    
+
     @hookable
     @ATMT.action(send_server_appdata)
     def do_send_server_appdata(self):
         self.tlssock.sendall(to_raw(TLSPlaintext(data=self.response), self.tlssock.tls_ctx))
-    
+
     @hookable
     @ATMT.state()
     def SERVER_APPDATA_SENT(self):
         raise self.END()
-    
+
     # GENERIC ERROR - print received data if available
     @hookable
     @ATMT.state(error=1)
@@ -587,9 +604,14 @@ class TLSServerAutomata(Automaton):
         if p and self.debug_level >= 1:
             p.show()
         return
-    
+
     # GENERIC END - return server's response
     @hookable
     @ATMT.state(final=1)
     def END(self):
-        self.tlssock.sendall(to_raw(TLSAlert(level=TLSAlertLevel.WARNING, description=TLSAlertDescription.CLOSE_NOTIFY), self.tlssock.tls_ctx))
+        self.tlssock.sendall(
+            to_raw(
+                TLSAlert(
+                    level=TLSAlertLevel.WARNING,
+                    description=TLSAlertDescription.CLOSE_NOTIFY),
+                self.tlssock.tls_ctx))

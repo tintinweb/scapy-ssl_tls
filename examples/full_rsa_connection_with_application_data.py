@@ -18,12 +18,12 @@ tls_version = TLSVersion.TLS_1_2
 
 def tls_hello(sock):
     client_hello = TLSRecord(version=tls_version) / TLSHandshake() /\
-                   TLSClientHello(version=tls_version, compression_methods=[TLSCompressionMethod.NULL, ],
-                                  cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])
-                                  # cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, ])
-                                  # cipher_suites=[TLSCipherSuite.RSA_WITH_RC4_128_SHA, ])
-                                  # cipher_suites=[TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA, ])
-                                  # cipher_suites=[TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA, ])
+        TLSClientHello(version=tls_version, compression_methods=[TLSCompressionMethod.NULL, ],
+                       cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])
+    # cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, ])
+    # cipher_suites=[TLSCipherSuite.RSA_WITH_RC4_128_SHA, ])
+    # cipher_suites=[TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA, ])
+    # cipher_suites=[TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA, ])
     sock.sendall(client_hello)
     server_hello = sock.recvall()
     server_hello.show()

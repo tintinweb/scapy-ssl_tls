@@ -20,15 +20,16 @@ URL_IANA_DEFS = ("https://www.iana.org/assignments/tls-parameters/tls-parameters
                  "https://www.iana.org/assignments/comp-meth-ids/comp-meth-ids.xml",
                  "https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xml")
 
-if sys.version_info[0]*10+sys.version_info[1] < 27:
+if sys.version_info[0] * 10 + sys.version_info[1] < 27:
     raise SystemExit('This utility requires Python 2.7 or higher.')
+
 
 def post_process(title, d):
     norm_d = {}
-    for k,v in d.iteritems():
-        if title=="APPLICATION_LAYER_PROTOCOL_NEGOTIATION_PROTOCOL_IDS":
+    for k, v in d.iteritems():
+        if title == "APPLICATION_LAYER_PROTOCOL_NEGOTIATION_PROTOCOL_IDS":
             _ = k
-            k = "'%s'"%''.join(re.findall(r'\("([^"]+)"\)',v))
+            k = "'%s'" % ''.join(re.findall(r'\("([^"]+)"\)', v))
             v = normalize_value(_)
         else:
             k = normalize_key(k)
@@ -37,7 +38,8 @@ def post_process(title, d):
             norm_d[k] = v
     return title, norm_d
 
-def pprint(name,d):
+
+def pprint(name, d):
     """dump as python dict
     """
     print ("%s = {" % name)
@@ -54,19 +56,21 @@ def normalize_key(strval):
         # skip ranges
         return None
     elif '0x' in strval:
-        strval = "0x" + strval.replace('0x','').replace(',','')
+        strval = "0x" + strval.replace('0x', '').replace(',', '')
     else:
         try:
-            strval = "0x%0.2x"%(int(strval))
+            strval = "0x%0.2x" % (int(strval))
         except ValueError:
-            strval=repr(strval)
+            strval = repr(strval)
     return strval.lower()
+
 
 def normalize_value(strval):
     """normalize values
        strip TLS_ prefix, remove parenthesis and dots, replace ' ',/,. ->"_" and
     """
-    return re.sub( r'(\s|/|\.)','_',re.sub(r'(^TLS_|\s*\([^\)]+\))','',strval))
+    return re.sub(r'(\s|/|\.)', '_', re.sub(r'(^TLS_|\s*\([^\)]+\))', '', strval))
+
 
 def normalize_title(strval):
     """normalize registry titles
@@ -75,15 +79,16 @@ def normalize_title(strval):
     strval = re.sub(r'(-+|\s+|\([^\)]+\))', '_', strval)
     return re.sub(r'__+', '_', strval).rstrip("_").upper()
 
-def xml_registry_to_dict(xmlroot, _id, 
-                         xml_key = './{http://www.iana.org/assignments}value',
-                         xml_value = ('./{http://www.iana.org/assignments}description',
-                                      './{http://www.iana.org/assignments}name'),
-                         xml_title = './{http://www.iana.org/assignments}title',
-                         normalize_value = normalize_value, normalize_key = normalize_key, normalize_title=normalize_title,
+
+def xml_registry_to_dict(xmlroot, _id,
+                         xml_key='./{http://www.iana.org/assignments}value',
+                         xml_value=('./{http://www.iana.org/assignments}description',
+                                    './{http://www.iana.org/assignments}name'),
+                         xml_title='./{http://www.iana.org/assignments}title',
+                         normalize_value=normalize_value, normalize_key=normalize_key, normalize_title=normalize_title,
                          verbose=False):
     d = {}
-    registry = xmlroot.find("{http://www.iana.org/assignments}registry[@id='%s']"%_id)
+    registry = xmlroot.find("{http://www.iana.org/assignments}registry[@id='%s']" % _id)
     if registry is None:
         return None, None
     title = normalize_title(registry.find(xml_title).text)
@@ -96,11 +101,12 @@ def xml_registry_to_dict(xmlroot, _id,
                     break
             value = value.text
             if key and value:
-                d[key]=value
+                d[key] = value
         except AttributeError as ae:
             if verbose:
                 print ("# Skipping: %s" % repr(ae))
     return post_process(title, d)
+
 
 def main(sources, ids, verbose=False):
     print ("# -*- coding: UTF-8 -*-")
@@ -114,21 +120,21 @@ def main(sources, ids, verbose=False):
         if '://' in source:
             xml_data = urllib2.urlopen(source).read()
         elif os.path.isfile(source):
-            with open(source,'r') as f:
-                xml_data=f.read()
+            with open(source, 'r') as f:
+                xml_data = f.read()
         else:
             raise Exception("Source not supported (url,file)!")
 
         xmlroot = ET.fromstring(xml_data)
         if not arg_ids:
             # fetch all ids
-            ids = (registry.attrib.get("id") for registry in xmlroot.findall("{http://www.iana.org/assignments}registry") if registry.attrib.get("id"))
-    
+            ids = (registry.attrib.get("id")
+                   for registry in xmlroot.findall("{http://www.iana.org/assignments}registry") if registry.attrib.get("id"))
+
         for _id in ids:
-            title,d = xml_registry_to_dict(xmlroot, _id=_id, verbose=verbose)
-            pprint(title,d)
+            title, d = xml_registry_to_dict(xmlroot, _id=_id, verbose=verbose)
+            pprint(title, d)
 
-if __name__=="__main__":
-    ids = sys.argv[1].strip().split(",") if len(sys.argv)>1 else None
-    main(sources = URL_IANA_DEFS, ids = ids, verbose=True)
-
+if __name__ == "__main__":
+    ids = sys.argv[1].strip().split(",") if len(sys.argv) > 1 else None
+    main(sources=URL_IANA_DEFS, ids=ids, verbose=True)

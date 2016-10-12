@@ -9,7 +9,7 @@ import sys
 
 from Crypto.Hash import SHA256
 
-basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
+basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 try:
     # This import works from the project directory
     from scapy_ssl_tls.ssl_tls import *
@@ -30,13 +30,12 @@ def do_tls_mutual_auth(host):
     socket_ = socket.socket()
     tls_socket = TLSSocket(socket_, client=True)
     tls_socket.connect(host)
-    tls_socket.tls_ctx.rsa_load_keys_from_file(os.path.join(basedir,
-                                                            "tests/integration/keys/scapy-tls-client.key.pem"),
-                                                            client=True)
+    tls_socket.tls_ctx.client_ctx.load_rsa_keys_from_file(os.path.join(
+        basedir, "tests/integration/keys/scapy-tls-client.key.pem"))
 
     client_hello = TLSRecord(version=tls_version) / TLSHandshake() /\
-                   TLSClientHello(version=tls_version, compression_methods=[TLSCompressionMethod.NULL, ],
-                                  cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])
+        TLSClientHello(version=tls_version, compression_methods=[TLSCompressionMethod.NULL, ],
+                       cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])
     tls_socket.sendall(client_hello)
     server_hello = tls_socket.recvall()
     server_hello.show()
@@ -50,8 +49,8 @@ def do_tls_mutual_auth(host):
     sig = tls_socket.tls_ctx.get_client_signed_handshake_hash(SHA256.new())
     # sig = sig[:128] + chr(ord(sig[128]) ^ 0xff) + sig[129:]
     client_cert_verify = TLSRecord(version=tls_version) / TLSHandshake() / \
-                         TLSCertificateVerify(alg=sig_hash_alg,
-                                              sig=sig)
+        TLSCertificateVerify(alg=sig_hash_alg,
+                             sig=sig)
     tls_socket.sendall(client_cert_verify)
 
     client_ccs = TLSRecord(version=tls_version) / TLSChangeCipherSpec()
@@ -73,4 +72,3 @@ if __name__ == "__main__":
     else:
         server = ("127.0.0.1", 8443)
     do_tls_mutual_auth(server)
-
