@@ -594,7 +594,7 @@ class NullHash(object):
     """ Implements a pycrypto like interface for the Null Hash
     """
 
-    blocksize = 0
+    block_size = 0
     digest_size = 0
 
     def __init__(self, *args, **kwargs):

@@ -259,7 +259,8 @@ class TestTLSSecurityParameters(unittest.TestCase):
         self.assertEqual(sec_params.master_secret, self.master_secret)
         client_enc_cipher = sec_params.get_client_enc_cipher()
         client_dec_cipher = sec_params.get_client_dec_cipher()
-        self.assertEqual(client_enc_cipher.mode, AES.MODE_CBC)
+        # Pycryptodome does not expose the mode attribute
+        # self.assertEqual(client_enc_cipher.mode, AES.MODE_CBC)
         plaintext = "a" * 32
         self.assertEqual(client_dec_cipher.decrypt(client_enc_cipher.encrypt(plaintext)), plaintext)
 
@@ -282,7 +283,8 @@ class TestTLSSecurityParameters(unittest.TestCase):
         self.assertEqual(sec_params.master_secret, self.master_secret)
         client_enc_cipher = sec_params.get_client_enc_cipher()
         client_dec_cipher = sec_params.get_client_dec_cipher()
-        self.assertEqual(client_enc_cipher.mode, DES3.MODE_CBC)
+        # Pycryptodome does not expose the mode attribute
+        # self.assertEqual(client_enc_cipher.mode, DES3.MODE_CBC)
         plaintext = "a" * 32
         self.assertEqual(client_dec_cipher.decrypt(client_enc_cipher.encrypt(plaintext)), plaintext)
         client_hmac = sec_params.get_client_hmac()

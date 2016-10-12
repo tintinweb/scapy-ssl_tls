@@ -787,12 +787,6 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertTrue(pubkey_extract_from_tls_certificate.can_encrypt())
         self.assertTrue(pubkey_extract_from_tls_certificate.can_sign())
 
-        plaintext = "-!-plaintext-!-" * 11
-        ciphertext = ''.join(pubkey_extract_from_tls_certificate.encrypt(plaintext, None))
-        ciphertext_2 = ''.join(pubkey_extract_from_der.encrypt(plaintext, None))
-        self.assertTrue(len(ciphertext))
-        self.assertEqual(ciphertext, ciphertext_2)
-
 
 class TestTLSTopLevelFunctions(unittest.TestCase):
 

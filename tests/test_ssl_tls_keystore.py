@@ -41,9 +41,9 @@ class TestAsymKeyStore(unittest.TestCase):
         self.rsa = RSA.importKey(self.pem_priv_key)
 
     def test_when_rsa_keystore_is_initialized_then_name_is_set(self):
-        rsa_keystore = tlsk.RSAKeystore(self.rsa.publickey(), self.rsa.key)
+        rsa_keystore = tlsk.RSAKeystore(self.rsa.publickey(), self.rsa)
         self.assertEqual("RSA Keystore", rsa_keystore.name)
-        self.assertEqual(self.rsa.key, rsa_keystore.private)
+        self.assertEqual(self.rsa, rsa_keystore.private)
         self.assertEqual(self.rsa.publickey(), rsa_keystore.public)
         self.assertEqual(2048, rsa_keystore.size)
         self.assertEqual(None, rsa_keystore.certificate)
