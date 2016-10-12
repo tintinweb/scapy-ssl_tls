@@ -236,14 +236,14 @@ class TLSInfo(object):
             # obvious SLOTH check, does not detect impl. errors that allow md5 even though not announced.
             # makes only sense for client_hello
             for sighashext in tmp:
-                for alg in sighashext[TLSExtSignatureAndHashAlgorithm].algorithms:
-                    if alg.signature_algorithm == TLSSignatureAlgorithm.RSA \
-                            and alg.hash_algorithm in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1):
+                for alg in sighashext[TLSExtSignatureAndHashAlgorithm].algs:
+                    if alg.sig_alg == TLSSignatureAlgorithm.RSA \
+                            and alg.hash_alg in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1):
                         events.append(
                             ("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s" %
                              (tlsinfo.__name__,
                               TLS_HASH_ALGORITHMS.get(
-                                  alg.hash_algorithm)),
+                                  alg.hash_alg)),
                                 alg))
 
             try:
