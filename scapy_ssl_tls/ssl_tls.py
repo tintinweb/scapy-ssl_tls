@@ -56,24 +56,19 @@ class BLenField(LenField):
         upack_data = s[:self.sz]
         # prepend struct.calcsize()-len(data) bytes to satisfy struct.unpack
         upack_data = '\x00' * (struct.calcsize(self.fmt) - self.sz) + upack_data
-
         return s[self.sz:], self.m2i(pkt, struct.unpack(self.fmt, upack_data)[0])
 
     def i2m(self, pkt, x):
         if x is None:
             if not (self.length_of or self.count_of):
                 x = len(pkt.payload)
-                x = self.adjust_i2m(pkt, x)
-                return x
-
-            if self.length_of is not None:
+            elif self.length_of is not None:
                 fld, fval = pkt.getfield_and_val(self.length_of)
-                f = fld.i2len(pkt, fval)
+                x = fld.i2len(pkt, fval)
             else:
                 fld, fval = pkt.getfield_and_val(self.count_of)
-                f = fld.i2count(pkt, fval)
-            x = self.adjust_i2m(pkt, f)
-        return x
+                x = fld.i2count(pkt, fval)
+        return self.adjust_i2m(pkt, x)
 
     def m2i(self, pkt, x):
         return self.adjust_m2i(pkt, x)
@@ -857,24 +852,24 @@ SSLv2_MESSAGE_TYPES = {
 SSLv2MessageType = EnumStruct(SSLv2_MESSAGE_TYPES)
 
 SSLv2_CIPHER_SUITES = {
-    0x10080: 'RC4_128_WITH_MD5',
-    0x20080: 'RC4_128_EXPORT40_WITH_MD5',
-    0x40080: 'RC2_CBC_128_CBC_WITH_MD5',
-    0x50080: 'IDEA_128_CBC_WITH_MD5',
-    0x60040: 'DES_64_CBC_WITH_MD5',
-    0x700c0: 'DES_192_EDE3_CBC_WITH_MD5',
-    0x80080: 'RC4_64_WITH_MD5',
-}
+    0x010080: 'RC4_128_WITH_MD5',
+    0x020080: 'RC4_128_EXPORT40_WITH_MD5',
+    0x040080: 'RC2_CBC_128_CBC_WITH_MD5',
+    0x050080: 'IDEA_128_CBC_WITH_MD5',
+    0x060040: 'DES_64_CBC_WITH_MD5',
+    0x0700c0: 'DES_192_EDE3_CBC_WITH_MD5',
+    0x080080: 'RC4_64_WITH_MD5',
+    0x030080: 'RC2_CBC_128_CBC_WITH_MD5',
+    }
 
 SSLv2CipherSuite = EnumStruct(SSLv2_CIPHER_SUITES)
 
 
 class SSLv2Record(Packet):
     name = "SSLv2 Record"
-    fields_desc = [XBLenField("length", None, fmt="!H", adjust_i2m=lambda pkt, x: x + 0x8000 + 1,
-                              adjust_m2i=lambda pkt, x:x - 0x8000),  # length=halfbyte+byte with MSB(high(1stbyte)) =1 || +1 for lengt(content_type)
-                   ByteEnumField("content_type", 0xff, SSLv2_MESSAGE_TYPES)]
-
+    fields_desc = [XBLenField("length", None, fmt="!H", adjust_i2m=lambda pkt, x: x|0x8000, adjust_m2i=lambda pkt, x:x&0x7fff),  # hint SSLv2Record with MSB=1, all other bits=length
+                   ByteEnumField("content_type", 0xff, SSLv2_MESSAGE_TYPES),
+                   ]
 
 class SSLv2ClientHello(Packet):
     name = "SSLv2 Client Hello"
