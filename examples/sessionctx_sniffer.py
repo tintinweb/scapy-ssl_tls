@@ -159,7 +159,7 @@ class Sniffer(object):
         session = ssl_tls_crypto.TLSSessionCtx()
         if keyfile:
             print ("* load servers privatekey for ciphertext decryption (RSA key only): %s" % keyfile)
-            session.rsa_load_keys_from_file(keyfile)
+            session.server_ctx.load_rsa_keys_from_file(keyfile)
 
             session.printed = False
             self.ssl_session_map[target] = session

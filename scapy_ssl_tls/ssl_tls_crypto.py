@@ -86,6 +86,21 @@ class TLSContext(object):
         self.kex_keystore = tlsk.EmptyKexKeystore()
         self.sym_keystore = tlsk.EmptySymKeyStore()
 
+    def load_rsa_keys_from_file(self, key_file, client=False):
+        with open(key_file, "r") as f:
+            # _rsa_load_keys expects one pem/der key per file.
+            pemo = pem_get_objects(f.read())
+            for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
+                try:
+                    self.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
+                    return
+                except ValueError:
+                    pass
+        raise ValueError("Unable to load PRIVATE key from pem file: %s" % key_file)
+
+    def load_rsa_keys(self, private):
+        self.asym_keystore = tlsk.RSAKeystore.from_private(private)
+
     def __str__(self):
         template = """
     {name}:
@@ -241,7 +256,7 @@ TLS Session Context:
                 g = str_to_int(server_kex[tls.TLSServerDHParams].g)
                 public = str_to_int(server_kex[tls.TLSServerDHParams].y_s)
                 self.server_ctx.kex_keystore = tlsk.DHKeyStore(g, p, public)
-        if server_kex.haslayer(tls.TLSServerECDHParams):
+        elif server_kex.haslayer(tls.TLSServerECDHParams):
             if isinstance(self.server_ctx.kex_keystore, tlsk.EmptyKexKeystore):
                 try:
                     curve_id = server_kex[tls.TLSServerECDHParams].curve_name
@@ -260,6 +275,8 @@ TLS Session Context:
                     except ValueError:
                         self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
                         warnings.warn("Unsupported elliptic curve: %s" % curve_name)
+        else:
+            warnings.warn("Unknown server key exchange")
 
     def __handle_client_kex(self, client_kex):
         if client_kex.haslayer(tls.TLSClientRSAParams):
@@ -333,27 +350,6 @@ TLS Session Context:
                 self.__handle_server_kex(pkt[tls.TLSServerKeyExchange])
             if pkt.haslayer(tls.TLSClientKeyExchange):
                 self.__handle_client_kex(pkt[tls.TLSClientKeyExchange])
-
-    def rsa_load_keys_from_file(self, priv_key_file, client=False):
-        with open(priv_key_file, "r") as f:
-            # _rsa_load_keys expects one pem/der key per file.
-            pemo = pem_get_objects(f.read())
-            for key_pk in (k for k in pemo.keys() if "PRIVATE" in k.upper()):
-                try:
-                    if client:
-                        self.client_ctx.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
-                    else:
-                        self.server_ctx.asym_keystore = tlsk.RSAKeystore.from_private(pemo[key_pk].get("full"))
-                    return
-                except ValueError:
-                    pass
-        raise ValueError("Unable to load PRIVATE key from pem file: %s" % priv_key_file)
-
-    def rsa_load_keys(self, private, client=False):
-        if client:
-            self.client_ctx.asym_keystore = tlsk.RSAKeystore.from_private(private)
-        else:
-            self.server_ctx.asym_keystore = tlsk.RSAKeystore.from_private(private)
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))

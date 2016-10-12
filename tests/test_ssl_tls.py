@@ -539,7 +539,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.pub_key = PKCS1_v1_5.new(rsa_priv_key.publickey())
 
         self.tls_ctx = tlsc.TLSSessionCtx()
-        self.tls_ctx.rsa_load_keys(self.pem_priv_key)
+        self.tls_ctx.server_ctx.load_rsa_keys(self.pem_priv_key)
         # SSLv2
         self.record_version = 0x0002
         # TLSv1.0

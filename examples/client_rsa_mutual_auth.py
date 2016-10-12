@@ -30,9 +30,8 @@ def do_tls_mutual_auth(host):
     socket_ = socket.socket()
     tls_socket = TLSSocket(socket_, client=True)
     tls_socket.connect(host)
-    tls_socket.tls_ctx.rsa_load_keys_from_file(os.path.join(basedir,
-                                                            "tests/integration/keys/scapy-tls-client.key.pem"),
-                                               client=True)
+    tls_socket.tls_ctx.client_ctx.load_rsa_keys_from_file(os.path.join(
+        basedir, "tests/integration/keys/scapy-tls-client.key.pem"))
 
     client_hello = TLSRecord(version=tls_version) / TLSHandshake() /\
         TLSClientHello(version=tls_version, compression_methods=[TLSCompressionMethod.NULL, ],

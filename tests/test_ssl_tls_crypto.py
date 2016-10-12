@@ -133,7 +133,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         tls_ctx = tlsc.TLSSessionCtx()
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)
         tls_ctx.insert(pkt)
-        tls_ctx.rsa_load_keys(self.pem_priv_key)
+        tls_ctx.server_ctx.load_rsa_keys(self.pem_priv_key)
         self.assertIsNotNone(tls_ctx.server_ctx.asym_keystore.private)
         self.assertIsNotNone(tls_ctx.server_ctx.asym_keystore.public)
         # Broken due to pycrypto bug: https://github.com/dlitz/pycrypto/issues/114
@@ -146,7 +146,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_decrypted_pms_matches_generated_pms(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.rsa_load_keys(self.pem_priv_key)
+        tls_ctx.server_ctx.load_rsa_keys(self.pem_priv_key)
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello()
         tls_ctx.insert(pkt)
         epms = tls_ctx.get_encrypted_pms()
@@ -319,7 +319,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
     def test_load_rsa_privkey_from_pem_file(self):
         pem_file = env_local_file("openssl_1_0_1_f_server.pem")
         tls_ctx = tlsc.TLSSessionCtx()
-        tls_ctx.rsa_load_keys_from_file(pem_file)
+        tls_ctx.server_ctx.load_rsa_keys_from_file(pem_file)
         self.assertTrue(tls_ctx.server_ctx.asym_keystore.private)
         self.assertTrue(tls_ctx.server_ctx.asym_keystore.public)
 
@@ -395,7 +395,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.pub_key = PKCS1_v1_5.new(rsa_priv_key.publickey())
 
         self.tls_ctx = tlsc.TLSSessionCtx()
-        self.tls_ctx.rsa_load_keys(self.pem_priv_key)
+        self.tls_ctx.server_ctx.load_rsa_keys(self.pem_priv_key)
         # SSLv2
         self.record_version = 0x0002
         self.version = version
