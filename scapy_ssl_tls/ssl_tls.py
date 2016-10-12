@@ -189,12 +189,13 @@ class EnumStruct(object):
 
 TLS_VERSIONS = {
     # SSL
-    0x0002:"SSL_2_0",
-    0x0300:"SSL_3_0",
-    # TLS
-    0x0301:"TLS_1_0",
-    0x0302:"TLS_1_1",
-    0x0303:"TLS_1_2",
+    0x0002: "SSL_2_0",
+    0x0300: "SSL_3_0",
+    # TLS:
+    0x0301: "TLS_1_0",
+    0x0302: "TLS_1_1",
+    0x0303: "TLS_1_2",
+    0x0304: "TLS_1_3",
     # DTLS
     0x0100:"PROTOCOL_DTLS_1_0_OPENSSL_PRE_0_9_8f",
     0xfeff:"DTLS_1_0",
@@ -416,10 +417,8 @@ class TLSSignatureHashAlgorithm(PacketNoPayload):
 
 class TLSExtSignatureAndHashAlgorithm(PacketNoPayload):
     name = "TLS Extension Signature And Hash Algorithm"
-    fields_desc = [
-                   XFieldLenField("length", None, length_of="algorithms", fmt="H"),
-                   PacketListField("algs", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length),
-                  ]
+    fields_desc = [XFieldLenField("length", None, length_of="algs", fmt="H"),
+                   PacketListField("algs", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length)]
 
 class TLSExtHeartbeat(PacketNoPayload):
     name = "TLS Extension HeartBeat"
