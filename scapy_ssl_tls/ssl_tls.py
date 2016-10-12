@@ -976,7 +976,7 @@ class TLSSocket(object):
 
     def accept(self):
         client_socket, peer = self._s.accept()
-        return TLSSocket(client_socket, client=False, tls_ctx=copy.deepcopy(self.tls_ctx)), peer
+        return TLSSocket(client_socket, client=False, tls_ctx=copy.copy(self.tls_ctx)), peer
 
     def __enter__(self):
         return self
