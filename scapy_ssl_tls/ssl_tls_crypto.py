@@ -150,7 +150,7 @@ TLS Session Context:
     negotiated.encryption: {enc}
     negotiated.mac: {hmac}
     negotiated.compression: {comp}
-    negotiated.compression: {resume}
+    negotiated.resumption: {resume}
     encrypted_premaster_secret: {epms}
     premaster_secret: {pms}
     master_secret: {ms}
