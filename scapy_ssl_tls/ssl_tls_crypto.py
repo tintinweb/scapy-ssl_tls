@@ -78,9 +78,7 @@ class TLSContext(object):
         self.sequence = 0
         self.random = None
         self.session_id = None
-        self.enc = None
-        self.dec = None
-        self.hmac = None
+        self.crypto_ctx = None
         self.compression = None
         self.asym_keystore = tlsk.EmptyAsymKeystore()
         self.kex_keystore = tlsk.EmptyKexKeystore()
@@ -225,8 +223,7 @@ TLS Session Context:
                                                                        self.negotiated.ciphersuite,
                                                                        self.master_secret,
                                                                        self.client_ctx.random,
-                                                                       self.server_ctx.random,
-                                                                       self.requires_iv)
+                                                                       self.server_ctx.random)
             self.__generate_secrets()
 
     def __handle_cert_list(self, cert_list):
@@ -317,7 +314,7 @@ TLS Session Context:
             warnings.warn("Unknown client key exchange")
         self.sec_params = TLSSecurityParameters.from_pre_master_secret(self.prf, self.negotiated.ciphersuite,
                                                                        self.premaster_secret, self.client_ctx.random,
-                                                                       self.server_ctx.random, self.requires_iv)
+                                                                       self.server_ctx.random)
         self.__generate_secrets()
 
     def __generate_secrets(self):
@@ -327,12 +324,10 @@ TLS Session Context:
             self.server_ctx.sym_keystore = self.sec_params.server_keystore
         self.master_secret = self.sec_params.master_secret
         # Retrieve ciphers used for client/server encryption and decryption
-        self.client_ctx.enc = self.sec_params.get_client_enc_cipher()
-        self.client_ctx.dec = self.sec_params.get_client_dec_cipher()
-        self.client_ctx.hmac = self.sec_params.get_client_hmac()
-        self.server_ctx.enc = self.sec_params.get_server_enc_cipher()
-        self.server_ctx.dec = self.sec_params.get_server_dec_cipher()
-        self.server_ctx.hmac = self.sec_params.get_server_hmac()
+        # TODO: use factory to assign CryptoContext
+        factory = CryptoContextFactory(self)
+        self.client_ctx.crypto_ctx = factory.new(self.client_ctx)
+        self.server_ctx.crypto_ctx = factory.new(self.server_ctx)
 
     def _process(self, pkt):
         """
@@ -505,69 +500,205 @@ class TLSPRF(object):
         return bytes_[:num_bytes]
 
 
-class CryptoContainer(object):
-
-    def __init__(self, tls_ctx, data="", content_type=tls.TLSContentType.APPLICATION_DATA):
-        if tls_ctx is None:
-            raise ValueError("Valid TLS session context required")
-        self.tls_ctx = tls_ctx
-        is_cbc = self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None
-        if self.tls_ctx.negotiated.version > tls.TLSVersion.TLS_1_0 and is_cbc:
-            self.explicit_iv = os.urandom(self.tls_ctx.server_ctx.sym_keystore.iv_size // 8)
-        else:
-            self.explicit_iv = ""
+class CryptoData(object):
+    def __init__(self, data, sequence, version, content_type=tls.TLSContentType.APPLICATION_DATA,
+                 data_len=None):
         self.data = data
-        self.version = tls_ctx.negotiated.version
+        self.sequence = sequence
+        self.version = version
         self.content_type = content_type
-        self.pkcs7 = pkcs7.PKCS7Encoder()
-        if self.tls_ctx.client:
-            # TODO: Needs concurrent safety if this ever goes concurrent
-            self.hmac_handler = tls_ctx.client_ctx.hmac
-            self.enc_cipher = tls_ctx.client_ctx.enc
-            self.seq_number = tls_ctx.client_ctx.sequence
-            self.tls_ctx.client_ctx.sequence += 1
-        else:
-            self.hmac_handler = tls_ctx.server_ctx.hmac
-            self.enc_cipher = tls_ctx.server_ctx.enc
-            self.seq_number = tls_ctx.server_ctx.sequence
-            self.tls_ctx.server_ctx.sequence += 1
-        # CBC mode
-        self.hmac()
-        if is_cbc:
-            self.pad()
-        # No padding otherwise
-        else:
-            self.padding = ""
+        self.data_len = data_len or len(data)
 
-    def hmac(self, seq=None, version=None, data_len=None):
-        # Grab a copy of the initialized HMAC handler
-        hmac = self.hmac_handler.copy()
-        seq_ = struct.pack("!Q", seq or self.seq_number)
-        content_type_ = struct.pack("!B", self.content_type)
-        version_ = struct.pack("!H", version or self.version)
-        len_ = struct.pack("!H", data_len or len(self.data))
-        hmac.update("%s%s%s%s%s" % (seq_, content_type_, version_, len_, self.data))
-        self.mac = hmac.digest()
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, data=b""):
+        return cls(data, ctx.sequence, tls_ctx.negotiated.version)
 
-    def pad(self):
-        # "\xff" is a dummy trailing byte, to increase the length of imput
-        # data by one byte. Any byte could do. This is to account for the
-        # trailing padding_length byte in the RFC
-        self.padding = self.pkcs7.get_padding("%s%s\xff" % (self.data, self.mac))
 
-    def __str__(self):
-        if len(self.padding) != 0:
-            return "%s%s%s%s%s" % (self.explicit_iv, self.data, self.mac, self.padding, chr(len(self.padding)))
+class CipherMode(object):
+    CBC = "CBC"
+    GCM = "GCM"
+    STREAM = "Stream"
+
+
+class CryptoContext(object):
+    def __init__(self, tls_ctx, ctx, mode):
+        self.tls_ctx = tls_ctx
+        self.sec_params = self.tls_ctx.sec_params
+        self.ctx = ctx
+        self.mode = mode
+
+    def encrypt_data(self, data):
+        raise NotImplementedError()
+
+    def encrypt(self, crypto_container):
+        raise NotImplementedError()
+
+    def decrypt(self, ciphertext):
+        # Return a crypto_container
+        raise NotImplementedError()
+
+
+class StreamCryptoContext(CryptoContext):
+    def __init__(self, tls_ctx, ctx):
+        super(StreamCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.STREAM)
+        self.__init_ciphers()
+
+    def __init_ciphers(self):
+        self.enc_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key)
+        self.dec_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key)
+
+    def encrypt_data(self, data):
+        crypto_data = CryptoData.from_context(self.tls_ctx, self.ctx, data)
+        crypto_container = CBCCryptoContainer.from_context(self.tls_ctx, self.ctx, crypto_data)
+        return self.encrypt(crypto_container)
+
+    def encrypt(self, crypto_container):
+        ciphertext = self.enc_cipher.encrypt(str(crypto_container))
+        self.ctx.sequence += 1
+        return ciphertext
+
+    def decrypt(self, ciphertext):
+        return self.dec_cipher.decrypt(ciphertext)
+
+
+class CBCCryptoContext(CryptoContext):
+    def __init__(self, tls_ctx, ctx):
+        super(CBCCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.CBC)
+        self.explicit_iv = b""
+        if self.tls_ctx.requires_iv:
+            self.ctx.sym_keystore.iv = b"\x00" * self.sec_params.block_size
         else:
-            return "%s%s%s" % (self.data, self.mac, self.padding)
+            self.__init_ciphers()
+
+    def __init_ciphers(self):
+        self.enc_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          IV=self.ctx.sym_keystore.iv)
+        self.dec_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          IV=self.ctx.sym_keystore.iv)
+
+    def encrypt_data(self, data):
+        crypto_data = CryptoData.from_context(self.tls_ctx, self.ctx, data)
+        crypto_container = CBCCryptoContainer.from_context(self.tls_ctx, self.ctx, crypto_data)
+        return self.encrypt(crypto_container)
+
+    def encrypt(self, crypto_container):
+        if self.tls_ctx.requires_iv:
+            self.__init_ciphers()
+        ciphertext = self.enc_cipher.encrypt(str(crypto_container))
+        self.ctx.sequence += 1
+        return ciphertext
+
+    def decrypt(self, ciphertext):
+        if self.tls_ctx.requires_iv:
+            self.__init_ciphers()
+        return self.dec_cipher.decrypt(ciphertext)
+
+
+class CryptoContextFactory(object):
+    crypto_context_map = {CipherMode.STREAM: StreamCryptoContext,
+                          CipherMode.CBC: CBCCryptoContext}
+
+    def __init__(self, tls_ctx):
+        self.tls_ctx = tls_ctx
+        self.sec_params = self.tls_ctx.sec_params
+        self.cipher_mode = self.sec_params.cipher_mode_name
+
+    def new(self, ctx):
+        try:
+            class_ = CryptoContextFactory.crypto_context_map[self.cipher_mode]
+        except KeyError:
+            raise ValueError("Unavailable cipher mode: %s" % self.cipher_mode)
+        return class_(self.tls_ctx, ctx)
+
+
+class CryptoContainer(object):
+    def __init__(self, crypto_data, digest):
+        self.crypto_data = crypto_data
+        self.digest = digest
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        raise NotImplementedError()
 
     def __len__(self):
         return len(str(self))
 
-    def encrypt(self, data=None):
-        """ If data is passed in, caller is responsible for block alignment
-        """
-        return self.enc_cipher.encrypt(data or str(self))
+
+class StreamCryptoContainer(CryptoContainer):
+    def __init__(self, crypto_data, digest):
+        super(StreamCryptoContainer, self).__init__(crypto_data, digest)
+        self.mac = b""
+        self.__mac()
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        mac = HMAC.new(ctx.sym_keystore.hmac, digestmod=tls_ctx.sec_params.hash_type)
+        return cls(crypto_data, mac)
+
+    def __mac(self):
+        sequence_ = struct.pack("!Q", self.crypto_data.sequence)
+        content_type_ = struct.pack("!B", self.crypto_data.content_type)
+        version_ = struct.pack("!H", self.crypto_data.version)
+        len_ = struct.pack("!H", self.crypto_data.data_len)
+        self.digest.update("%s%s%s%s%s" % (sequence_, content_type_, version_, len_, self.crypto_data.data))
+        self.mac = self.digest.digest()
+
+    def __str__(self):
+        return "%s%s" % (self.crypto_data.data, self.mac)
+
+
+class CBCCryptoContainer(CryptoContainer):
+    def __init__(self, crypto_data, digest, explicit_iv=b""):
+        super(CBCCryptoContainer, self).__init__(crypto_data, digest)
+        self.explicit_iv = explicit_iv
+        self.mac = b""
+        self.padding = b""
+        self.pkcs7 = pkcs7.PKCS7Encoder()
+        # CBC mode
+        self.__mac()
+        self.__pad()
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        explicit_iv = b""
+        if tls_ctx.requires_iv:
+            explicit_iv = os.urandom(tls_ctx.sec_params.block_size)
+        mac = HMAC.new(ctx.sym_keystore.hmac, digestmod=tls_ctx.sec_params.hash_type)
+        return cls(crypto_data, mac, explicit_iv)
+
+    def __mac(self):
+        sequence_ = struct.pack("!Q", self.crypto_data.sequence)
+        content_type_ = struct.pack("!B", self.crypto_data.content_type)
+        version_ = struct.pack("!H", self.crypto_data.version)
+        len_ = struct.pack("!H", self.crypto_data.data_len)
+        self.digest.update("%s%s%s%s%s" % (sequence_, content_type_, version_, len_, self.crypto_data.data))
+        self.mac = self.digest.digest()
+
+    def __pad(self):
+        # "\xff" is a dummy trailing byte, to increase the length of imput
+        # data by one byte. Any byte could do. This is to account for the
+        # trailing padding_length byte in the RFC
+        self.padding = self.pkcs7.get_padding("%s%s\xff" % (self.crypto_data.data, self.mac))
+
+    def __str__(self):
+        return "%s%s%s%s%s" % (self.explicit_iv, self.crypto_data.data, self.mac, self.padding, chr(len(self.padding)))
+
+
+class CryptoContainerFactory(object):
+    crypto_container_map = {CipherMode.STREAM: StreamCryptoContainer,
+                            CipherMode.CBC: CBCCryptoContainer}
+
+    def __init__(self, tls_ctx):
+        self.tls_ctx = tls_ctx
+        self.sec_params = self.tls_ctx.sec_params
+        self.cipher_mode = self.sec_params.cipher_mode_name
+
+    def new(self, ctx, crypto_data):
+        try:
+            class_ = CryptoContainerFactory.crypto_container_map[self.cipher_mode]
+        except KeyError:
+            raise ValueError("Unavailable cipher mode: %s" % self.cipher_mode)
+        return class_.from_context(self.tls_ctx, ctx, crypto_data)
 
 
 class NullCipher(object):
@@ -699,7 +830,7 @@ class TLSSecurityParameters(object):
 #     0xc0ae: "ECDHE_ECDSA_WITH_AES_128_CCM_8",
 #     0xc0af: "ECDHE_ECDSA_WITH_AES_256_CCM_8",
 
-    def __init__(self, prf, cipher_suite, client_random, server_random, explicit_iv=False):
+    def __init__(self, prf, cipher_suite, client_random, server_random):
         try:
             self.negotiated_crypto_param = self.crypto_params[cipher_suite]
         except KeyError:
@@ -713,63 +844,34 @@ class TLSSecurityParameters(object):
             self.server_random = server_random
             self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
             self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
-            block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
+            self.block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
+            self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
+            self.cipher_mode_name = self.negotiated_crypto_param["cipher"]["mode_name"]
+            self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
+            self.hash_type = self.negotiated_crypto_param["hash"]["type"]
             # Stream ciphers have a block size of one, but IV should be 0
-            self.iv_length = 0 if block_size == 1 else block_size
-            self.explicit_iv = explicit_iv
+            self.iv_length = 0 if self.block_size == 1 else self.block_size
             self.prf = prf
             self.pms = b""
             self.master_secret = b""
             self.client_keystore, self.server_keystore = [tlsk.EmptySymKeyStore()] * 2
 
     @classmethod
-    def from_pre_master_secret(cls, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
-        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+    def from_pre_master_secret(cls, prf, cipher_suite, pms, client_random, server_random):
+        sec_params = cls(prf, cipher_suite, client_random, server_random)
         sec_params.pms = pms
         sec_params.generate_master_secret(pms, client_random, server_random)
-        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_crypto(client_random, server_random,
-                                                                                        explicit_iv)
+        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_keys(client_random, server_random)
         return sec_params
 
     @classmethod
-    def from_master_secret(cls, prf, cipher_suite, master_secret, client_random, server_random, explicit_iv=False):
-        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+    def from_master_secret(cls, prf, cipher_suite, master_secret, client_random, server_random):
+        sec_params = cls(prf, cipher_suite, client_random, server_random)
         sec_params.master_secret = master_secret
-        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_crypto(client_random, server_random,
-                                                                                        explicit_iv)
+        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_keys(client_random, server_random)
         return sec_params
 
-    def get_client_hmac(self):
-        return self.__client_hmac
-
-    def get_server_hmac(self):
-        return self.__server_hmac
-
-    def get_server_enc_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.server_keystore.key, mode=self.cipher_mode, IV=self.server_keystore.iv)
-        else:
-            return self.__server_enc_cipher
-
-    def get_server_dec_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.server_keystore.key, mode=self.cipher_mode, IV=self.server_keystore.iv)
-        else:
-            return self.__server_dec_cipher
-
-    def get_client_enc_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.client_keystore.key, mode=self.cipher_mode, IV=self.client_keystore.iv)
-        else:
-            return self.__client_enc_cipher
-
-    def get_client_dec_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.client_keystore.key, mode=self.cipher_mode, IV=self.client_keystore.iv)
-        else:
-            return self.__client_dec_cipher
-
-    def __init_key_material(self, data, explicit_iv):
+    def __init_key_material(self, data):
         i = 0
         client_mac_key = data[i:i + self.mac_key_length]
         i += self.mac_key_length
@@ -779,14 +881,10 @@ class TLSSecurityParameters(object):
         i += self.cipher_key_length
         server_key = data[i:i + self.cipher_key_length]
         i += self.cipher_key_length
-        if explicit_iv:
-            client_iv = "\x00" * self.iv_length
-            server_iv = "\x00" * self.iv_length
-        else:
-            client_iv = data[i:i + self.iv_length]
-            i += self.iv_length
-            server_iv = data[i:i + self.iv_length]
-            i += self.iv_length
+        client_iv = data[i:i + self.iv_length]
+        i += self.iv_length
+        server_iv = data[i:i + self.iv_length]
+        i += self.iv_length
         client_keystore = tlsk.CipherKeyStore(self.negotiated_crypto_param, client_key, client_mac_key,
                                               client_iv)
         server_keystore = tlsk.CipherKeyStore(self.negotiated_crypto_param, server_key, server_mac_key,
@@ -798,35 +896,12 @@ class TLSSecurityParameters(object):
                                                 client_random + server_random, num_bytes=48)
         return self.master_secret
 
-    def init_crypto(self, client_random, server_random, explicit_iv, master_secret=None):
+    def init_keys(self, client_random, server_random, master_secret=None):
         if master_secret is None:
             master_secret = self.master_secret
         key_block = self.prf.get_bytes(master_secret, TLSPRF.TLS_MD_KEY_EXPANSION_CONST, server_random + client_random,
                                        num_bytes=2 * (self.mac_key_length + self.cipher_key_length + self.iv_length))
-        client_keystore, server_keystore = self.__init_key_material(key_block, explicit_iv)
-
-        self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
-        self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
-        self.hash_type = self.negotiated_crypto_param["hash"]["type"]
-        # Block ciphers
-        if self.cipher_mode is not None:
-            self.__client_enc_cipher = self.cipher_type.new(client_keystore.key, mode=self.cipher_mode,
-                                                            IV=client_keystore.iv)
-            self.__client_dec_cipher = self.cipher_type.new(client_keystore.key, mode=self.cipher_mode,
-                                                            IV=client_keystore.iv)
-            self.__server_enc_cipher = self.cipher_type.new(server_keystore.key, mode=self.cipher_mode,
-                                                            IV=server_keystore.iv)
-            self.__server_dec_cipher = self.cipher_type.new(server_keystore.key, mode=self.cipher_mode,
-                                                            IV=server_keystore.iv)
-        # Stream ciphers
-        else:
-            self.__client_enc_cipher = self.cipher_type.new(client_keystore.key)
-            self.__client_dec_cipher = self.cipher_type.new(client_keystore.key)
-            self.__server_enc_cipher = self.cipher_type.new(server_keystore.key)
-            self.__server_dec_cipher = self.cipher_type.new(server_keystore.key)
-        self.__client_hmac = HMAC.new(client_keystore.hmac, digestmod=self.hash_type)
-        self.__server_hmac = HMAC.new(server_keystore.hmac, digestmod=self.hash_type)
-        return client_keystore, server_keystore
+        return self.__init_key_material(key_block)
 
     def __str__(self):
         s = []

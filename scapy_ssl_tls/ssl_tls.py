@@ -1070,9 +1070,10 @@ class SSL(Packet):
                 if encrypted_payload is not None:
                     try:
                         if self.tls_ctx.client:
-                            cleartext = self.tls_ctx.server_ctx.dec.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload)
                         else:
-                            cleartext = self.tls_ctx.client_ctx.dec.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload)
+                            # cleartext = self.tls_ctx.client_ctx.dec.decrypt(encrypted_payload)
                         pkt = layer(cleartext, ctx=self.tls_ctx)
                         original_record = record
                         record[self.guessed_next_layer].payload = pkt
@@ -1100,7 +1101,9 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
 
     if tls_ctx is None:
         raise ValueError("A valid TLS session context must be provided")
-    comp_method = tls_ctx.server_ctx.compression
+
+    ctx = tls_ctx.client_ctx if tls_ctx.client else tls_ctx.server_ctx
+    comp_method = ctx.compression
 
     content_type, data = None, None
     for tls_proto, handler in cleartext_handler.iteritems():
@@ -1114,14 +1117,18 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
     else:
         post_compress_data = comp_method.compress(data)
 
-    crypto_container = tlsc.CryptoContainer(tls_ctx, post_compress_data, content_type)
+    factory = tlsc.CryptoContainerFactory(tls_ctx)
+    crypto_data = tlsc.CryptoData.from_context(tls_ctx, ctx, post_compress_data)
+    crypto_data.content_type = content_type
+    crypto_container = factory.new(ctx, crypto_data)
+
     if pre_encrypt_hook is not None:
         crypto_container = pre_encrypt_hook(crypto_container)
 
     if encrypt_hook is not None:
         ciphertext = encrypt_hook(crypto_container)
     else:
-        ciphertext = crypto_container.encrypt()
+        ciphertext = ctx.crypto_ctx.encrypt(crypto_container)
 
     if include_record:
         tls_ciphertext = TLSRecord(version=tls_ctx.negotiated.version, content_type=content_type) / ciphertext
