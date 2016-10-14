@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/tintinweb/scapy-ssl_tls.svg)](https://travis-ci.org/tintinweb/scapy-ssl_tls)
+[![Build Status](https://api.travis-ci.org/tintinweb/scapy-ssl_tls.svg?branch=master)](https://api.travis-ci.org/tintinweb/scapy-ssl_tls.svg?branch=master)
 
 SSL/TLS layers for scapy the interactive packet manipulation tool.
 
