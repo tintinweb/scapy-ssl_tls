@@ -205,7 +205,6 @@ TLS Session Context:
             warnings.warn("Compression method 0x%02x not supported. Compression operations will fail" %
                           self.negotiated.compression)
 
-        self.prf = TLSPRF(self.negotiated.version)
         try:
             self.negotiated.key_exchange = \
                 TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["key_exchange"]["name"]
@@ -218,8 +217,9 @@ TLS Session Context:
             self.negotiated.mac = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["hash"]["name"]
         except KeyError:
             warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % self.negotiated.ciphersuite)
+        self.prf = TLSPRF(self.negotiated.version,
+                          TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite].get("prf", {}).get("type"))
         if self.negotiated.resumption:
-            self.prf = TLSPRF(self.negotiated.version)
             self.sec_params = TLSSecurityParameters.from_master_secret(self.prf,
                                                                        self.negotiated.ciphersuite,
                                                                        self.master_secret,
@@ -427,7 +427,7 @@ TLS Session Context:
 
         if self.negotiated.version == tls.TLSVersion.TLS_1_2:
             prf_verify_data = self.prf.get_bytes(self.master_secret, label,
-                                                 SHA256.new("".join(verify_data)).digest(),
+                                                 self.prf.digest.new("".join(verify_data)).digest(),
                                                  num_bytes=12)
         else:
             prf_verify_data = self.prf.get_bytes(self.master_secret, label,
@@ -468,14 +468,21 @@ class TLSPRF(object):
     TLS_MD_IV_BLOCK_CONST = "IV block"
     TLS_MD_MASTER_SECRET_CONST = "master secret"
 
-    def __init__(self, tls_version):
+    def __init__(self, tls_version, digest=None):
         if tls_version not in tls.TLS_VERSIONS.keys():
             raise ValueError("Unknown TLS version: %d" % tls_version)
         self.tls_version = tls_version
+        if self.tls_version < tls.TLSVersion.TLS_1_2 and digest is not None:
+            raise ValueError("PRF digest can be set only for TLS versions 1.2 and above")
+        else:
+            if digest is None:
+                self.digest = SHA256
+            else:
+                self.digest = digest
 
     def get_bytes(self, key, label, random, num_bytes):
-        if self.tls_version == tls.TLSVersion.TLS_1_2:
-            bytes_ = self._get_bytes(SHA256, key, label, random, num_bytes)
+        if self.tls_version >= tls.TLSVersion.TLS_1_2:
+            bytes_ = self._get_bytes(self.digest, key, label, random, num_bytes)
         else:
             key_len = (len(key) + 1) // 2
             key_left = key[:key_len]
@@ -920,7 +927,21 @@ class TLSSecurityParameters(object):
         tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc024], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC}, "hash": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc027], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC}, "hash": {"type": SHA256, "name": "SHA256"}},
         tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc028], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC}, "hash": {"type": SHA384, "name": "SHA384"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc02f], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.GCM}, "hash": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc02b], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.GCM},
+                                                               "hash": {"type": NullHash, "name": "NULL"},
+                                                               "prf": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc02c], "export": False,
+                                                                 "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.GCM},
+                                                                 "hash": {"type": NullHash, "name": "NULL"},
+                                                                 "prf": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc030], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.GCM},
+                                                               "hash": {"type": NullHash, "name": "NULL"},
+                                                               "prf": {"type": SHA384, "name": "SHA384"}},
         # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
         # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
     }
@@ -928,10 +949,6 @@ class TLSSecurityParameters(object):
 #         SRP_SHA_RSA_WITH_AES_256_CBC_SHA = 0xc021
 #         SRP_SHA_DSS_WITH_AES_256_CBC_SHA = 0xc022
 #         TLS_FALLBACK_SCSV = 0x5600
-#     0xc02b: "ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
-#     0xc02c: "ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-#     0xc02f: "ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-#     0xc030: "ECDHE_RSA_WITH_AES_256_GCM_SHA384",
 #     0xc0ac: "ECDHE_ECDSA_WITH_AES_128_CCM",
 #     0xc0ad: "ECDHE_ECDSA_WITH_AES_256_CCM",
 #     0xc0ae: "ECDHE_ECDSA_WITH_AES_128_CCM_8",

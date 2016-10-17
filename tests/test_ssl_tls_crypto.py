@@ -12,7 +12,7 @@ import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
 import scapy_ssl_tls.ssl_tls_keystore as tlsk
 
-from Crypto.Hash import HMAC, MD5, SHA, SHA256
+from Crypto.Hash import HMAC, MD5, SHA, SHA256, SHA384
 from Crypto.Cipher import AES, DES3, PKCS1_v1_5
 from Crypto.PublicKey import RSA
 
@@ -591,6 +591,14 @@ class TestTLSPRF(unittest.TestCase):
         self.assertEqual(self.server_key, crypto_material[i:i + len(self.server_key)])
         i += len(self.server_key)
         # No IVs for TLS1.2
+
+    def test_tls_1_1_defined_prf_raises_error(self):
+        with self.assertRaises(ValueError):
+            tlsc.TLSPRF(tls.TLSVersion.TLS_1_1, SHA)
+
+    def test_tls_1_2_cipher_specified_prf_is_used(self):
+        prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_2, SHA384)
+        self.assertEqual(prf.digest, SHA384)
 
 
 class TestGcmCryptoContext(unittest.TestCase):
