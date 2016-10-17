@@ -3,6 +3,9 @@
 import os
 import binascii
 import unittest
+import struct
+import warnings
+
 import tinyec.ec as ec
 import tinyec.registry as reg
 import scapy_ssl_tls.ssl_tls as tls
@@ -12,6 +15,8 @@ import scapy_ssl_tls.ssl_tls_keystore as tlsk
 from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.Cipher import AES, DES3, PKCS1_v1_5
 from Crypto.PublicKey import RSA
+
+import ssl_tls_crypto
 
 
 def env_local_file(file):
@@ -231,7 +236,7 @@ class TestTLSSecurityParameters(unittest.TestCase):
 
     def test_unsupported_cipher_suite_throws_exception(self):
         with self.assertRaises(RuntimeError):
-            tlsc.TLSSecurityParameters(self.prf, 0xffff, self.pre_master_secret, self.client_random, self.server_random)
+            tlsc.TLSSecurityParameters(self.prf, 0xffff, self.client_random, self.server_random)
 
     def test_building_with_supported_cipher_sets_lengths(self):
         # RSA_WITH_AES_128_CBC_SHA
@@ -254,61 +259,95 @@ class TestTLSSecurityParameters(unittest.TestCase):
     def test_cleartext_message_matches_decrypted_message_with_block_cipher(self):
         # RSA_WITH_AES_128_CBC_SHA
         cipher_suite = 0x2f
+        plaintext = "a" * 32
         sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(self.prf, cipher_suite, self.pre_master_secret,
                                                                        self.client_random, self.server_random)
         self.assertEqual(sec_params.master_secret, self.master_secret)
-        client_enc_cipher = sec_params.get_client_enc_cipher()
-        client_dec_cipher = sec_params.get_client_dec_cipher()
-        # Pycryptodome does not expose the mode attribute
-        # self.assertEqual(client_enc_cipher.mode, AES.MODE_CBC)
-        plaintext = "a" * 32
-        self.assertEqual(client_dec_cipher.decrypt(client_enc_cipher.encrypt(plaintext)), plaintext)
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.negotiated.version = tls.TLSVersion.TLS_1_1
+        tls_ctx.requires_iv = True
+        tls_ctx.sec_params = sec_params
+        tls_ctx.client_ctx.sym_keystore = sec_params.client_keystore
+        tls_ctx.server_ctx.sym_keystore = sec_params.server_keystore
+        self.assertEqual(sec_params.master_secret, self.master_secret)
+        crypto_ctx = tlsc.CBCCryptoContext(tls_ctx, tls_ctx.client_ctx)
+        tls_ctx.client_ctx.crypto_ctx = crypto_ctx
+        crypto_container = tlsc.CBCCryptoContainer.from_data(tls_ctx, tls_ctx.client_ctx, plaintext)
+        decrypted = crypto_ctx.decrypt(crypto_ctx.encrypt(crypto_container))
+        self.assertEqual(str(crypto_container), decrypted)
+        self.assertFalse(str(crypto_container).startswith(plaintext))
 
     def test_cleartext_message_matches_decrypted_message_with_stream_cipher(self):
         # RSA_WITH_RC4_128_SHA
         cipher_suite = 0x5
+        plaintext = "a" * 32
         sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(self.prf, cipher_suite, self.pre_master_secret,
                                                                        self.client_random, self.server_random)
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.negotiated.version = tls.TLSVersion.TLS_1_0
+        tls_ctx.sec_params = sec_params
+        tls_ctx.client_ctx.sym_keystore = sec_params.client_keystore
+        tls_ctx.server_ctx.sym_keystore = sec_params.server_keystore
         self.assertEqual(sec_params.master_secret, self.master_secret)
-        client_enc_cipher = sec_params.get_client_enc_cipher()
-        client_dec_cipher = sec_params.get_client_dec_cipher()
-        plaintext = "a" * 32
-        self.assertEqual(client_dec_cipher.decrypt(client_enc_cipher.encrypt(plaintext)), plaintext)
+        crypto_ctx = tlsc.StreamCryptoContext(tls_ctx, tls_ctx.client_ctx)
+        tls_ctx.client_ctx.crypto_ctx = crypto_ctx
+        crypto_container = tlsc.CBCCryptoContainer.from_data(tls_ctx, tls_ctx.client_ctx, plaintext)
+        decrypted = crypto_ctx.decrypt(crypto_ctx.encrypt(crypto_container))
+        self.assertEqual(str(crypto_container), decrypted)
+        self.assertTrue(str(crypto_container).startswith(plaintext))
 
     def test_hmac_used_matches_selected_ciphersuite(self):
+        import struct
         # RSA_WITH_3DES_EDE_CBC_SHA
         cipher_suite = 0xa
+        plaintext = "a" * 32
         sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(self.prf, cipher_suite, self.pre_master_secret,
                                                                        self.client_random, self.server_random)
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.negotiated.version = tls.TLSVersion.TLS_1_0
+        tls_ctx.sec_params = sec_params
+        tls_ctx.client_ctx.sym_keystore = sec_params.client_keystore
         self.assertEqual(sec_params.master_secret, self.master_secret)
-        client_enc_cipher = sec_params.get_client_enc_cipher()
-        client_dec_cipher = sec_params.get_client_dec_cipher()
+
+        crypto_ctx = tlsc.CBCCryptoContext(tls_ctx, tls_ctx.client_ctx)
         # Pycryptodome does not expose the mode attribute
         # self.assertEqual(client_enc_cipher.mode, DES3.MODE_CBC)
-        plaintext = "a" * 32
-        self.assertEqual(client_dec_cipher.decrypt(client_enc_cipher.encrypt(plaintext)), plaintext)
-        client_hmac = sec_params.get_client_hmac()
-        client_hmac.update("some secret")
-        self.assertEqual(client_hmac.hexdigest(),
-                         HMAC.new(sec_params.client_keystore.hmac, "some secret", digestmod=SHA).hexdigest())
+        crypto_data = tlsc.CryptoData.from_context(tls_ctx, tls_ctx.client_ctx, plaintext)
+        crypto_container = tlsc.CBCCryptoContainer.from_context(tls_ctx, tls_ctx.client_ctx, crypto_data)
 
-    def test_tls_1_1_and_above_iv_is_null(self):
+        sequence_ = struct.pack("!Q", crypto_data.sequence)
+        content_type_ = struct.pack("!B", crypto_data.content_type)
+        version_ = struct.pack("!H", crypto_data.version)
+        len_ = struct.pack("!H", crypto_data.data_len)
+        digest_input = "%s%s%s%s%s" % (sequence_, content_type_, version_, len_, plaintext)
+
+        self.assertEqual(crypto_container.mac,
+                         HMAC.new(sec_params.client_keystore.hmac, digest_input, digestmod=SHA).digest())
+        decrypted = crypto_ctx.decrypt(crypto_ctx.encrypt(crypto_container))
+        self.assertEqual(str(crypto_container), decrypted)
+        self.assertTrue(str(crypto_container).startswith(plaintext))
+
+    def test_tls_1_1_and_above_cbc_iv_is_null(self):
         # RSA_WITH_AES_128_CBC_SHA
         cipher_suite = 0x2f
         sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(self.prf, cipher_suite, self.pre_master_secret,
-                                                                       self.client_random, self.server_random,
-                                                                       explicit_iv=True)
-        self.assertEqual(sec_params.client_keystore.iv, "\x00" * 16)
-        self.assertEqual(sec_params.server_keystore.iv, "\x00" * 16)
+                                                                       self.client_random, self.server_random)
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.negotiated.version = tls.TLSVersion.TLS_1_1
+        tls_ctx.requires_iv = True
+        tls_ctx.sec_params = sec_params
+        # Creating the CryptoContext will set the IV to null if required
+        tlsc.CBCCryptoContext(tls_ctx, tls_ctx.client_ctx)
+        tlsc.CBCCryptoContext(tls_ctx, tls_ctx.server_ctx)
+        self.assertEqual(tls_ctx.client_ctx.sym_keystore.iv, "\x00" * 16)
+        self.assertEqual(tls_ctx.server_ctx.sym_keystore.iv, "\x00" * 16)
 
     def test_sec_params_generated_from_ms_match_sec_params_generated_from_pms(self):
         cipher_suite = 0x2f
         pms_params = tlsc.TLSSecurityParameters.from_pre_master_secret(self.prf, cipher_suite, self.pre_master_secret,
-                                                                       self.client_random, self.server_random,
-                                                                       explicit_iv=True)
+                                                                       self.client_random, self.server_random)
         ms_params = tlsc.TLSSecurityParameters.from_master_secret(self.prf, cipher_suite, self.master_secret,
-                                                                  self.client_random, self.server_random,
-                                                                  explicit_iv=True)
+                                                                  self.client_random, self.server_random)
         self.assertEqual("", ms_params.pms)
         self.assertEqual(pms_params.master_secret, ms_params.master_secret)
         self.assertEqual(pms_params.client_keystore.iv, ms_params.client_keystore.iv)
@@ -419,53 +458,61 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_crypto_container_increments_sequence_number(self):
         client_seq_num = self.tls_ctx.client_ctx.sequence
         server_seq_num = self.tls_ctx.server_ctx.sequence
-        tlsc.CryptoContainer(self.tls_ctx)
+        client_crypto_ctx = tlsc.CBCCryptoContext(self.tls_ctx, self.tls_ctx.client_ctx)
+        client_crypto_ctx.encrypt_data(b"")
         client_seq_num += 1
         self.assertEqual(self.tls_ctx.client_ctx.sequence, client_seq_num)
         self.assertEqual(self.tls_ctx.server_ctx.sequence, server_seq_num)
         self.tls_ctx.client = False
-        tlsc.CryptoContainer(self.tls_ctx)
+        client_crypto_ctx = tlsc.CBCCryptoContext(self.tls_ctx, self.tls_ctx.server_ctx)
+        client_crypto_ctx.encrypt_data(b"")
         self.assertEqual(self.tls_ctx.client_ctx.sequence, client_seq_num)
         self.assertEqual(self.tls_ctx.server_ctx.sequence, server_seq_num + 1)
 
-    def test_crypto_container_str_returns_cipher_payload(self):
+    def test_cbc_crypto_container_str_returns_cipher_payload(self):
         data = b"abcde"
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        crypto_data = tlsc.CryptoData.from_context(self.tls_ctx, self.tls_ctx.client_ctx, data)
+        crypto_container = tlsc.CBCCryptoContainer.from_context(self.tls_ctx, self.tls_ctx.client_ctx, crypto_data)
         padding = crypto_container.padding
         self.assertEqual("%s%s%s%s" % (data, crypto_container.mac, padding, chr(len(padding))), str(crypto_container))
 
-    def test_cipher_payload_is_block_size_aligned(self):
+    def test_cbc_cipher_payload_is_block_size_aligned(self):
         data = b"A" * 1025
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        crypto_data = tlsc.CryptoData.from_context(self.tls_ctx, self.tls_ctx.client_ctx, data)
+        crypto_container = tlsc.CBCCryptoContainer.from_context(self.tls_ctx, self.tls_ctx.client_ctx, crypto_data)
         self.assertTrue(len(crypto_container) % AES.block_size == 0)
 
     def test_crypto_container_returns_ciphertext(self):
         data = b"C" * 102
         self.tls_ctx.client = False
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        crypto_container = tlsc.CBCCryptoContainer.from_data(self.tls_ctx, self.tls_ctx.server_ctx, data)
         cleartext = str(crypto_container)
-        ciphertext = crypto_container.encrypt()
-        self.assertEqual(cleartext, self.tls_ctx.server_ctx.dec.decrypt(ciphertext))
+        crypto_ctx = tlsc.CBCCryptoContext(self.tls_ctx, self.tls_ctx.server_ctx)
+        ciphertext = crypto_ctx.encrypt_data(data)
+        self.assertEqual(cleartext, crypto_ctx.decrypt(ciphertext))
 
     def test_generated_mac_can_be_overiden(self):
         data = b"C" * 102
         self.tls_ctx.client = False
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        crypto_container = tlsc.CBCCryptoContainer.from_context(self.tls_ctx, self.tls_ctx.server_ctx,
+                                                                tlsc.CryptoData.from_context(self.tls_ctx,
+                                                                                             self.tls_ctx.server_ctx,
+                                                                                             data))
         initial_mac = crypto_container.mac
-        crypto_container.hmac(data_len=1024)
+        crypto_container.mac = "1234"
         self.assertNotEqual(initial_mac, crypto_container.mac)
 
     def test_tls_1_1_and_above_has_a_random_explicit_iv_with_block_cipher(self):
         data = b"C" * 102
         self._do_kex(tls.TLSVersion.TLS_1_1)
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
-        self.assertNotEqual(crypto_container.explicit_iv, "")
+        crypto_container = tlsc.CBCCryptoContainer.from_data(self.tls_ctx, self.tls_ctx.server_ctx, data)
+        self.assertNotEqual(crypto_container.explicit_iv, b"")
         self.assertEqual(len(crypto_container.explicit_iv), AES.block_size)
         self.assertTrue(str(crypto_container).startswith(crypto_container.explicit_iv))
 
     def test_tls_1_0_and_below_has_no_explicit_iv(self):
         data = b"C" * 102
-        crypto_container = tlsc.CryptoContainer(self.tls_ctx, data)
+        crypto_container = tlsc.CBCCryptoContainer.from_data(self.tls_ctx, self.tls_ctx.server_ctx, data)
         self.assertEqual(crypto_container.explicit_iv, "")
         self.assertTrue(str(crypto_container).startswith(data))
 
@@ -547,6 +594,69 @@ class TestTLSPRF(unittest.TestCase):
         i += len(self.server_key)
         # No IVs for TLS1.2
 
+
+class TestGcmCryptoContext(unittest.TestCase):
+    def setUp(self):
+        cipher_suite = tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        self.tls_ctx = tlsc.TLSSessionCtx()
+        self.tls_ctx.negotiated.version = tls.TLSVersion.TLS_1_2
+        self.tls_ctx.server_ctx.sequence = 5
+        self.tls_ctx.server_ctx.nonce = 72623859790382856
+        self.ctx = self.tls_ctx.server_ctx
+        self.prf = tlsc.TLSPRF(tls.TLSVersion.TLS_1_0)
+        self.pre_master_secret = "\x03\x01aaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb"
+        self.client_random = "a" * 32
+        self.server_random = "z" * 32
+        self.master_secret = binascii.unhexlify(
+            "43278712b1feba3622c5745f79908a77b6e801239fc19390240cc45a17517b6218dfcb3f370c97f15329251e7a20ffb0")
+        self.tls_ctx.sec_params = tlsc.TLSSecurityParameters.from_master_secret(self.prf, cipher_suite,
+                                                                                self.master_secret,
+                                                                                self.client_random, self.server_random)
+        self.tls_ctx.server_ctx.sym_keystore = self.tls_ctx.sec_params.server_keystore
+        self.tls_ctx.client_ctx.sym_keystore = self.tls_ctx.sec_params.client_keystore
+        unittest.TestCase.setUp(self)
+
+    def test_when_GCM_crypto_container_is_built_aead_is_generated(self):
+        plaintext = b"1234"
+        crypto_container = tlsc.GCMCryptoContainer.from_data(self.tls_ctx, self.ctx, plaintext)
+        self.assertEqual(str(crypto_container), plaintext)
+        self.assertTrue(crypto_container.aead != b"")
+        self.assertTrue(crypto_container.aead.startswith(struct.pack("!Q", 5)))
+        with self.assertRaises(AttributeError):
+            crypto_container.padding
+        with self.assertRaises(AttributeError):
+            crypto_container.mac
+
+    def test_when_GCM_crypto_context_is_used_security_parameters_are_set(self):
+        self.assertEqual(len(self.tls_ctx.client_ctx.sym_keystore.iv), 4)
+        self.assertEqual(self.tls_ctx.client_ctx.sym_keystore.iv, "\xd4\x80\xd0\xa8")
+        self.assertEqual(len(self.tls_ctx.server_ctx.sym_keystore.iv), 4)
+        self.assertEqual(self.tls_ctx.server_ctx.sym_keystore.iv, "a\xa6\x1f1")
+        self.assertEqual(len(self.tls_ctx.client_ctx.sym_keystore.hmac), 0)
+        self.assertEqual(self.tls_ctx.client_ctx.sym_keystore.hmac, "")
+        self.assertEqual(len(self.tls_ctx.server_ctx.sym_keystore.hmac), 0)
+        self.assertEqual(self.tls_ctx.server_ctx.sym_keystore.hmac, "")
+        self.assertEqual(len(self.tls_ctx.client_ctx.sym_keystore.key), 16)
+        self.assertEqual(self.tls_ctx.client_ctx.sym_keystore.key, "\xe1: \xc6\'\"h\x9bF\x82\xc3\xbd\xa0~I\xd0")
+        self.assertEqual(len(self.tls_ctx.server_ctx.sym_keystore.key), 16)
+        self.assertEqual(self.tls_ctx.server_ctx.sym_keystore.key, "\xda\xa7{\xcb&\xd3\xfb\xe3\x1f\xb3v2\xa9\\?\xa6")
+
+    def test_when_GCM_crypto_context_is_used_nonce_is_incremented(self):
+        plaintext = b"1234"
+        initial_nonce = self.tls_ctx.server_ctx.nonce
+        initial_seq = self.tls_ctx.server_ctx.sequence
+        crypto_ctx = tlsc.GCMCryptoContext(self.tls_ctx, self.ctx)
+        ciphertext = crypto_ctx.encrypt_data(plaintext)
+        self.assertEqual(initial_nonce + 1, self.tls_ctx.server_ctx.nonce)
+        self.assertEqual(initial_seq + 1, self.tls_ctx.server_ctx.sequence)
+        # Mac check will fail, since sequence number has incremented
+        warnings.filterwarnings("error")
+        with self.assertRaises(Warning):
+            decrypted = crypto_ctx.decrypt(ciphertext)
+        # Now, rewind the state to the correct sequence number, MAC check will succeed
+        self.ctx.sequence = 5
+        decrypted = crypto_ctx.decrypt(ciphertext)
+        self.assertEqual(plaintext, decrypted[8: 8 + len(plaintext)])
 
 if __name__ == "__main__":
     unittest.main()

@@ -701,10 +701,11 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
     def pre_dissect(self, raw_bytes):
         data = raw_bytes
         if self.tls_ctx is not None:
+            import ssl_tls_crypto as tlsc
             hash_size = self.tls_ctx.sec_params.mac_key_length
             iv_size = self.tls_ctx.sec_params.iv_length
             # CBC mode
-            if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] is not None:
+            if self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.CBC:
                 try:
                     self.padding_len = ord(raw_bytes[-1])
                     self.padding = raw_bytes[-self.padding_len - 1:-1]
@@ -716,6 +717,10 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
                         data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
                     data = raw_bytes
+            elif self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.GCM:
+                self.explicit_iv = raw_bytes[:self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE]
+                self.mac = raw_bytes[-self.tls_ctx.sec_params.GCM_TAG_SIZE:]
+                data = raw_bytes[self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE:-self.tls_ctx.sec_params.GCM_TAG_SIZE]
             else:
                 self.mac = raw_bytes[-hash_size:]
                 data = raw_bytes[:-hash_size]
@@ -1070,10 +1075,11 @@ class SSL(Packet):
                 if encrypted_payload is not None:
                     try:
                         if self.tls_ctx.client:
-                            cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                                   record.content_type)
                         else:
-                            cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload)
-                            # cleartext = self.tls_ctx.client_ctx.dec.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                                   record.content_type)
                         pkt = layer(cleartext, ctx=self.tls_ctx)
                         original_record = record
                         record[self.guessed_next_layer].payload = pkt

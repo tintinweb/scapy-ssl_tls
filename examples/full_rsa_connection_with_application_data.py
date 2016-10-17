@@ -19,7 +19,8 @@ tls_version = TLSVersion.TLS_1_2
 def tls_hello(sock):
     client_hello = TLSRecord(version=tls_version) / TLSHandshake() /\
         TLSClientHello(version=tls_version, compression_methods=[TLSCompressionMethod.NULL, ],
-                       cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])
+                       cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256, ])
+    # cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])
     # cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, ])
     # cipher_suites=[TLSCipherSuite.RSA_WITH_RC4_128_SHA, ])
     # cipher_suites=[TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA, ])
@@ -43,6 +44,7 @@ def tls_client(ip):
     try:
         sock.connect(ip)
         sock = TLSSocket(sock, client=True)
+        sock.tls_ctx.client_ctx.nonce = 72623859790382856
         print("Connected to server: %s" % (ip,))
     except socket.timeout:
         print("Failed to open connection to server: %s" % (ip,), file=sys.stderr)

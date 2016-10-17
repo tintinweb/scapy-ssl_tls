@@ -296,7 +296,7 @@ class TestTLSDecryptablePacket(unittest.TestCase):
         tls_ctx.requires_iv = True
         tls_ctx.sec_params = tlsc.TLSSecurityParameters.from_pre_master_secret(
             tlsc.TLSPRF(tls.TLSVersion.TLS_1_0), tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA, "A" * 48, "B" * 32,
-            "C" * 32, True)
+            "C" * 32)
         records = tls.TLSAlert(data, ctx=tls_ctx)
         self.assertEqual(ord("\x03"), records[tls.TLSAlert].padding_len)
         self.assertEqual("\x03" * 3, records[tls.TLSAlert].padding)
@@ -576,8 +576,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.record_version = 0x0002
         # TLSv1.0
         self.hello_version = 0x0301
-        # RSA_WITH_RC4_128_SHA
-        self.cipher_suite = 0x2f
+        self.cipher_suite = tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA
         # NULL
         self.comp_method = 0x0
         self.client_hello = tls.TLSRecord(version=self.record_version) / tls.TLSHandshake() / tls.TLSClientHello(
@@ -617,6 +616,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         def pre_encrypt(crypto_container):
             crypto_container.mac = b""
             crypto_container.padding = b""
+            crypto_container.padding_len = b""
             return crypto_container
 
         # Return cleartext
@@ -640,7 +640,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_format_of_tls_finished_is_as_specified_in_rfc(self):
         def encrypt(crypto_container):
-            self.assertEqual(crypto_container.data, "\x14\x00\x00\x0c%s" % self.tls_ctx.get_verify_data())
+            self.assertEqual(crypto_container.crypto_data.data, "\x14\x00\x00\x0c%s" % self.tls_ctx.get_verify_data())
             self.assertEqual(len(crypto_container.mac), SHA.digest_size)
             self.assertEqual(len(crypto_container.padding), 11)
             self.assertTrue(all(map(lambda x: True if x == chr(11) else False, crypto_container.padding)))
