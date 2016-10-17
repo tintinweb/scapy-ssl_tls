@@ -16,8 +16,6 @@ from Crypto.Hash import HMAC, MD5, SHA, SHA256
 from Crypto.Cipher import AES, DES3, PKCS1_v1_5
 from Crypto.PublicKey import RSA
 
-import ssl_tls_crypto
-
 
 def env_local_file(file):
     return os.path.join(os.path.dirname(__file__), "files", file)
