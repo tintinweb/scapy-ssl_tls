@@ -717,7 +717,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
                         data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
                     data = raw_bytes
-            elif self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.GCM:
+            elif self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.AEAD:
                 self.explicit_iv = raw_bytes[:self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE]
                 self.mac = raw_bytes[-self.tls_ctx.sec_params.GCM_TAG_SIZE:]
                 data = raw_bytes[self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE:-self.tls_ctx.sec_params.GCM_TAG_SIZE]
