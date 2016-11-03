@@ -251,7 +251,7 @@ class TLSInfo(object):
                     for cert in certlist.certificates:
                         keystore = tlsk.RSAKeystore.from_der_certificate(str(cert.data))
                         pubkey = keystore.public
-                        pubkey_size = pubkey.size() + 1
+                        pubkey_size = pubkey.size_in_bits()
                         if pubkey_size < 2048:
                             events.append(
                                 ("INSUFFICIENT SERVER CERT PUBKEY SIZE - 2048 >= %d bits" %
