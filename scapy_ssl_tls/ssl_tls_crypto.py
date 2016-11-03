@@ -76,11 +76,10 @@ class TLSContext(object):
         self.name = name
         self.handshake = None
         self.sequence = 0
+        self.nonce = 0
         self.random = None
         self.session_id = None
-        self.enc = None
-        self.dec = None
-        self.hmac = None
+        self.crypto_ctx = None
         self.compression = None
         self.asym_keystore = tlsk.EmptyAsymKeystore()
         self.kex_keystore = tlsk.EmptyKexKeystore()
@@ -206,7 +205,6 @@ TLS Session Context:
             warnings.warn("Compression method 0x%02x not supported. Compression operations will fail" %
                           self.negotiated.compression)
 
-        self.prf = TLSPRF(self.negotiated.version)
         try:
             self.negotiated.key_exchange = \
                 TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["key_exchange"]["name"]
@@ -219,14 +217,14 @@ TLS Session Context:
             self.negotiated.mac = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["hash"]["name"]
         except KeyError:
             warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % self.negotiated.ciphersuite)
+        self.prf = TLSPRF(self.negotiated.version,
+                          TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite].get("prf", {}).get("type"))
         if self.negotiated.resumption:
-            self.prf = TLSPRF(self.negotiated.version)
             self.sec_params = TLSSecurityParameters.from_master_secret(self.prf,
                                                                        self.negotiated.ciphersuite,
                                                                        self.master_secret,
                                                                        self.client_ctx.random,
-                                                                       self.server_ctx.random,
-                                                                       self.requires_iv)
+                                                                       self.server_ctx.random)
             self.__generate_secrets()
 
     def __handle_cert_list(self, cert_list):
@@ -317,7 +315,7 @@ TLS Session Context:
             warnings.warn("Unknown client key exchange")
         self.sec_params = TLSSecurityParameters.from_pre_master_secret(self.prf, self.negotiated.ciphersuite,
                                                                        self.premaster_secret, self.client_ctx.random,
-                                                                       self.server_ctx.random, self.requires_iv)
+                                                                       self.server_ctx.random)
         self.__generate_secrets()
 
     def __generate_secrets(self):
@@ -327,12 +325,10 @@ TLS Session Context:
             self.server_ctx.sym_keystore = self.sec_params.server_keystore
         self.master_secret = self.sec_params.master_secret
         # Retrieve ciphers used for client/server encryption and decryption
-        self.client_ctx.enc = self.sec_params.get_client_enc_cipher()
-        self.client_ctx.dec = self.sec_params.get_client_dec_cipher()
-        self.client_ctx.hmac = self.sec_params.get_client_hmac()
-        self.server_ctx.enc = self.sec_params.get_server_enc_cipher()
-        self.server_ctx.dec = self.sec_params.get_server_dec_cipher()
-        self.server_ctx.hmac = self.sec_params.get_server_hmac()
+        # TODO: use factory to assign CryptoContext
+        factory = CryptoContextFactory(self)
+        self.client_ctx.crypto_ctx = factory.new(self.client_ctx)
+        self.server_ctx.crypto_ctx = factory.new(self.server_ctx)
 
     def _process(self, pkt):
         """
@@ -431,7 +427,7 @@ TLS Session Context:
 
         if self.negotiated.version == tls.TLSVersion.TLS_1_2:
             prf_verify_data = self.prf.get_bytes(self.master_secret, label,
-                                                 SHA256.new("".join(verify_data)).digest(),
+                                                 self.prf.digest.new("".join(verify_data)).digest(),
                                                  num_bytes=12)
         else:
             prf_verify_data = self.prf.get_bytes(self.master_secret, label,
@@ -472,14 +468,21 @@ class TLSPRF(object):
     TLS_MD_IV_BLOCK_CONST = "IV block"
     TLS_MD_MASTER_SECRET_CONST = "master secret"
 
-    def __init__(self, tls_version):
+    def __init__(self, tls_version, digest=None):
         if tls_version not in tls.TLS_VERSIONS.keys():
             raise ValueError("Unknown TLS version: %d" % tls_version)
         self.tls_version = tls_version
+        if self.tls_version < tls.TLSVersion.TLS_1_2 and digest is not None:
+            raise ValueError("PRF digest can be set only for TLS versions 1.2 and above")
+        else:
+            if digest is None:
+                self.digest = SHA256
+            else:
+                self.digest = digest
 
     def get_bytes(self, key, label, random, num_bytes):
-        if self.tls_version == tls.TLSVersion.TLS_1_2:
-            bytes_ = self._get_bytes(SHA256, key, label, random, num_bytes)
+        if self.tls_version >= tls.TLSVersion.TLS_1_2:
+            bytes_ = self._get_bytes(self.digest, key, label, random, num_bytes)
         else:
             key_len = (len(key) + 1) // 2
             key_left = key[:key_len]
@@ -505,69 +508,309 @@ class TLSPRF(object):
         return bytes_[:num_bytes]
 
 
-class CryptoContainer(object):
-
-    def __init__(self, tls_ctx, data="", content_type=tls.TLSContentType.APPLICATION_DATA):
-        if tls_ctx is None:
-            raise ValueError("Valid TLS session context required")
-        self.tls_ctx = tls_ctx
-        is_cbc = self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] != None
-        if self.tls_ctx.negotiated.version > tls.TLSVersion.TLS_1_0 and is_cbc:
-            self.explicit_iv = os.urandom(self.tls_ctx.server_ctx.sym_keystore.iv_size // 8)
-        else:
-            self.explicit_iv = ""
+class CryptoData(object):
+    def __init__(self, data, sequence, version, content_type=tls.TLSContentType.APPLICATION_DATA,
+                 data_len=None):
         self.data = data
-        self.version = tls_ctx.negotiated.version
+        self.sequence = sequence
+        self.version = version
         self.content_type = content_type
-        self.pkcs7 = pkcs7.PKCS7Encoder()
-        if self.tls_ctx.client:
-            # TODO: Needs concurrent safety if this ever goes concurrent
-            self.hmac_handler = tls_ctx.client_ctx.hmac
-            self.enc_cipher = tls_ctx.client_ctx.enc
-            self.seq_number = tls_ctx.client_ctx.sequence
-            self.tls_ctx.client_ctx.sequence += 1
-        else:
-            self.hmac_handler = tls_ctx.server_ctx.hmac
-            self.enc_cipher = tls_ctx.server_ctx.enc
-            self.seq_number = tls_ctx.server_ctx.sequence
-            self.tls_ctx.server_ctx.sequence += 1
-        # CBC mode
-        self.hmac()
-        if is_cbc:
-            self.pad()
-        # No padding otherwise
-        else:
-            self.padding = ""
+        self.data_len = data_len or len(data)
 
-    def hmac(self, seq=None, version=None, data_len=None):
-        # Grab a copy of the initialized HMAC handler
-        hmac = self.hmac_handler.copy()
-        seq_ = struct.pack("!Q", seq or self.seq_number)
-        content_type_ = struct.pack("!B", self.content_type)
-        version_ = struct.pack("!H", version or self.version)
-        len_ = struct.pack("!H", data_len or len(self.data))
-        hmac.update("%s%s%s%s%s" % (seq_, content_type_, version_, len_, self.data))
-        self.mac = hmac.digest()
-
-    def pad(self):
-        # "\xff" is a dummy trailing byte, to increase the length of imput
-        # data by one byte. Any byte could do. This is to account for the
-        # trailing padding_length byte in the RFC
-        self.padding = self.pkcs7.get_padding("%s%s\xff" % (self.data, self.mac))
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, data=b""):
+        return cls(data, ctx.sequence, tls_ctx.negotiated.version)
 
     def __str__(self):
-        if len(self.padding) != 0:
-            return "%s%s%s%s%s" % (self.explicit_iv, self.data, self.mac, self.padding, chr(len(self.padding)))
+        template = """Crypto data:
+            data: {data},
+            len: {len}
+            sequence: {seq}
+            version: {ver}
+            content type: {ct}"""
+        return template.format(data=repr(self.data), len=self.data_len, seq=self.sequence, ver=self.version,
+                               ct=self.content_type)
+
+
+class CipherMode(object):
+    NULL = "NULL"
+    STREAM = "STREAM"
+    CBC = "CBC"
+    AEAD = "GCM"
+
+
+class CryptoContext(object):
+    def __init__(self, tls_ctx, ctx, mode):
+        self.tls_ctx = tls_ctx
+        self.sec_params = self.tls_ctx.sec_params
+        self.ctx = ctx
+        self.mode = mode
+
+    def encrypt_data(self, data):
+        raise NotImplementedError()
+
+    def encrypt(self, crypto_container):
+        raise NotImplementedError()
+
+    def decrypt(self, ciphertext):
+        # TODO: Return a crypto_container
+        raise NotImplementedError()
+
+
+class StreamCryptoContext(CryptoContext):
+    def __init__(self, tls_ctx, ctx):
+        super(StreamCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.STREAM)
+        self.__init_ciphers()
+
+    def __init_ciphers(self):
+        self.enc_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key)
+        self.dec_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key)
+
+    def encrypt_data(self, data):
+        crypto_data = CryptoData.from_context(self.tls_ctx, self.ctx, data)
+        crypto_container = StreamCryptoContainer.from_context(self.tls_ctx, self.ctx, crypto_data)
+        return self.encrypt(crypto_container)
+
+    def encrypt(self, crypto_container):
+        ciphertext = self.enc_cipher.encrypt(str(crypto_container))
+        self.ctx.sequence += 1
+        return ciphertext
+
+    def decrypt(self, ciphertext, content_type=tls.TLSContentType.APPLICATION_DATA):
+        cleartext = self.dec_cipher.decrypt(ciphertext)
+        self.ctx.sequence += 1
+        return cleartext
+
+
+class CBCCryptoContext(CryptoContext):
+    def __init__(self, tls_ctx, ctx):
+        super(CBCCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.CBC)
+        self.explicit_iv = b""
+        if self.tls_ctx.requires_iv:
+            self.ctx.sym_keystore.iv = b"\x00" * self.sec_params.block_size
         else:
-            return "%s%s%s" % (self.data, self.mac, self.padding)
+            self.__init_ciphers()
+
+    def __init_ciphers(self):
+        self.enc_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          IV=self.ctx.sym_keystore.iv)
+        self.dec_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          IV=self.ctx.sym_keystore.iv)
+
+    def encrypt_data(self, data):
+        crypto_data = CryptoData.from_context(self.tls_ctx, self.ctx, data)
+        crypto_container = CBCCryptoContainer.from_context(self.tls_ctx, self.ctx, crypto_data)
+        return self.encrypt(crypto_container)
+
+    def encrypt(self, crypto_container):
+        if self.tls_ctx.requires_iv:
+            self.__init_ciphers()
+        ciphertext = self.enc_cipher.encrypt(str(crypto_container))
+        self.ctx.sequence += 1
+        return ciphertext
+
+    def decrypt(self, ciphertext, content_type=tls.TLSContentType.APPLICATION_DATA):
+        if self.tls_ctx.requires_iv:
+            self.__init_ciphers()
+        cleartext = self.dec_cipher.decrypt(ciphertext)
+        self.ctx.sequence += 1
+        return cleartext
+
+
+class GCMCryptoContext(CryptoContext):
+    def __init__(self, tls_ctx, ctx):
+        super(GCMCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.AEAD)
+        # Tag size is hardcoded to 128 bits in GCM for TLS
+        self.tag_size = self.tls_ctx.sec_params.GCM_TAG_SIZE = 16
+        self.explicit_iv_size = self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE = 8
+
+    def __init_ciphers(self, nonce):
+        self.enc_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          nonce=nonce)
+        self.dec_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          nonce=nonce)
+
+    def get_nonce(self, nonce=None):
+        if nonce is None:
+            nonce = struct.pack("!Q", self.ctx.nonce)
+        return b"%s%s" % (self.ctx.sym_keystore.iv, nonce)
+
+    def encrypt_data(self, data):
+        crypto_container = GCMCryptoContainer.from_data(self.tls_ctx, self.ctx, data)
+        return self.encrypt(crypto_container)
+
+    def encrypt(self, crypto_container):
+        self.__init_ciphers(self.get_nonce())
+        self.enc_cipher.update(crypto_container.aead)
+        ciphertext, mac = self.enc_cipher.encrypt_and_digest(str(crypto_container))
+        bytes_ = "%s%s%s" % (struct.pack("!Q", self.ctx.nonce), ciphertext, mac)
+        self.ctx.nonce += 1
+        self.ctx.sequence += 1
+        return bytes_
+
+    def decrypt(self, ciphertext, content_type=tls.TLSContentType.APPLICATION_DATA):
+        explicit_nonce = ciphertext[:self.explicit_iv_size]
+        ciphertext, tag = ciphertext[self.explicit_iv_size:-self.tag_size], ciphertext[-self.tag_size:]
+        # Create an empty Crypto container to retrieve AEAD data based on length of cleartext
+        crypto_data = CryptoData.from_context(self.tls_ctx, self.ctx, "\x00" * len(ciphertext))
+        crypto_data.content_type = content_type
+        crypto_container = GCMCryptoContainer.from_context(self.tls_ctx, self.ctx, crypto_data)
+        self.__init_ciphers(self.get_nonce(explicit_nonce))
+        self.dec_cipher.update(crypto_container.aead)
+        cleartext = self.dec_cipher.decrypt(ciphertext)
+        try:
+            self.dec_cipher.verify(tag)
+        except ValueError as why:
+            warnings.warn("Verification of GCM tag failed: %s" % why)
+        self.ctx.nonce = struct.unpack("!Q", explicit_nonce)[0]
+        self.ctx.sequence += 1
+        return "%s%s%s" % (explicit_nonce, cleartext, tag)
+
+
+class CryptoContextFactory(object):
+    crypto_context_map = {CipherMode.STREAM: StreamCryptoContext,
+                          CipherMode.CBC: CBCCryptoContext,
+                          CipherMode.AEAD: GCMCryptoContext}
+
+    def __init__(self, tls_ctx):
+        self.tls_ctx = tls_ctx
+        self.sec_params = self.tls_ctx.sec_params
+        self.cipher_mode = self.sec_params.cipher_mode_name
+
+    def new(self, ctx):
+        try:
+            class_ = CryptoContextFactory.crypto_context_map[self.cipher_mode]
+        except KeyError:
+            raise ValueError("Unavailable cipher mode: %s" % self.cipher_mode)
+        return class_(self.tls_ctx, ctx)
+
+
+class CryptoContainer(object):
+    def __init__(self, crypto_data, digest):
+        self.crypto_data = crypto_data
+        self.digest = digest
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        raise NotImplementedError()
 
     def __len__(self):
         return len(str(self))
 
-    def encrypt(self, data=None):
-        """ If data is passed in, caller is responsible for block alignment
-        """
-        return self.enc_cipher.encrypt(data or str(self))
+
+class StreamCryptoContainer(CryptoContainer):
+    def __init__(self, crypto_data, digest):
+        super(StreamCryptoContainer, self).__init__(crypto_data, digest)
+        self.mac = b""
+        self.__mac()
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        mac = HMAC.new(ctx.sym_keystore.hmac, digestmod=tls_ctx.sec_params.hash_type)
+        return cls(crypto_data, mac)
+
+    @classmethod
+    def from_data(cls, tls_ctx, ctx, data):
+        crypto_data = CryptoData.from_context(tls_ctx, ctx, data)
+        return StreamCryptoContainer.from_context(tls_ctx, ctx, crypto_data)
+
+    def __mac(self):
+        sequence_ = struct.pack("!Q", self.crypto_data.sequence)
+        content_type_ = struct.pack("!B", self.crypto_data.content_type)
+        version_ = struct.pack("!H", self.crypto_data.version)
+        len_ = struct.pack("!H", self.crypto_data.data_len)
+        self.digest.update("%s%s%s%s%s" % (sequence_, content_type_, version_, len_, self.crypto_data.data))
+        self.mac = self.digest.digest()
+
+    def __str__(self):
+        return "%s%s" % (self.crypto_data.data, self.mac)
+
+
+class CBCCryptoContainer(CryptoContainer):
+    def __init__(self, crypto_data, digest, explicit_iv=b""):
+        super(CBCCryptoContainer, self).__init__(crypto_data, digest)
+        self.explicit_iv = explicit_iv
+        self.mac = b""
+        self.padding = b""
+        self.pkcs7 = pkcs7.PKCS7Encoder()
+        # CBC mode
+        self.__mac()
+        self.__pad()
+        self.padding_len = chr(len(self.padding))
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        explicit_iv = b""
+        if tls_ctx.requires_iv:
+            explicit_iv = os.urandom(tls_ctx.sec_params.block_size)
+        mac = HMAC.new(ctx.sym_keystore.hmac, digestmod=tls_ctx.sec_params.hash_type)
+        return cls(crypto_data, mac, explicit_iv)
+
+    @classmethod
+    def from_data(cls, tls_ctx, ctx, data):
+        crypto_data = CryptoData.from_context(tls_ctx, ctx, data)
+        return CBCCryptoContainer.from_context(tls_ctx, ctx, crypto_data)
+
+    def __mac(self):
+        sequence_ = struct.pack("!Q", self.crypto_data.sequence)
+        content_type_ = struct.pack("!B", self.crypto_data.content_type)
+        version_ = struct.pack("!H", self.crypto_data.version)
+        len_ = struct.pack("!H", self.crypto_data.data_len)
+        self.digest.update("%s%s%s%s%s" % (sequence_, content_type_, version_, len_, self.crypto_data.data))
+        self.mac = self.digest.digest()
+
+    def __pad(self):
+        # "\xff" is a dummy trailing byte, to increase the length of imput
+        # data by one byte. Any byte could do. This is to account for the
+        # trailing padding_length byte in the RFC
+        self.padding = self.pkcs7.get_padding("%s%s\xff" % (self.crypto_data.data, self.mac))
+
+    def __str__(self):
+        return "%s%s%s%s%s" % (self.explicit_iv, self.crypto_data.data, self.mac, self.padding, self.padding_len)
+
+
+class GCMCryptoContainer(CryptoContainer):
+    def __init__(self, crypto_data):
+        super(GCMCryptoContainer, self).__init__(crypto_data, None)
+        self.aead = b""
+        self.__aead()
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        return cls(crypto_data)
+
+    @classmethod
+    def from_data(cls, tls_ctx, ctx, data):
+        crypto_data = CryptoData.from_context(tls_ctx, ctx, data)
+        return GCMCryptoContainer.from_context(tls_ctx, ctx, crypto_data)
+
+    def __aead(self):
+        sequence_ = struct.pack("!Q", self.crypto_data.sequence)
+        content_type_ = struct.pack("!B", self.crypto_data.content_type)
+        version_ = struct.pack("!H", self.crypto_data.version)
+        len_ = struct.pack("!H", self.crypto_data.data_len)
+        self.aead = "%s%s%s%s" % (sequence_, content_type_, version_, len_)
+
+    def __str__(self):
+        return self.crypto_data.data
+
+
+class CryptoContainerFactory(object):
+    crypto_container_map = {CipherMode.STREAM: StreamCryptoContainer,
+                            CipherMode.CBC: CBCCryptoContainer,
+                            CipherMode.AEAD: GCMCryptoContainer}
+
+    def __init__(self, tls_ctx):
+        self.tls_ctx = tls_ctx
+        self.sec_params = self.tls_ctx.sec_params
+        self.cipher_mode = self.sec_params.cipher_mode_name
+
+    def new(self, ctx, crypto_data):
+        try:
+            class_ = CryptoContainerFactory.crypto_container_map[self.cipher_mode]
+        except KeyError:
+            raise ValueError("Unavailable cipher mode: %s" % self.cipher_mode)
+        return class_.from_context(self.tls_ctx, ctx, crypto_data)
 
 
 class NullCipher(object):
@@ -594,7 +837,7 @@ class NullHash(object):
     """ Implements a pycrypto like interface for the Null Hash
     """
 
-    blocksize = 0
+    block_size = 0
     digest_size = 0
 
     def __init__(self, *args, **kwargs):
@@ -634,72 +877,284 @@ class ECDSA(object):
 
 
 class TLSSecurityParameters(object):
+    GCM_TAG_SIZE = 16
+    GCM_EXPLICIT_IV_SIZE = 8
 
     crypto_params = {
-        tls.TLSCipherSuite.NULL_WITH_NULL_NULL: {"name": tls.TLS_CIPHER_SUITES[0x0000], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": NullCipher, "name": "Null", "key_len": 0, "mode": None, "mode_name": ""}, "hash": {"type": NullHash, "name": "Null"}},
-        tls.TLSCipherSuite.RSA_WITH_NULL_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0001], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": NullCipher, "name": "Null", "key_len": 0, "mode": None, "mode_name": ""}, "hash": {"type": MD5, "name": "MD5"}},
-        tls.TLSCipherSuite.RSA_WITH_NULL_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0002], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": NullCipher, "name": "Null", "key_len": 0, "mode": None, "mode_name": ""}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_EXPORT_WITH_RC4_40_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0003], "export": True, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 5, "mode": None, "mode_name": "Stream"}, "hash": {"type": MD5, "name": "MD5"}},
-        tls.TLSCipherSuite.RSA_WITH_RC4_128_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0004], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": "Stream"}, "hash": {"type": MD5, "name": "MD5"}},
-        tls.TLSCipherSuite.RSA_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0005], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": "Stream"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_EXPORT_WITH_RC2_CBC_40_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0006], "export": True, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": ARC2, "name": "RC2", "key_len": 5, "mode": ARC2.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": MD5, "name": "MD5"}},
+        tls.TLSCipherSuite.NULL_WITH_NULL_NULL: {"name": tls.TLS_CIPHER_SUITES[0x0000], "export": False,
+                                                 "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                 "cipher": {"type": NullCipher, "name": "NULL", "key_len": 0, "mode": None, "mode_name": CipherMode.STREAM},
+                                                 "hash": {"type": NullHash, "name": "NULL"}},
+        tls.TLSCipherSuite.RSA_WITH_NULL_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0001], "export": False,
+                                               "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                               "cipher": {"type": NullCipher, "name": "NULL", "key_len": 0, "mode": None, "mode_name": CipherMode.STREAM},
+                                               "hash": {"type": MD5, "name": "MD5"}},
+        tls.TLSCipherSuite.RSA_WITH_NULL_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0002], "export": False,
+                                               "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                               "cipher": {"type": NullCipher, "name": "NULL", "key_len": 0, "mode": None, "mode_name": CipherMode.STREAM},
+                                               "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_EXPORT_WITH_RC4_40_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0003], "export": True,
+                                                        "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                        "cipher": {"type": ARC4, "name": "RC4", "key_len": 5, "mode": None, "mode_name": CipherMode.STREAM},
+                                                        "hash": {"type": MD5, "name": "MD5"}},
+        tls.TLSCipherSuite.RSA_WITH_RC4_128_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0004], "export": False,
+                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                  "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": CipherMode.STREAM},
+                                                  "hash": {"type": MD5, "name": "MD5"}},
+        tls.TLSCipherSuite.RSA_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0005], "export": False,
+                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                  "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": CipherMode.STREAM},
+                                                  "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_EXPORT_WITH_RC2_CBC_40_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0006], "export": True,
+                                                            "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                            "cipher": {"type": ARC2, "name": "RC2", "key_len": 5, "mode": ARC2.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                            "hash": {"type": MD5, "name": "MD5"}},
         # 0x0007: RSA_WITH_IDEA_CBC_SHA => IDEA support would require python openssl bindings
-        tls.TLSCipherSuite.RSA_EXPORT_WITH_DES40_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0008], "export": True, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": DES, "name": "DES", "key_len": 5, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0009], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x000a], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": DES3, "name": "DES3", "key_len": 24, "mode": DES3.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x002f], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0035], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_WITH_NULL_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x003b], "export": False, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": NullCipher, "name": "Null", "key_len": 0, "mode": None, "mode_name": ""}, "hash": {"type": SHA256, "name": "SHA256"}},
-        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0060], "export": True, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 8, "mode": None, "mode_name": "Stream"}, "hash": {"type": MD5, "name": "MD5"}},
-        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC2_CBC_56_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0061], "export": True, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": ARC2, "name": "RC2", "key_len": 8, "mode": ARC2.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": MD5, "name": "MD5"}},
-        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0062], "export": True, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0064], "export": True, "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 8, "mode": None, "mode_name": "Stream"}, "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_EXPORT_WITH_DES40_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0008], "export": True,
+                                                           "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                           "cipher": {"type": DES, "name": "DES", "key_len": 5, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                           "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0009], "export": False,
+                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                  "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                  "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x000a], "export": False,
+                                                       "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                       "cipher": {"type": DES3, "name": "DES3", "key_len": 24, "mode": DES3.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                       "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x002f], "export": False,
+                                                      "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                      "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0035], "export": False,
+                                                      "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                      "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_WITH_NULL_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x003b], "export": False,
+                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                  "cipher": {"type": NullCipher, "name": "NULL", "key_len": 0, "mode": None, "mode_name": CipherMode.STREAM},
+                                                  "hash": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0060], "export": True,
+                                                            "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                            "cipher": {"type": ARC4, "name": "RC4", "key_len": 8, "mode": None, "mode_name": CipherMode.STREAM},
+                                                            "hash": {"type": MD5, "name": "MD5"}},
+        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC2_CBC_56_MD5: {"name": tls.TLS_CIPHER_SUITES[0x0061], "export": True,
+                                                                "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                                "cipher": {"type": ARC2, "name": "RC2", "key_len": 8, "mode": ARC2.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                                "hash": {"type": MD5, "name": "MD5"}},
+        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0062], "export": True,
+                                                             "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                             "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                             "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.RSA_EXPORT1024_WITH_RC4_56_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0064], "export": True,
+                                                            "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": None},
+                                                            "cipher": {"type": ARC4, "name": "RC4", "key_len": 8, "mode": None, "mode_name": CipherMode.STREAM},
+                                                            "hash": {"type": SHA, "name": "SHA"}},
         # 0x0084: RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
-        tls.TLSCipherSuite.DHE_DSS_EXPORT_WITH_DES40_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0011], "export": True, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": DES, "name": "DES", "key_len": 5, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_DSS_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0012], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_DSS_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0013], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": DES3, "name": "DES3", "key_len": 24, "mode": DES3.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_RSA_EXPORT_WITH_DES40_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0014], "export": True, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA}, "cipher": {"type": DES, "name": "DES", "key_len": 5, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_RSA_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0015], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA}, "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_RSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0016], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA}, "cipher": {"type": DES3, "name": "DES3", "key_len": 24, "mode": DES3.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0032], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0033], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_DSS_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0038], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0039], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0063], "export": True, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_RC4_56_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0065], "export": True, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 8, "mode": None, "mode_name": "Stream"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.DHE_DSS_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0066], "export": False, "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": "Stream"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_NULL_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc006], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": NullCipher, "name": "Null", "key_len": 0, "mode": None, "mode_name": ""}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc007], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": "Stream"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc008], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": DES3, "name": "DES3", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc009], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc00a], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_NULL_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc010], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": NullCipher, "name": "Null", "key_len": 0, "mode": None, "mode_name": ""}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc011], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": "Stream"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc012], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": DES3, "name": "DES3", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc013], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc014], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA, "name": "SHA"}},
-        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc023], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA256, "name": "SHA256"}},
-        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc024], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA}, "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA384, "name": "SHA384"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc027], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA256, "name": "SHA256"}},
-        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc028], "export": False, "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA}, "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": "CBC"}, "hash": {"type": SHA384, "name": "SHA384"}},
-
+        tls.TLSCipherSuite.DHE_DSS_EXPORT_WITH_DES40_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0011], "export": True,
+                                                               "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                               "cipher": {"type": DES, "name": "DES", "key_len": 5, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                               "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_DSS_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0012], "export": False,
+                                                      "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                      "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                      "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_DSS_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0013], "export": False,
+                                                           "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                           "cipher": {"type": DES3, "name": "DES3", "key_len": 24, "mode": DES3.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                           "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_RSA_EXPORT_WITH_DES40_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0014], "export": True,
+                                                               "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                               "cipher": {"type": DES, "name": "DES", "key_len": 5, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                               "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0015], "export": False,
+                                                      "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                      "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                      "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0016], "export": False,
+                                                           "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                           "cipher": {"type": DES3, "name": "DES3", "key_len": 24, "mode": DES3.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                           "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0032], "export": False,
+                                                          "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                          "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                          "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0033], "export": False,
+                                                          "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                          "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                          "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_DSS_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0038], "export": False,
+                                                          "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                          "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                          "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0039], "export": False,
+                                                          "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                          "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                          "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0063], "export": True,
+                                                                 "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                                 "cipher": {"type": DES, "name": "DES", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                                 "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_DSS_EXPORT1024_WITH_RC4_56_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0065], "export": True,
+                                                                "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                                "cipher": {"type": ARC4, "name": "RC4", "key_len": 8, "mode": None, "mode_name": CipherMode.STREAM},
+                                                                "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.DHE_DSS_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0x0066], "export": False,
+                                                      "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                      "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": CipherMode.STREAM},
+                                                      "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_NULL_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc006], "export": False,
+                                                       "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                       "cipher": {"type": NullCipher, "name": "NULL", "key_len": 0, "mode": None, "mode_name": CipherMode.STREAM},
+                                                       "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc007], "export": False,
+                                                          "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                          "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": CipherMode.STREAM},
+                                                          "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc008], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                               "cipher": {"type": DES3, "name": "DES3", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                               "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc009], "export": False,
+                                                              "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                              "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                              "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc00a], "export": False,
+                                                              "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                              "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                              "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_NULL_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc010], "export": False,
+                                                     "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                     "cipher": {"type": NullCipher, "name": "NULL", "key_len": 0, "mode": None, "mode_name": CipherMode.STREAM},
+                                                     "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_RC4_128_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc011], "export": False,
+                                                        "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                        "cipher": {"type": ARC4, "name": "RC4", "key_len": 16, "mode": None, "mode_name": CipherMode.STREAM},
+                                                        "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_3DES_EDE_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc012], "export": False,
+                                                             "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                             "cipher": {"type": DES3, "name": "DES3", "key_len": 8, "mode": DES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                             "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc013], "export": False,
+                                                            "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                            "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                            "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA: {"name": tls.TLS_CIPHER_SUITES[0xc014], "export": False,
+                                                            "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                            "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                            "hash": {"type": SHA, "name": "SHA"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CBC_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc023], "export": False,
+                                                                 "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                                 "hash": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CBC_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc024], "export": False,
+                                                                 "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                                 "hash": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc027], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                               "hash": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc028], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                               "hash": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x009c], "export": False,
+                                                                 "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
+                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                                 "hash": {"type": NullHash, "name": "NULL"},
+                                                                 "prf": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.RSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x009d], "export": False,
+                                                         "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
+                                                         "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                         "hash": {"type": NullHash, "name": "NULL"},
+                                                         "prf": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x009e], "export": False,
+                                                         "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                         "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                         "hash": {"type": NullHash, "name": "NULL"},
+                                                         "prf": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x009f], "export": False,
+                                                             "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                             "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                             "hash": {"type": NullHash, "name": "NULL"},
+                                                             "prf": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.DHE_DSS_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x00a2], "export": False,
+                                                             "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
+                                                             "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                             "hash": {"type": NullHash, "name": "NULL"},
+                                                             "prf": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.DHE_DSS_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x009e], "export": False,
+                                                             "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                             "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                             "hash": {"type": NullHash, "name": "NULL"},
+                                                             "prf": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc02b], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                               "hash": {"type": NullHash, "name": "NULL"},
+                                                               "prf": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc02c], "export": False,
+                                                                 "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                                 "hash": {"type": NullHash, "name": "NULL"},
+                                                                 "prf": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc02f], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                               "hash": {"type": NullHash, "name": "NULL"},
+                                                               "prf": {"type": SHA256, "name": "SHA256"}},
+        tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc030], "export": False,
+                                                               "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                               "hash": {"type": NullHash, "name": "NULL"},
+                                                               "prf": {"type": SHA384, "name": "SHA384"}},
+        tls.TLSCipherSuite.RSA_WITH_AES_128_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09c], "export": False,
+                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
+                                                  "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                  "hash": {"type": NullHash, "name": "NULL"}},
+        tls.TLSCipherSuite.RSA_WITH_AES_256_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09d], "export": False,
+                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
+                                                  "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                  "hash": {"type": NullHash, "name": "NULL"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_AES_128_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09e], "export": False,
+                                                      "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "hash": {"type": NullHash, "name": "NULL"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09f], "export": False,
+                                                      "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "hash": {"type": NullHash, "name": "NULL"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc0ac], "export": False,
+                                                      "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "hash": {"type": NullHash, "name": "NULL"}},
+        tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc0ad], "export": False,
+                                                      "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "hash": {"type": NullHash, "name": "NULL"}},
         # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
         # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
     }
-# Unsupported for now, until GCM/CCM and SRP are integrated
+# Unsupported for now, until CCM and SRP are integrated
 #         SRP_SHA_RSA_WITH_AES_256_CBC_SHA = 0xc021
 #         SRP_SHA_DSS_WITH_AES_256_CBC_SHA = 0xc022
 #         TLS_FALLBACK_SCSV = 0x5600
-#     0xc02b: "ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
-#     0xc02c: "ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-#     0xc02f: "ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-#     0xc030: "ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+# No support for 8 byte tags
 #     0xc0ac: "ECDHE_ECDSA_WITH_AES_128_CCM",
 #     0xc0ad: "ECDHE_ECDSA_WITH_AES_256_CCM",
 #     0xc0ae: "ECDHE_ECDSA_WITH_AES_128_CCM_8",
 #     0xc0af: "ECDHE_ECDSA_WITH_AES_256_CCM_8",
+#     0xc0a0: 'RSA_WITH_AES_128_CCM_8',
+#     0xc0a1: 'RSA_WITH_AES_256_CCM_8',
+#     0xc0a2: 'DHE_RSA_WITH_AES_128_CCM_8',
+#     0xc0a3: 'DHE_RSA_WITH_AES_256_CCM_8',
+#     0xc0ac: 'ECDHE_ECDSA_WITH_AES_128_CCM',
+#     0xc0ad: 'ECDHE_ECDSA_WITH_AES_256_CCM',
+#     0xc0ae: 'ECDHE_ECDSA_WITH_AES_128_CCM_8',
+#     0xc0af: 'ECDHE_ECDSA_WITH_AES_256_CCM_8',
 
-    def __init__(self, prf, cipher_suite, client_random, server_random, explicit_iv=False):
+    def __init__(self, prf, cipher_suite, client_random, server_random):
         try:
             self.negotiated_crypto_param = self.crypto_params[cipher_suite]
         except KeyError:
@@ -711,65 +1166,48 @@ class TLSSecurityParameters(object):
             if len(server_random) != 32:
                 raise ValueError("Server random must be 32 bytes")
             self.server_random = server_random
-            self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
-            self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
-            block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
-            # Stream ciphers have a block size of one, but IV should be 0
-            self.iv_length = 0 if block_size == 1 else block_size
-            self.explicit_iv = explicit_iv
+            self.block_size = self.negotiated_crypto_param["cipher"]["type"].block_size
+            self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
+            self.cipher_mode_name = self.negotiated_crypto_param["cipher"]["mode_name"]
+            self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
+            self.hash_type = self.negotiated_crypto_param["hash"]["type"]
             self.prf = prf
             self.pms = b""
             self.master_secret = b""
             self.client_keystore, self.server_keystore = [tlsk.EmptySymKeyStore()] * 2
+            self.__set_sec_param_sizes()
+
+    def __set_sec_param_sizes(self):
+        # Stream ciphers have a block size of one, but IV should be 0
+        if self.cipher_mode_name == CipherMode.AEAD:
+            self.mac_key_length = 0
+            self.iv_length = 4
+        elif self.cipher_mode_name == CipherMode.CBC:
+            self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
+            self.iv_length = self.block_size
+        elif self.cipher_mode_name == CipherMode.STREAM:
+            self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
+            self.iv_length = 0
+        else:
+            raise ValueError("Unknown cipher mode")
+        self.cipher_key_length = self.negotiated_crypto_param["cipher"]["key_len"]
 
     @classmethod
-    def from_pre_master_secret(cls, prf, cipher_suite, pms, client_random, server_random, explicit_iv=False):
-        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+    def from_pre_master_secret(cls, prf, cipher_suite, pms, client_random, server_random):
+        sec_params = cls(prf, cipher_suite, client_random, server_random)
         sec_params.pms = pms
         sec_params.generate_master_secret(pms, client_random, server_random)
-        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_crypto(client_random, server_random,
-                                                                                        explicit_iv)
+        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_keys(client_random, server_random)
         return sec_params
 
     @classmethod
-    def from_master_secret(cls, prf, cipher_suite, master_secret, client_random, server_random, explicit_iv=False):
-        sec_params = cls(prf, cipher_suite, client_random, server_random, explicit_iv)
+    def from_master_secret(cls, prf, cipher_suite, master_secret, client_random, server_random):
+        sec_params = cls(prf, cipher_suite, client_random, server_random)
         sec_params.master_secret = master_secret
-        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_crypto(client_random, server_random,
-                                                                                        explicit_iv)
+        sec_params.client_keystore, sec_params.server_keystore = sec_params.init_keys(client_random, server_random)
         return sec_params
 
-    def get_client_hmac(self):
-        return self.__client_hmac
-
-    def get_server_hmac(self):
-        return self.__server_hmac
-
-    def get_server_enc_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.server_keystore.key, mode=self.cipher_mode, IV=self.server_keystore.iv)
-        else:
-            return self.__server_enc_cipher
-
-    def get_server_dec_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.server_keystore.key, mode=self.cipher_mode, IV=self.server_keystore.iv)
-        else:
-            return self.__server_dec_cipher
-
-    def get_client_enc_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.client_keystore.key, mode=self.cipher_mode, IV=self.client_keystore.iv)
-        else:
-            return self.__client_enc_cipher
-
-    def get_client_dec_cipher(self):
-        if self.explicit_iv and self.cipher_mode is not None:
-            return self.cipher_type.new(self.client_keystore.key, mode=self.cipher_mode, IV=self.client_keystore.iv)
-        else:
-            return self.__client_dec_cipher
-
-    def __init_key_material(self, data, explicit_iv):
+    def __init_key_material(self, data):
         i = 0
         client_mac_key = data[i:i + self.mac_key_length]
         i += self.mac_key_length
@@ -779,14 +1217,10 @@ class TLSSecurityParameters(object):
         i += self.cipher_key_length
         server_key = data[i:i + self.cipher_key_length]
         i += self.cipher_key_length
-        if explicit_iv:
-            client_iv = "\x00" * self.iv_length
-            server_iv = "\x00" * self.iv_length
-        else:
-            client_iv = data[i:i + self.iv_length]
-            i += self.iv_length
-            server_iv = data[i:i + self.iv_length]
-            i += self.iv_length
+        client_iv = data[i:i + self.iv_length]
+        i += self.iv_length
+        server_iv = data[i:i + self.iv_length]
+        i += self.iv_length
         client_keystore = tlsk.CipherKeyStore(self.negotiated_crypto_param, client_key, client_mac_key,
                                               client_iv)
         server_keystore = tlsk.CipherKeyStore(self.negotiated_crypto_param, server_key, server_mac_key,
@@ -798,35 +1232,12 @@ class TLSSecurityParameters(object):
                                                 client_random + server_random, num_bytes=48)
         return self.master_secret
 
-    def init_crypto(self, client_random, server_random, explicit_iv, master_secret=None):
+    def init_keys(self, client_random, server_random, master_secret=None):
         if master_secret is None:
             master_secret = self.master_secret
         key_block = self.prf.get_bytes(master_secret, TLSPRF.TLS_MD_KEY_EXPANSION_CONST, server_random + client_random,
                                        num_bytes=2 * (self.mac_key_length + self.cipher_key_length + self.iv_length))
-        client_keystore, server_keystore = self.__init_key_material(key_block, explicit_iv)
-
-        self.cipher_mode = self.negotiated_crypto_param["cipher"]["mode"]
-        self.cipher_type = self.negotiated_crypto_param["cipher"]["type"]
-        self.hash_type = self.negotiated_crypto_param["hash"]["type"]
-        # Block ciphers
-        if self.cipher_mode is not None:
-            self.__client_enc_cipher = self.cipher_type.new(client_keystore.key, mode=self.cipher_mode,
-                                                            IV=client_keystore.iv)
-            self.__client_dec_cipher = self.cipher_type.new(client_keystore.key, mode=self.cipher_mode,
-                                                            IV=client_keystore.iv)
-            self.__server_enc_cipher = self.cipher_type.new(server_keystore.key, mode=self.cipher_mode,
-                                                            IV=server_keystore.iv)
-            self.__server_dec_cipher = self.cipher_type.new(server_keystore.key, mode=self.cipher_mode,
-                                                            IV=server_keystore.iv)
-        # Stream ciphers
-        else:
-            self.__client_enc_cipher = self.cipher_type.new(client_keystore.key)
-            self.__client_dec_cipher = self.cipher_type.new(client_keystore.key)
-            self.__server_enc_cipher = self.cipher_type.new(server_keystore.key)
-            self.__server_dec_cipher = self.cipher_type.new(server_keystore.key)
-        self.__client_hmac = HMAC.new(client_keystore.hmac, digestmod=self.hash_type)
-        self.__server_hmac = HMAC.new(server_keystore.hmac, digestmod=self.hash_type)
-        return client_keystore, server_keystore
+        return self.__init_key_material(key_block)
 
     def __str__(self):
         s = []

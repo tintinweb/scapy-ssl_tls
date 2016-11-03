@@ -110,7 +110,7 @@ def _post_install(dir_):
 
 
 def os_install_requires():
-    dependencies = ["scapy", "pycrypto", "tinyec"]
+    dependencies = ["scapy", "pycryptodome", "tinyec"]
     # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
     if platform.system() == "Darwin":
         dependencies.extend(("dnet", "pcapy"))
@@ -122,7 +122,7 @@ def read(fname):
 
 setup(
     name="scapy-ssl_tls",
-    version="1.2.4",
+    version="1.3.0",
     packages=["scapy_ssl_tls"],
     author="tintinweb",
     author_email="tintinweb@oststrom.com",
@@ -131,12 +131,12 @@ setup(
     license="GPLv2",
     keywords=["scapy", "ssl", "tls", "layer", "network", "dissect", "packets", "decrypt"],
     url="https://github.com/tintinweb/scapy-ssl_tls/",
-    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.2.4",
+    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.3.0",
     # generate rst from .md:  pandoc --from=markdown --to=rst README.md -o README.rst (fix diff section and footer)
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=os_install_requires(),
     test_suite="nose.collector",
-    tests_require=["nose", "scapy", "pycrypto", "tinyec"],
+    tests_require=["nose", "scapy", "pycryptodome", "tinyec"],
     # Change once virtualenv bug is fixed
     # data_files = get_layer_files_dst(sites=site.getsitepackages())
     data_files=get_layer_files_dst(get_site_packages()),

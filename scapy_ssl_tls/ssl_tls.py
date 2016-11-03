@@ -701,10 +701,11 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
     def pre_dissect(self, raw_bytes):
         data = raw_bytes
         if self.tls_ctx is not None:
+            import ssl_tls_crypto as tlsc
             hash_size = self.tls_ctx.sec_params.mac_key_length
             iv_size = self.tls_ctx.sec_params.iv_length
             # CBC mode
-            if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] is not None:
+            if self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.CBC:
                 try:
                     self.padding_len = ord(raw_bytes[-1])
                     self.padding = raw_bytes[-self.padding_len - 1:-1]
@@ -716,6 +717,10 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
                         data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
                     data = raw_bytes
+            elif self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.AEAD:
+                self.explicit_iv = raw_bytes[:self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE]
+                self.mac = raw_bytes[-self.tls_ctx.sec_params.GCM_TAG_SIZE:]
+                data = raw_bytes[self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE:-self.tls_ctx.sec_params.GCM_TAG_SIZE]
             else:
                 self.mac = raw_bytes[-hash_size:]
                 data = raw_bytes[:-hash_size]
@@ -976,7 +981,7 @@ class TLSSocket(object):
 
     def accept(self):
         client_socket, peer = self._s.accept()
-        return TLSSocket(client_socket, client=False, tls_ctx=copy.deepcopy(self.tls_ctx)), peer
+        return TLSSocket(client_socket, client=False, tls_ctx=copy.copy(self.tls_ctx)), peer
 
     def __enter__(self):
         return self
@@ -1070,9 +1075,11 @@ class SSL(Packet):
                 if encrypted_payload is not None:
                     try:
                         if self.tls_ctx.client:
-                            cleartext = self.tls_ctx.server_ctx.dec.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                                   record.content_type)
                         else:
-                            cleartext = self.tls_ctx.client_ctx.dec.decrypt(encrypted_payload)
+                            cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                                   record.content_type)
                         pkt = layer(cleartext, ctx=self.tls_ctx)
                         original_record = record
                         record[self.guessed_next_layer].payload = pkt
@@ -1100,7 +1107,9 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
 
     if tls_ctx is None:
         raise ValueError("A valid TLS session context must be provided")
-    comp_method = tls_ctx.server_ctx.compression
+
+    ctx = tls_ctx.client_ctx if tls_ctx.client else tls_ctx.server_ctx
+    comp_method = ctx.compression
 
     content_type, data = None, None
     for tls_proto, handler in cleartext_handler.iteritems():
@@ -1114,14 +1123,18 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
     else:
         post_compress_data = comp_method.compress(data)
 
-    crypto_container = tlsc.CryptoContainer(tls_ctx, post_compress_data, content_type)
+    factory = tlsc.CryptoContainerFactory(tls_ctx)
+    crypto_data = tlsc.CryptoData.from_context(tls_ctx, ctx, post_compress_data)
+    crypto_data.content_type = content_type
+    crypto_container = factory.new(ctx, crypto_data)
+
     if pre_encrypt_hook is not None:
         crypto_container = pre_encrypt_hook(crypto_container)
 
     if encrypt_hook is not None:
         ciphertext = encrypt_hook(crypto_container)
     else:
-        ciphertext = crypto_container.encrypt()
+        ciphertext = ctx.crypto_ctx.encrypt(crypto_container)
 
     if include_record:
         tls_ciphertext = TLSRecord(version=tls_ctx.negotiated.version, content_type=content_type) / ciphertext

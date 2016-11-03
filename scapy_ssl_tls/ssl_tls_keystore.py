@@ -237,6 +237,13 @@ class CipherKeyStore(SymKeyStore):
         self.hmac_size = len(self.hmac) * 8
         self.iv = iv
         self.iv_size = len(self.iv) * 8
+        prf = self.properties.get("prf")
+        if prf is not None:
+            self.prf_name = prf["name"]
+            self.prf_size = prf["type"].digest_size * 8
+        else:
+            self.prf_name = "DEFAULT"
+            self.prf_size = "DEFAULT"
         super(CipherKeyStore, self).__init__("%s Keystore" % self.properties["name"], key)
 
     def __str__(self):
@@ -249,8 +256,11 @@ class CipherKeyStore(SymKeyStore):
                 iv: {iv}
             {hmac_name} hmac:
                 key: {hmac_key}
-                size: {hmac_size}"""
+                size: {hmac_size}
+            {prf_name} prf:
+                size: {prf_size}"""
         return template.format(name=self.name, cipher_name=self.properties["cipher"]["name"],
                                mode=self.properties["cipher"]["mode_name"], key=repr(self.key), size=self.size,
                                block_size=self.block_size, iv=repr(self.iv), hmac_name=self.properties["hash"]["name"],
-                               hmac_key=repr(self.hmac), hmac_size=self.hmac_size)
+                               hmac_key=repr(self.hmac), hmac_size=self.hmac_size, prf_name=self.prf_name,
+                               prf_size=self.prf_size)
