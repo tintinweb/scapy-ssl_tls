@@ -28,8 +28,10 @@ def get_site_packages():
             site_packages.append(site_path)
     try:
         site_packages += _site.getsitepackages()
-    except AttributeError:
-        print("WARNING: Error trying to call site.getsitepackages(). This is probably virtualenv issue#355")
+    except AttributeError, ex:
+        print("WARNING: Error trying to call site.getsitepackages(). Exception: %r" % ex)
+        print("         Do you have sufficient permissions?") 
+        print("         Otherwise this could probably be virtualenv issue#355")
     return list(set(site_packages))
 
 
