@@ -17,10 +17,10 @@ import tinyec.ec as ec
 import tinyec.registry as ec_reg
 
 from collections import namedtuple
-from Crypto.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
-from Crypto.Hash import HMAC, MD5, SHA, SHA256, SHA384
-from Crypto.PublicKey import DSA, RSA
-from Crypto.Signature import PKCS1_v1_5 as Sig_PKCS1_v1_5
+from Cryptodome.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
+from Cryptodome.Hash import HMAC, MD5, SHA, SHA256, SHA384
+from Cryptodome.PublicKey import DSA, RSA
+from Cryptodome.Signature import PKCS1_v1_5 as Sig_PKCS1_v1_5
 
 
 """
@@ -285,7 +285,7 @@ TLS Session Context:
                 # I have no clue why pycrypto started failing after refactoring, missing this function
                 # Probably related to https://github.com/dlitz/pycrypto/issues/160
                 # TODO: workaround for now... Find root cause of pycrypto bug
-                from Crypto import Random
+                from Cryptodome import Random
                 private._randfunc = Random.new().read
                 # End workaround
                 self.premaster_secret = PKCS1_v1_5.new(private).decrypt(self.encrypted_premaster_secret, None)

@@ -9,9 +9,9 @@ import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
 import scapy_ssl_tls.ssl_tls_keystore as tlsk
 
-from Crypto.Cipher import AES, PKCS1_v1_5
-from Crypto.Hash import MD5, SHA
-from Crypto.PublicKey import RSA
+from Cryptodome.Cipher import AES, PKCS1_v1_5
+from Cryptodome.Hash import MD5, SHA
+from Cryptodome.PublicKey import RSA
 from scapy.all import conf, rdpcap, Raw
 from scapy.layers import x509
 from scapy.layers.inet import IP, TCP

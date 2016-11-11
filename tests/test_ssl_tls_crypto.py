@@ -12,9 +12,9 @@ import scapy_ssl_tls.ssl_tls as tls
 import scapy_ssl_tls.ssl_tls_crypto as tlsc
 import scapy_ssl_tls.ssl_tls_keystore as tlsk
 
-from Crypto.Hash import HMAC, MD5, SHA, SHA256, SHA384
-from Crypto.Cipher import AES, DES3, PKCS1_v1_5
-from Crypto.PublicKey import RSA
+from Cryptodome.Hash import HMAC, MD5, SHA, SHA256, SHA384
+from Cryptodome.Cipher import AES, DES3, PKCS1_v1_5
+from Cryptodome.PublicKey import RSA
 
 
 def env_local_file(file):

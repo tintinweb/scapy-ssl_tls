@@ -2,7 +2,7 @@
 
 import unittest
 
-from Crypto.PublicKey import RSA
+from Cryptodome.PublicKey import RSA
 import scapy_ssl_tls.ssl_tls_keystore as tlsk
 
 
