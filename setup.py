@@ -133,7 +133,7 @@ setup(
     license="GPLv2",
     keywords=["scapy", "ssl", "tls", "layer", "network", "dissect", "packets", "decrypt"],
     url="https://github.com/tintinweb/scapy-ssl_tls/",
-    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.2.3",
+    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.2.3.1",
     # generate rst from .md:  pandoc --from=markdown --to=rst README.md -o README.rst (fix diff section and footer)
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=os_install_requires(),
