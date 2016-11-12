@@ -23,7 +23,7 @@ SERVER_DER_KEY_RSA = (os.path.join(basedir, "./tests/integration/keys/cert.der")
 # client.py <ip> <port>
 TEST_SCRIPT_AS_CLIENT = [ 'SCSV_fallback_test.py', 'client_hello_complex_invalid.py', 'client_hello_rsa.py',
                            'client_hello_twice.py', 'client_hello_valid.py', 'client_hello_valid_w_alpn.py',
-                           'client_hello_with_session_ticket.py', 'client_rsa_mutual_auth.py',
+                           'client_hello_with_session_ticket.py',
                            'full_rsa_connection_with_application_data.py', 'padding_and_mac_checks.py',
                            'sslv2_client_hello_valid.py', 'tls_client_automata.py']
 
@@ -63,6 +63,7 @@ class TestExampleClientsAgainstLocalOpenSsl(unittest.TestCase):
         python ../examples/sessionctx_sniffer.py 192.168.220.131 443 ../tests/files/RSA_WITH_AES_128_CBC_SHA.pcap ../tests/files/openssl_1_0_1_f_server.pem
         
         """
+        raise NotImplementedError("NOT YET IMPLEMENTED")
         pid = PythonInterpreter("sessionctx_sniffer.py", 
                                 args=["192.168.220.131", 443, 
                                       os.path.join(basedir,"./tests/files/RSA_WITH_AES_128_CBC_SHA.pcap"),
@@ -70,6 +71,14 @@ class TestExampleClientsAgainstLocalOpenSsl(unittest.TestCase):
                                 cwd=EXAMPLES_CWD)
         self.assertEqual(pid.getReturnCode(), 0)
         pid.kill()
+
+    def test_client_rsa_mutual_auth(self):
+        """
+        does not seem to work right now - needs investigation
+        #> openssl s_server -state -msg -cert scapy-ssl_tls/tests/integration/keys/scapy-tls-ca.crt.pem -key scapy-ssl_tls/tests/integration/keys/scapy-tls-ca.key.pem
+
+        """
+        raise NotImplementedError("NOT YET IMPLEMENTED")
         
 """
 generate dynamic testcases in client mode

@@ -126,11 +126,15 @@ class OpenSslServer(PopenProcess):
     def __init__(self, target="openssl", args=()):
         self.bind = args[0]
         self.args = args[1:]
-        super(OpenSslServer, self).__init__(target=target, args=["s_server",
-                                                                 "-accept", "%d"%self.bind[1],
-                                                                 "-cert", self.args[0],
-                                                                 "-cipher", "ALL",
-                                                                 "-www"],)
+
+        args = ["s_server",
+                "-accept", "%d"%self.bind[1],
+                "-cert", self.args[0],
+                "-cipher", "ALL",
+                "-www"]
+        if len(self.args)>1:
+            args += ["-dcert",self.args[1]]
+        super(OpenSslServer, self).__init__(target=target, args=args)
         
 class OpenSslClient(PopenProcess):
     """

@@ -151,7 +151,7 @@ class Sniffer(object):
 
     def __init__(self):
         self.ssl_session_map = {}
-        self.exit_after_num_packets = None
+        self.exit_after_num_valid_packets = None
         self.valid_pkts = 0
 
     def _create_context(self, target, keyfile=None):

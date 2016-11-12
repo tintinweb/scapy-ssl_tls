@@ -66,7 +66,8 @@ class TestHandshakeWithData(unittest.TestCase):
         #self.tls_server = PythonTlsServer(args=(("127.0.0.1", 8443),
         #                                        os.path.join(basedir,"./tests/files/openssl_1_0_1_f_server.pem")))
         self.tls_server = OpenSslServer(args=(("127.0.0.1", 8443), 
-                                              os.path.join(basedir,"./tests/files/openssl_1_0_1_f_server.pem")))
+                                              os.path.join(basedir,"./tests/files/openssl_1_0_1_f_server.pem"),
+                                              os.path.join(basedir,"./tests/files/dsa_server.pem")))
         #self.tls_server = JavaTlsServer(args=(("127.0.0.1", 8443),))
         wait_for_server(self.tls_server.bind)
 
