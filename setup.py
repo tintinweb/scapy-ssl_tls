@@ -10,7 +10,7 @@ import sys
 from setuptools import setup
 from setuptools.command.install import install as _install
 import site as _site
-
+import pkg_resources
 
 def get_site_packages():
     """
@@ -126,6 +126,15 @@ def read(fname):
     data = fd.read()
     fd.close()
     return data
+
+#### setup main ####
+# warn user about the unmaintained state of pycrypto
+try:
+    pkg_resources.require("pycrypto")
+    print ("WARNING: Found PyCrypto to be installed in your environment.")
+    print ("         Please note that the PyCrypto project seems to be in an unmaintaned state with known security issues. Consider switching to other alternatives. Ref: https://github.com/tintinweb/scapy-ssl_tls/pull/82#issuecomment-260004605")
+except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict):
+    pass
 
 setup(
     name="scapy-ssl_tls",
