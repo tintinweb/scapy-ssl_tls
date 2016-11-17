@@ -7,7 +7,7 @@ import os
 import socket
 import sys
 
-from Crypto.Hash import SHA256
+from Cryptodome.Hash import SHA256
 
 basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 try:

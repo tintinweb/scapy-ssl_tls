@@ -4,8 +4,8 @@ import binascii
 import math
 import random
 
-from Crypto.PublicKey import RSA
-from Crypto.Util.asn1 import DerSequence
+from Cryptodome.PublicKey import RSA
+from Cryptodome.Util.asn1 import DerSequence
 from scapy.asn1.asn1 import ASN1_SEQUENCE
 import tinyec.ec as ec
 

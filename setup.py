@@ -10,7 +10,7 @@ import sys
 from setuptools import setup
 from setuptools.command.install import install as _install
 import site as _site
-
+import pkg_resources
 
 def get_site_packages():
     """
@@ -28,8 +28,10 @@ def get_site_packages():
             site_packages.append(site_path)
     try:
         site_packages += _site.getsitepackages()
-    except AttributeError:
-        print("WARNING: Error trying to call site.getsitepackages(). This is probably virtualenv issue#355")
+    except AttributeError, ex:
+        print("WARNING: Error trying to call site.getsitepackages(). Exception: %r" % ex)
+        print("         Do you have sufficient permissions?") 
+        print("         Otherwise this could probably be virtualenv issue#355")
     return list(set(site_packages))
 
 
@@ -110,7 +112,9 @@ def _post_install(dir_):
 
 
 def os_install_requires():
-    dependencies = ["scapy", "pycryptodome", "tinyec"]
+    # load dependencies from requirements.txt
+    dependencies = [l.strip() for l in read("requirements.txt").strip().split('\n') if l.strip()]
+    #dependencies = ["scapy>=2.2.0,<2.3.3", "pycrypto", "tinyec"]
     # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
     if platform.system() == "Darwin":
         dependencies.extend(("dnet", "pcapy"))
@@ -118,7 +122,19 @@ def os_install_requires():
 
 
 def read(fname):
-    return open(os.path.join(os.path.dirname(__file__), fname)).read()
+    fd = open(os.path.join(os.path.dirname(__file__), fname))
+    data = fd.read()
+    fd.close()
+    return data
+
+#### setup main ####
+# warn user about the unmaintained state of pycrypto
+try:
+    pkg_resources.require("pycrypto")
+    print ("WARNING: Found PyCrypto to be installed in your environment.")
+    print ("         Please note that the PyCrypto project seems to be in an unmaintaned state with known security issues. Consider switching to other alternatives. Ref: https://github.com/tintinweb/scapy-ssl_tls/pull/82#issuecomment-260004605")
+except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict):
+    pass
 
 setup(
     name="scapy-ssl_tls",
@@ -136,7 +152,7 @@ setup(
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=os_install_requires(),
     test_suite="nose.collector",
-    tests_require=["nose", "scapy", "pycryptodome", "tinyec"],
+    tests_require=["nose"] + os_install_requires(),
     # Change once virtualenv bug is fixed
     # data_files = get_layer_files_dst(sites=site.getsitepackages())
     data_files=get_layer_files_dst(get_site_packages()),
