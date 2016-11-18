@@ -79,6 +79,7 @@ class TLSContext(object):
         self.nonce = 0
         self.random = None
         self.session_id = None
+        self.verify_data = None
         self.crypto_ctx = None
         self.compression = None
         self.asym_keystore = tlsk.EmptyAsymKeystore()
@@ -105,10 +106,11 @@ class TLSContext(object):
     {name}:
         random: {random}
         session_id: {sess_id}
+        verify_data: {verify_data}
         {asym_ks}
         {kex_ks}
         {sym_ks}"""
-        return template.format(name=self.name, random=repr(self.random), sess_id=repr(self.session_id),
+        return template.format(name=self.name, random=repr(self.random), sess_id=repr(self.session_id), verify_data=repr(self.verify_data),
                                asym_ks=self.asym_keystore, kex_ks=self.kex_keystore, sym_ks=self.sym_keystore)
 
 
@@ -139,6 +141,7 @@ class TLSSessionCtx(object):
         self.premaster_secret = None
         self.master_secret = None
         self.prf = None
+        self.num_ccs = 0
 
     def __str__(self):
         template = """
@@ -249,30 +252,28 @@ TLS Session Context:
     def __handle_server_kex(self, server_kex):
         # DHE case
         if server_kex.haslayer(tls.TLSServerDHParams):
-            if isinstance(self.server_ctx.kex_keystore, tlsk.EmptyKexKeystore):
-                p = str_to_int(server_kex[tls.TLSServerDHParams].p)
-                g = str_to_int(server_kex[tls.TLSServerDHParams].g)
-                public = str_to_int(server_kex[tls.TLSServerDHParams].y_s)
-                self.server_ctx.kex_keystore = tlsk.DHKeyStore(g, p, public)
+            p = str_to_int(server_kex[tls.TLSServerDHParams].p)
+            g = str_to_int(server_kex[tls.TLSServerDHParams].g)
+            public = str_to_int(server_kex[tls.TLSServerDHParams].y_s)
+            self.server_ctx.kex_keystore = tlsk.DHKeyStore(g, p, public)
         elif server_kex.haslayer(tls.TLSServerECDHParams):
-            if isinstance(self.server_ctx.kex_keystore, tlsk.EmptyKexKeystore):
+            try:
+                curve_id = server_kex[tls.TLSServerECDHParams].curve_name
+                # TODO: DO NOT assume uncompressed EC points!
+                point = ansi_str_to_point(server_kex[tls.TLSServerECDHParams].p)
+                curve_name = tls.TLS_ELLIPTIC_CURVES[curve_id]
+            # Unknown curve case. Just record raw values, but do nothing with them
+            except KeyError:
+                self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
+                warnings.warn("Unknown elliptic curve id: %d. Client KEX calculation is up to you" % curve_id)
+            # We are on a known curve
+            else:
                 try:
-                    curve_id = server_kex[tls.TLSServerECDHParams].curve_name
-                    # TODO: DO NOT assume uncompressed EC points!
-                    point = ansi_str_to_point(server_kex[tls.TLSServerECDHParams].p)
-                    curve_name = tls.TLS_ELLIPTIC_CURVES[curve_id]
-                # Unknown curve case. Just record raw values, but do nothing with them
-                except KeyError:
+                    curve = ec_reg.get_curve(curve_name)
+                    self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
+                except ValueError:
                     self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
-                    warnings.warn("Unknown elliptic curve id: %d. Client KEX calculation is up to you" % curve_id)
-                # We are on a known curve
-                else:
-                    try:
-                        curve = ec_reg.get_curve(curve_name)
-                        self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
-                    except ValueError:
-                        self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
-                        warnings.warn("Unsupported elliptic curve: %s" % curve_name)
+                    warnings.warn("Unsupported elliptic curve: %s" % curve_name)
         else:
             warnings.warn("Unknown server key exchange")
 
@@ -290,44 +291,43 @@ TLS Session Context:
                 # End workaround
                 self.premaster_secret = PKCS1_v1_5.new(private).decrypt(self.encrypted_premaster_secret, None)
         elif client_kex.haslayer(tls.TLSClientDHParams):
-            # Check if we have an unitialized keystore, and if so build a new one
-            if isinstance(self.client_ctx.kex_keystore, tlsk.EmptyKexKeystore):
-                server_kex_keystore = self.server_ctx.kex_keystore
-                # Check if server side is a DH keystore. Something is messed up otherwise
-                if isinstance(server_kex_keystore, tlsk.DHKeyStore):
-                    client_public = str_to_int(client_kex[tls.TLSClientDHParams].data)
-                    self.client_ctx.kex_keystore = tlsk.DHKeyStore(server_kex_keystore.g,
-                                                                   server_kex_keystore.p, client_public)
-                else:
-                    raise RuntimeError("Server keystore is not a DH keystore")
-                # TODO: Calculate PMS
+            server_kex_keystore = self.server_ctx.kex_keystore
+            # Check if server side is a DH keystore. Something is messed up otherwise
+            if isinstance(server_kex_keystore, tlsk.DHKeyStore):
+                client_public = str_to_int(client_kex[tls.TLSClientDHParams].data)
+                self.client_ctx.kex_keystore = tlsk.DHKeyStore(server_kex_keystore.g,
+                                                               server_kex_keystore.p, client_public)
+            else:
+                raise RuntimeError("Server keystore is not a DH keystore")
+            # TODO: Calculate PMS
         elif client_kex.haslayer(tls.TLSClientECDHParams):
-            # Check if we have an unitialized keystore, and if so build a new one
-            if isinstance(self.client_ctx.kex_keystore, tlsk.EmptyKexKeystore):
-                server_kex_keystore = self.server_ctx.kex_keystore
-                # Check if server side is a ECDH keystore. Something is messed up otherwise
-                if isinstance(server_kex_keystore, tlsk.ECDHKeyStore):
-                    curve = server_kex_keystore.curve
-                    point = ansi_str_to_point(client_kex[tls.TLSClientECDHParams].data)
-                    self.client_ctx.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
-                # TODO: Calculate PMS
+            server_kex_keystore = self.server_ctx.kex_keystore
+            # Check if server side is a ECDH keystore. Something is messed up otherwise
+            if isinstance(server_kex_keystore, tlsk.ECDHKeyStore):
+                curve = server_kex_keystore.curve
+                point = ansi_str_to_point(client_kex[tls.TLSClientECDHParams].data)
+                self.client_ctx.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
+            # TODO: Calculate PMS
         else:
             warnings.warn("Unknown client key exchange")
+
+
+    def __generate_secrets(self):
+        self.__generate_client_secrets()
+        self.__generate_server_secrets()
+
+    def __generate_client_secrets(self):
         self.sec_params = TLSSecurityParameters.from_pre_master_secret(self.prf, self.negotiated.ciphersuite,
                                                                        self.premaster_secret, self.client_ctx.random,
                                                                        self.server_ctx.random)
-        self.__generate_secrets()
-
-    def __generate_secrets(self):
-        if isinstance(self.client_ctx.sym_keystore, tlsk.EmptySymKeyStore):
-            self.client_ctx.sym_keystore = self.sec_params.client_keystore
-        if isinstance(self.server_ctx.sym_keystore, tlsk.EmptySymKeyStore):
-            self.server_ctx.sym_keystore = self.sec_params.server_keystore
         self.master_secret = self.sec_params.master_secret
-        # Retrieve ciphers used for client/server encryption and decryption
-        # TODO: use factory to assign CryptoContext
+        self.client_ctx.sym_keystore = self.sec_params.client_keystore
         factory = CryptoContextFactory(self)
         self.client_ctx.crypto_ctx = factory.new(self.client_ctx)
+
+    def __generate_server_secrets(self):
+        self.server_ctx.sym_keystore = self.sec_params.server_keystore
+        factory = CryptoContextFactory(self)
         self.server_ctx.crypto_ctx = factory.new(self.server_ctx)
 
     def _process(self, pkt):
@@ -346,15 +346,23 @@ TLS Session Context:
                 self.__handle_server_kex(pkt[tls.TLSServerKeyExchange])
             if pkt.haslayer(tls.TLSClientKeyExchange):
                 self.__handle_client_kex(pkt[tls.TLSClientKeyExchange])
+        if pkt.haslayer(tls.TLSChangeCipherSpec):
+            # Dirty hack to initialize the crypto store only once per channel
+            if self.num_ccs % 2 == 0:
+                self.__generate_client_secrets()
+            else:
+                self.__generate_server_secrets()
+            self.num_ccs += 1
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))
 
     def get_encrypted_pms(self, pms=None):
-        cleartext = pms or self.premaster_secret
+        if pms is not None:
+            self.premaster_secret = pms
         public = self.server_ctx.asym_keystore.public
         if public is not None:
-            self.encrypted_premaster_secret = PKCS1_v1_5.new(public).encrypt(cleartext)
+            self.encrypted_premaster_secret = PKCS1_v1_5.new(public).encrypt(self.premaster_secret)
         else:
             raise ValueError("Cannot calculate encrypted MS. No server certificate found in connection")
         return self.encrypted_premaster_secret
@@ -411,8 +419,10 @@ TLS Session Context:
     def get_verify_data(self, data=None):
         if self.client:
             label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
+            ctx = self.client_ctx
         else:
             label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
+            ctx = self.server_ctx
         if data is None:
             verify_data = []
             for handshake in self._walk_handshake_msgs():
@@ -434,6 +444,7 @@ TLS Session Context:
                                                  "%s%s" % (MD5.new("".join(verify_data)).digest(),
                                                            SHA.new("".join(verify_data)).digest()),
                                                  num_bytes=12)
+        ctx.verify_data = ctx.verify_data or prf_verify_data
         return prf_verify_data
 
     def get_handshake_hash(self, hash_):
@@ -1133,6 +1144,10 @@ class TLSSecurityParameters(object):
                                                       "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
                                                       "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
                                                       "hash": {"type": NullHash, "name": "NULL"}},
+        tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_CBC_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x006b], "export": False,
+                                                      "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                      "hash": {"type": SHA256, "name": "SHA256"}}
         # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
         # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
     }

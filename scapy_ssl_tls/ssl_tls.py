@@ -956,11 +956,12 @@ class TLSSocket(object):
         except AttributeError:
             return getattr(self._s, attr)
 
-    def sendall(self, pkt, timeout=2):
+    def sendall(self, pkt, timeout=2, save=True):
         prev_timeout = self._s.gettimeout()
         self._s.settimeout(timeout)
         self._s.sendall(str(pkt))
-        self.tls_ctx.insert(pkt)
+        if save:
+            self.tls_ctx.insert(pkt)
         self._s.settimeout(prev_timeout)
 
     def recvall(self, size=8192, timeout=0.5):
@@ -994,6 +995,9 @@ class TLSSocket(object):
 
     def do_round_trip(self, pkt, recv=True):
         return tls_do_round_trip(self, pkt, recv)
+
+    def do_secure_renegotiation(self, version, ciphers, extensions=[]):
+        return tls_do_secure_renegotiation(self, version, ciphers, extensions)
 
 
 # entry class
@@ -1042,6 +1046,7 @@ class SSL(Packet):
             payload_len = record(raw_bytes[pos:pos + record_header_len]).length
             if self.tls_ctx is not None:
                 payload = record(raw_bytes[pos:pos + record_header_len + payload_len], ctx=self.tls_ctx)
+                payload = self.do_decrypt(payload)
                 self.tls_ctx.insert(payload)
             else:
                 payload = record(raw_bytes[pos:pos + record_header_len + payload_len])
@@ -1052,6 +1057,23 @@ class SSL(Packet):
         self.fields["records"] = records
         # This will always be empty (equivalent to returning "")
         return raw_bytes[pos:]
+
+    def do_decrypt(self, record):
+        encrypted_payload, layer = self._get_encrypted_payload(record)
+        if encrypted_payload is not None:
+            try:
+                if self.tls_ctx.client:
+                    cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                           record.content_type)
+                else:
+                    cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                           record.content_type)
+                pkt = layer(cleartext, ctx=self.tls_ctx)
+                record[self.guessed_next_layer].payload = pkt
+            # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
+            except ValueError as ve:
+                raise ValueError("Decryption failed: %s" % ve)
+        return record
 
     def _get_encrypted_payload(self, record):
         encrypted_payload = None
@@ -1074,30 +1096,6 @@ class SSL(Packet):
             decrypted_type = TLSPlaintext
         return encrypted_payload, decrypted_type
 
-    def post_dissect(self, s):
-        if self.tls_ctx is not None:
-            for record in self.records:
-                encrypted_payload, layer = self._get_encrypted_payload(record)
-                if encrypted_payload is not None:
-                    try:
-                        if self.tls_ctx.client:
-                            cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
-                                                                                   record.content_type)
-                        else:
-                            cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload,
-                                                                                   record.content_type)
-                        pkt = layer(cleartext, ctx=self.tls_ctx)
-                        original_record = record
-                        record[self.guessed_next_layer].payload = pkt
-                        # If the encrypted is in the history packet list, update it with the unencrypted version
-                        if original_record in self.tls_ctx.history:
-                            record_index = self.tls_ctx.history.index(original_record)
-                            self.tls_ctx.history[record_index] = record
-                    # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
-                    except ValueError as ve:
-                        raise ValueError("Decryption failed: %s" % ve)
-        return s
-
 TLS = SSL
 
 cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
@@ -1105,7 +1103,8 @@ cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICAT
                                                         str(TLSHandshake(type=TLSHandshakeType.FINISHED) /
                                                             tls_ctx.get_verify_data())),
                      TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt)),
-                     TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt))}
+                     TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt)),
+                     TLSHandshake: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(pkt))}
 
 
 def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
@@ -1167,10 +1166,10 @@ class TLSProtocolError(Exception):
         Exception.__init__(self, args[0], **kwargs)
 
 
-def tls_do_round_trip(tls_socket, pkt, recv=True):
+def tls_do_round_trip(tls_socket, pkt, recv=True, save=True):
     resp = TLS()
     try:
-        tls_socket.sendall(pkt)
+        tls_socket.sendall(pkt, save)
         if recv:
             resp = tls_socket.recvall()
             if resp.haslayer(TLSAlert):
@@ -1184,6 +1183,7 @@ def tls_do_round_trip(tls_socket, pkt, recv=True):
 
 
 def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
+    print(version, ciphers)
     client_hello = TLSRecord(version=version) / TLSHandshake() / TLSClientHello(version=version, cipher_suites=ciphers, extensions=extensions)
     resp1 = tls_do_round_trip(tls_socket, client_hello)
 
@@ -1191,6 +1191,27 @@ def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
     client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
     tls_do_round_trip(tls_socket, TLS.from_records([client_key_exchange, client_ccs]), False)
 
+    resp2 = tls_do_round_trip(tls_socket, to_raw(TLSFinished(), tls_socket.tls_ctx))
+    return resp1, resp2
+
+
+def tls_do_secure_renegotiation(tls_socket, version, ciphers, extensions=[]):
+    # This is hacky, depends on insertion sequence
+    tls_ctx = tls_socket.tls_ctx
+    client_hello = TLSHandshake() / TLSClientHello(version=version, cipher_suites=ciphers, extensions=extensions)
+    tls_ctx.insert(client_hello)
+    resp1 = tls_do_round_trip(tls_socket, to_raw(client_hello, tls_ctx), save=False)
+
+    client_key_exchange = TLSHandshake() / tls_ctx.get_client_kex_data()
+    client_ccs = TLSChangeCipherSpec()
+
+    print(tls_ctx)
+    tls_do_round_trip(tls_socket, to_raw(client_key_exchange, tls_ctx), False, save=False)
+    tls_ctx.insert(client_key_exchange)
+    tls_do_round_trip(tls_socket, to_raw(client_ccs, tls_ctx), False, save=False)
+    tls_ctx.insert(client_ccs)
+
+    print(tls_ctx)
     resp2 = tls_do_round_trip(tls_socket, to_raw(TLSFinished(), tls_socket.tls_ctx))
     return resp1, resp2
 
