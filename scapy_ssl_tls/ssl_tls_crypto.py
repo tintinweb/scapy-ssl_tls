@@ -260,7 +260,7 @@ TLS Session Context:
                     curve_id = server_kex[tls.TLSServerECDHParams].curve_name
                     # TODO: DO NOT assume uncompressed EC points!
                     point = ansi_str_to_point(server_kex[tls.TLSServerECDHParams].p)
-                    curve_name = tls.TLS_ELLIPTIC_CURVES[curve_id]
+                    curve_name = tls.TLS_SUPPORTED_GROUPS[curve_id]
                 # Unknown curve case. Just record raw values, but do nothing with them
                 except KeyError:
                     self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)

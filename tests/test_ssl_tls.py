@@ -326,7 +326,7 @@ class TestTLSClientHello(unittest.TestCase):
                 tls.TLSExtension() /
                 tls.TLSExtECPointsFormat(ec_point_formats=[tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2]),
                 tls.TLSExtension() /
-                tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSEllipticCurve.SECT571R1, ]),
+                tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSSupportedGroups.SECT571R1, ]),
                 tls.TLSExtension() /
                 tls.TLSExtHeartbeat(mode=tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND),
                 tls.TLSExtension() /
@@ -373,7 +373,7 @@ class TestTLSClientHello(unittest.TestCase):
         self.assertEquals(extensions.pop()[tls.TLSExtRenegotiationInfo].data, "myreneginfo")
         self.assertEquals(extensions.pop()[tls.TLSExtSessionTicketTLS].data, "myticket")
         self.assertEquals(extensions.pop()[tls.TLSExtHeartbeat].mode, tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND)
-        self.assertEquals(extensions.pop()[tls.TLSExtEllipticCurves].elliptic_curves[0], tls.TLSEllipticCurve.SECT571R1)
+        self.assertEquals(extensions.pop()[tls.TLSExtEllipticCurves].elliptic_curves[0], tls.TLSSupportedGroups.SECT571R1)
         self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_point_formats[0],
                           tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2)
         self.assertEquals(extensions.pop()[tls.TLSExtCertificateURL].certificate_urls[0].url,
@@ -391,6 +391,25 @@ class TestTLSClientHello(unittest.TestCase):
         hello = tls.SSL(str(self.pkt))[tls.TLSClientHello]
         self.assertTrue("extensions_length=" in repr(hello))
         self.assertEqual(hello.extensions_length, len(''.join(str(e) for e in hello.extensions)))
+
+
+class TestTLSServerHello(unittest.TestCase):
+    def test_when_using_tls13_then_fields_are_removed(self):
+        server_hello = tls.TLSServerHello(version=tls.TLSVersion.TLS_1_3)
+        server_hello = tls.TLSServerHello(str(server_hello))
+        self.assertEqual(server_hello.version, tls.TLSVersion.TLS_1_3)
+        self.assertIsNone(server_hello.session_id_length)
+        self.assertIsNone(server_hello.session_id)
+        # No clue why scapy raises AttributeError somtimes and returns None sometimes
+        # For ConditionalField
+        with self.assertRaises(AttributeError):
+            server_hello.compression_methods_length
+        with self.assertRaises(AttributeError):
+            server_hello.compression_methods
+        self.assertIsNone(server_hello.gmt_unix_time)
+        self.assertIsNone(server_hello.random_bytes)
+        self.assertNotEqual(server_hello.random, "")
+        self.assertEqual(len(server_hello.random), 32)
 
 
 class TestTLSPlaintext(unittest.TestCase):

@@ -232,7 +232,7 @@ TLS_VERSIONS = {
     0x0301: "TLS_1_0",
     0x0302: "TLS_1_1",
     0x0303: "TLS_1_2",
-    0x0304: "TLS_1_4",
+    0x0304: "TLS_1_3",
     # DTLS
     0x0100: "PROTOCOL_DTLS_1_0_OPENSSL_PRE_0_9_8f",
     0xfeff: "DTLS_1_0",
@@ -244,10 +244,20 @@ TLS_CONTENT_TYPES = registry.TLS_CONTENTTYPE_REGISTRY
 TLSContentType = EnumStruct(TLS_CONTENT_TYPES)
 
 TLS_HANDSHAKE_TYPES = registry.TLS_HANDSHAKETYPE_REGISTRY
+TLS_HANDSHAKE_TYPES.update({0x6: "hello_retry_request",
+                            0x8: "encrypted_extensions",
+                            0x18: "key_update"})
 TLSHandshakeType = EnumStruct(TLS_HANDSHAKE_TYPES)
 
 TLS_EXTENSION_TYPES = registry.EXTENSIONTYPE_VALUES
-TLS_EXTENSION_TYPES.update({0x3374: "next_protocol_negotiation"})    # manually add NPN as it is not in iana registry
+TLS_EXTENSION_TYPES.update({0x3374: "next_protocol_negotiation",
+                            40: "key_share",
+                            41: "pre_shared_key",
+                            42: "early_data",
+                            43: "supported_versions",
+                            44: "cookie",
+                            45: "psk_key_exchange_modes",
+                            46: "ticket_early_data_info"})    # manually add NPN as it is not in iana registry
 TLSExtensionType = EnumStruct(TLS_EXTENSION_TYPES)
 
 TLS_ALERT_LEVELS = {
@@ -258,6 +268,9 @@ TLS_ALERT_LEVELS = {
 TLSAlertLevel = EnumStruct(TLS_ALERT_LEVELS)
 
 TLS_ALERT_DESCRIPTIONS = registry.TLS_ALERT_REGISTRY
+TLS_ALERT_DESCRIPTIONS.update({1: "end_of_early_data",
+                               109: "missing_extension",
+                               116: "certificate_required"})
 TLSAlertDescription = EnumStruct(TLS_ALERT_DESCRIPTIONS)
 
 TLS_EXT_MAX_FRAGMENT_LENGTH_ENUM = {
@@ -277,7 +290,12 @@ TLS_CIPHER_SUITES.update({
     0x0063: 'DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA',
     0x0064: 'RSA_EXPORT1024_WITH_RC4_56_SHA',
     0x0065: 'DHE_DSS_EXPORT1024_WITH_RC4_56_SHA',
-    0x0066: 'DHE_DSS_WITH_RC4_128_SHA'})
+    0x0066: 'DHE_DSS_WITH_RC4_128_SHA',
+    0x1301: 'TLS_AES_128_GCM_SHA256',
+    0x1302: 'TLS_AES_256_GCM_SHA384',
+    0x1303: 'TLS_CHACHA20_POLY1305_SHA256',
+    0x1304: 'TLS_AES_128_CCM_SHA256',
+    0x1305: 'TLS_AES_128_CCM_8_SHA256'})
 TLSCipherSuite = EnumStruct(TLS_CIPHER_SUITES)
 
 TLS_COMPRESSION_METHODS = registry.TLS_COMPRESSION_METHOD_IDENTIFIERS
@@ -308,8 +326,13 @@ TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
 TLS_EC_CURVE_TYPES = registry.EC_CURVE_TYPE_REGISTRY
 TLSECCurveTypes = EnumStruct(TLS_EC_CURVE_TYPES)
 
-TLS_ELLIPTIC_CURVES = registry.SUPPORTED_GROUPS_REGISTRY
-TLSEllipticCurve = EnumStruct(TLS_ELLIPTIC_CURVES)
+TLS_SUPPORTED_GROUPS = registry.SUPPORTED_GROUPS_REGISTRY
+TLS_SUPPORTED_GROUPS.update({256: "ffdhe2048",
+                             257: "ffdhe3072",
+                             258: "ffdhe4096",
+                             259: "ffdhe6144",
+                             260: "ffdhe8192"})
+TLSSupportedGroups = EnumStruct(TLS_SUPPORTED_GROUPS)
 
 TLS_HASH_ALGORITHMS = registry.TLS_HASHALGORITHM_REGISTRY
 TLSHashAlgorithm = EnumStruct(TLS_HASH_ALGORITHMS)
@@ -445,7 +468,7 @@ class TLSExtEllipticCurves(PacketNoPayload):
     name = "TLS Extension Elliptic Curves"
     fields_desc = [XFieldLenField("length", None, length_of="elliptic_curves", fmt="H"),
                    ReprFieldListField("elliptic_curves", None,
-                                      ShortEnumField("elliptic_curve", None, TLS_ELLIPTIC_CURVES),
+                                      ShortEnumField("elliptic_curve", None, TLS_SUPPORTED_GROUPS),
                                       length_from=lambda x:x.length)]
 
 
@@ -477,48 +500,69 @@ class TLSExtRenegotiationInfo(PacketNoPayload):
                    StrLenField("data", '', length_from=lambda x:x.length)]
 
 
+# TLS 1.3 specific extensions
+class TLSExtSupportedVersions(PacketNoPayload):
+    name = "TLS Extension Supported Versions"
+    fields_desc = [XFieldLenField("length", None, length_of="versions", fmt="B"),
+                   ReprFieldListField("versions", [TLSVersion.TLS_1_3], XShortEnumField("version", None, TLS_VERSIONS),
+                                      length_from=lambda x: x.length)]
+
+
+class TLSExtCookie(PacketNoPayload):
+    name = "TLS Extension Cookie"
+    fields_desc = [XFieldLenField("length", None, length_of="cookie", fmt="H"),
+                   StrLenField("cookie", "", length_from=lambda x: x.length)]
+
+
 class TLSHelloRequest(Packet):
     name = "TLS Hello Request"
     fields_desc = []
 
 
+class TLSHelloRetryRequest(Packet):
+    name = "TLS Hello Retry Request"
+    fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_3, TLS_VERSIONS),
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
+                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)]
+
+
 class TLSClientHello(PacketNoPayload):
     name = "TLS Client Hello"
-    fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
+    fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_2, TLS_VERSIONS),
                    IntField("gmt_unix_time", int(time.time())),
                    StrFixedLenField("random_bytes", os.urandom(28), 28),
                    XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
                    StrLenField("session_id", '', length_from=lambda x:x.session_id_length),
                    XFieldLenField("cipher_suites_length", None, length_of="cipher_suites", fmt="H"),
-                   ReprFieldListField("cipher_suites", [TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA],
-                                      XShortEnumField("cipher", None, TLS_CIPHER_SUITES),
-                                      length_from=lambda x:x.cipher_suites_length),
+                   ReprFieldListField("cipher_suites", [TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA], XShortEnumField("cipher", None, TLS_CIPHER_SUITES),
+                                      length_from=lambda x: x.cipher_suites_length),
                    XFieldLenField("compression_methods_length", None, length_of="compression_methods", fmt="B"),
                    ReprFieldListField("compression_methods", [TLSCompressionMethod.NULL],
                                       ByteEnumField("compression", None, TLS_COMPRESSION_METHODS),
                                       length_from=lambda x:x.compression_methods_length),
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
-                                       lambda pkt, s, val: True if val or
-                                                                   pkt.extensions or
-                                                                   (s and struct.unpack("!H", s[:2])[0] == len(s) - 2)
-                                       else False),
+                                       lambda pkt, s, val: True if val or pkt.extensions or (s and struct.unpack("!H", s[:2])[0] == len(s) - 2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)]
 
 
 class TLSServerHello(PacketNoPayload):
     name = "TLS Server Hello"
-    fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_0, TLS_VERSIONS),
-                   IntField("gmt_unix_time", int(time.time())),
-                   StrFixedLenField("random_bytes", os.urandom(28), 28),
-                   XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
-                   StrLenField("session_id", os.urandom(20), length_from=lambda x:x.session_id_length),
+    fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_2, TLS_VERSIONS),
+                   # TLS 1.2: TLS 1.3 random does not start by a timestamp
+                   ConditionalField(IntField("gmt_unix_time", int(time.time())), lambda pkt: pkt.version < TLSVersion.TLS_1_3),
+                   ConditionalField(StrFixedLenField("random_bytes", os.urandom(28), 28), lambda pkt: pkt.version < TLSVersion.TLS_1_3),
+                   # TLS 1.3 random is 32 random bytes only
+                   ConditionalField(StrFixedLenField("random", os.urandom(32), 32), lambda pkt: pkt.version >= TLSVersion.TLS_1_3),
+                   # Fields are not in TLS 1.3, moved to a proper psk extension
+                   ConditionalField(XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"), lambda pkt: pkt.version < TLSVersion.TLS_1_3),
+                   ConditionalField(StrLenField("session_id", os.urandom(20), length_from=lambda x:x.session_id_length),
+                                    lambda pkt: pkt.version < TLSVersion.TLS_1_3),
                    XShortEnumField("cipher_suite", TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, TLS_CIPHER_SUITES),
-                   ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
+                   # Field deprecated in TLS 1.3
+                   ConditionalField(ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
+                                    lambda pkt: pkt.version < TLSVersion.TLS_1_3),
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
-                                       lambda pkt, s, val: True if val or
-                                                                   pkt.extensions or
-                                                                   (s and struct.unpack("!H", s[:2])[0] == len(s) - 2)
-                                       else False),
+                                       lambda pkt, s, val: True if val or pkt.extensions or (s and struct.unpack("!H", s[:2])[0] == len(s) - 2) else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)]
 
 
@@ -613,7 +657,7 @@ class TLSServerDHParams(PacketNoPayload):
 class TLSServerECDHParams(PacketNoPayload):
     name = "TLS EC Diffie-Hellman Server Params"
     fields_desc = [ByteEnumField("curve_type", TLSECCurveTypes.NAMED_CURVE, TLS_EC_CURVE_TYPES),
-                   ShortEnumField("curve_name", TLSEllipticCurve.SECP256R1, TLS_ELLIPTIC_CURVES),
+                   ShortEnumField("curve_name", TLSSupportedGroups.SECP256R1, TLS_SUPPORTED_GROUPS),
                    XFieldLenField("p_length", None, length_of="p", fmt="!B"),
                    StrLenField("p", '', length_from=lambda x:x.p_length),
                    ByteEnumField("hash_type", TLSHashAlgorithm.SHA256, TLS_HASH_ALGORITHMS),
@@ -1186,6 +1230,11 @@ def tls_fragment_payload(pkt, record=None, size=2**14):
                 raise TLSFragmentationError("Fragment size must be a power of 2: %s" % se)
         return stack
 
+
+def tls_draft_version(draft_version):
+    return 0x7f00 | draft_version
+
+
 # bind magic
 bind_layers(TCP, SSL, dport=443)
 bind_layers(TCP, SSL, sport=443)
@@ -1224,6 +1273,8 @@ bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
 bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type': TLSExtensionType.SESSIONTICKET_TLS})
 bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type': TLSExtensionType.RENEGOTIATION_INFO})
 bind_layers(TLSExtension, TLSExtSignatureAndHashAlgorithm, {'type': TLSExtensionType.SIGNATURE_ALGORITHMS})
+bind_layers(TLSExtension, TLSExtSupportedVersions, {'type': TLSExtensionType.SUPPORTED_VERSIONS})
+bind_layers(TLSExtension, TLSExtCookie, {'type': TLSExtensionType.COOKIE})
 # <--
 
 # DTLSRecord
