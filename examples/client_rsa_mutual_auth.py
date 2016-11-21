@@ -45,11 +45,10 @@ def do_tls_mutual_auth(host):
     p = TLS.from_records([client_cert, client_key_exchange])
     tls_socket.sendall(p)
 
-    sig_hash_alg = TLSSignatureHashAlgorithm(hash_alg=TLSHashAlgorithm.SHA256, sig_alg=TLSSignatureAlgorithm.RSA)
     sig = tls_socket.tls_ctx.get_client_signed_handshake_hash(SHA256.new())
     # sig = sig[:128] + chr(ord(sig[128]) ^ 0xff) + sig[129:]
     client_cert_verify = TLSRecord(version=tls_version) / TLSHandshake() / \
-        TLSCertificateVerify(alg=sig_hash_alg,
+        TLSCertificateVerify(alg=TLSSignatureScheme.RSA_PKCS1_SHA256,
                              sig=sig)
     tls_socket.sendall(client_cert_verify)
 

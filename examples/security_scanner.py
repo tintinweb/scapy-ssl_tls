@@ -232,19 +232,16 @@ class TLSInfo(object):
                 # only check DHE EXPORT for now. we might want to add DH1024 here.
                 events.append(("LOGJAM - server supports weak DH-Group (512) (DHE_*_EXPORT) cipher suites", tmp))
 
-            tmp = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAndHashAlgorithm)]
+            exts = [ext for ext in tlsinfo.extensions if ext.haslayer(TLSExtSignatureAlgorithms)]
             # obvious SLOTH check, does not detect impl. errors that allow md5 even though not announced.
             # makes only sense for client_hello
-            for sighashext in tmp:
-                for alg in sighashext[TLSExtSignatureAndHashAlgorithm].algs:
-                    if alg.sig_alg == TLSSignatureAlgorithm.RSA \
-                            and alg.hash_alg in (TLSHashAlgorithm.MD5, TLSHashAlgorithm.SHA1):
+            for ext in exts:
+                for alg in ext.algs:
+                    if alg in (TLSSignatureScheme.RSA_MD5, TLSSignatureScheme.RSA_PKCS1_SHA1, TLSSignatureScheme.ECDSA_MD5,
+                               TLSSignatureScheme.ECDSA_SECP256R1_SHA256, TLSSignatureScheme.DSA_MD5, TLSSignatureScheme.DSA_SHA1):
                         events.append(
-                            ("SLOTH - %s announces capability of signature/hash algorithm: RSA/%s" %
-                             (tlsinfo.__name__,
-                              TLS_HASH_ALGORITHMS.get(
-                                  alg.hash_alg)),
-                                alg))
+                            ("SLOTH - %s announces capability of signature/hash algorithm: %s" %
+                             (tlsinfo.__name__, TLS_SIGNATURE_SCHEMES.get(alg)), TLS_SIGNATURE_SCHEMES.get(alg)))
 
             try:
                 for certlist in tlsinfo.certificates:
