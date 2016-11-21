@@ -690,8 +690,7 @@ class TLSServerECDHParams(PacketNoPayload):
                    ShortEnumField("curve_name", TLSSupportedGroup.SECP256R1, TLS_SUPPORTED_GROUPS),
                    XFieldLenField("p_length", None, length_of="p", fmt="!B"),
                    StrLenField("p", '', length_from=lambda x:x.p_length),
-                   ByteEnumField("hash_type", TLSHashAlgorithm.SHA256, TLS_HASH_ALGORITHMS),
-                   ByteEnumField("sig_type", TLSSignatureAlgorithm.RSA, TLS_SIGNATURE_ALGORITHMS),
+                   ShortEnumField("scheme_type", TLSSignatureScheme.RSA_PKCS1_SHA256, TLS_SIGNATURE_SCHEMES),
                    XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
                    StrLenField("sig", '', length_from=lambda x:x.sig_length)]
 
