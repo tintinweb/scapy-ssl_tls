@@ -343,6 +343,39 @@ TLSSignatureAlgorithm = EnumStruct(TLS_SIGNATURE_ALGORITHMS)
 TLS_CERTIFICATE_TYPE_IDENTIFIERS = registry.TLS_CLIENTCERTIFICATETYPE_IDENTIFIERS_REGISTRY
 TLSCertificateTypeIdentifier = EnumStruct(TLS_CERTIFICATE_TYPE_IDENTIFIERS)
 
+# Convert TLS 1.2 sig_hash values to TLS 1.3 sig schemes
+TLS_SIGNATURE_SCHEMES = {}
+for hash_alg, hash_name in TLS_HASH_ALGORITHMS.items():
+    for sig_alg, sig_name in TLS_SIGNATURE_ALGORITHMS.items():
+        TLS_SIGNATURE_SCHEMES[hash_alg << 8 | sig_alg] = "%s_%s" % (sig_name, hash_name)
+# Add or override with the new TLS 1.3 values
+TLS_SIGNATURE_SCHEMES.update({# RSA PKCS1v1.5 algorithms
+                              0x0201: "rsa_pkcs1_sha1",
+                              0x0401: "rsa_pkcs1_sha256",
+                              0x0501: "rsa_pkcs1_sha384",
+                              0x0601: "rsa_pkcs1_sha512",
+                              # ECDSA algorithms
+                              0x0403: "ecdsa_secp256r1_sha256",
+                              0x0503: "ecdsa_secp384r1_sha384",
+                              0x0603: "ecdsa_secp521r1_sha512",
+                              # RSA PSS algorithms
+                              0x0804: "rsa_pss_sha256",
+                              0x0805: "rsa_pss_sha384",
+                              0x0806: "rsa_pss_sha512",
+                              # EDDSA algorithms
+                              0x0807: "ed25519",
+                              0x0808: "ed448"})
+TLSSignatureScheme = EnumStruct(TLS_SIGNATURE_SCHEMES)
+# Might be worth simply using TLS_SIGNATURE_SCHEMES.keys(), reverse sorted?
+DEFAULT_SIG_SCHEME_LIST = [TLSSignatureScheme.ECDSA_SECP521R1_SHA512,
+                           TLSSignatureScheme.ECDSA_SECP384R1_SHA384,
+                           TLSSignatureScheme.ECDSA_SECP256R1_SHA256,
+                           TLSSignatureScheme.RSA_PKCS1_SHA512,
+                           TLSSignatureScheme.RSA_PKCS1_SHA384,
+                           TLSSignatureScheme.RSA_PKCS1_SHA256,
+                           # Leave SHA1 for now, for ease of testing
+                           TLSSignatureScheme.RSA_PKCS1_SHA1]
+
 
 class TLSKexNames(object):
     RSA = "RSA"
@@ -472,16 +505,11 @@ class TLSExtEllipticCurves(PacketNoPayload):
                                       length_from=lambda x:x.length)]
 
 
-class TLSSignatureHashAlgorithm(PacketNoPayload):
-    name = "TLS Signature Hash Algorithm Pair"
-    fields_desc = [ByteEnumField("hash_alg", None, TLS_HASH_ALGORITHMS),
-                   ByteEnumField("sig_alg", None, TLS_SIGNATURE_ALGORITHMS)]
-
-
-class TLSExtSignatureAndHashAlgorithm(PacketNoPayload):
-    name = "TLS Extension Signature And Hash Algorithm"
+class TLSExtSignatureAlgorithms(PacketNoPayload):
+    name = "TLS Extension Signature Algorithms"
     fields_desc = [XFieldLenField("length", None, length_of="algs", fmt="H"),
-                   PacketListField("algs", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length)]
+                   ReprFieldListField("algs", DEFAULT_SIG_SCHEME_LIST, ShortEnumField("length", None, TLS_SIGNATURE_SCHEMES),
+                                      length_from=lambda x: x.length)]
 
 
 class TLSExtHeartbeat(PacketNoPayload):
@@ -693,7 +721,7 @@ class TLSCertificateList(PacketNoPayload):
 
 class TLSCertificateVerify(PacketNoPayload):
     name = "TLS Certificate Verify"
-    fields_desc = [PacketField("alg", None, TLSSignatureHashAlgorithm),
+    fields_desc = [ShortEnumField("alg", TLSSignatureScheme.RSA_PKCS1_SHA256, TLS_SIGNATURE_SCHEMES),
                    XFieldLenField("sig_length", None, length_of="sig", fmt="H"),  # ASN.1 signature element
                    StrLenField("sig", "", length_from=lambda x:x.sig_length)]
 
@@ -712,9 +740,10 @@ class TLSCADistinguishedName(PacketNoPayload):
 class TLSCertificateRequest(Packet):
     name = "TLS Certificate Request"
     fields_desc = [XFieldLenField("type_length", None, length_of="types", fmt="B"),
-                   PacketListField("types", None, TLSCertificateType, length_from=lambda x: x.type_length),
-                   XFieldLenField("alg_length", None, length_of="algorithms", fmt="H"),
-                   PacketListField("algorithms", None, TLSSignatureHashAlgorithm, length_from=lambda x: x.alg_length),
+                   PacketListField("types", TLSCertificateType(), TLSCertificateType, length_from=lambda x: x.type_length),
+                   XFieldLenField("alg_length", None, length_of="algs", fmt="H"),
+                   ReprFieldListField("algs", DEFAULT_SIG_SCHEME_LIST, ShortEnumField("alg", None, TLS_SIGNATURE_SCHEMES),
+                                      length_from=lambda x: x.alg_length),
                    XFieldLenField("dn_length", None, length_of="dns", fmt="H"),
                    PacketListField("ca_dns", None, TLSCADistinguishedName, length_from=lambda x: x.dn_length)]
 
@@ -1272,7 +1301,7 @@ bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYE
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
 bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type': TLSExtensionType.SESSIONTICKET_TLS})
 bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type': TLSExtensionType.RENEGOTIATION_INFO})
-bind_layers(TLSExtension, TLSExtSignatureAndHashAlgorithm, {'type': TLSExtensionType.SIGNATURE_ALGORITHMS})
+bind_layers(TLSExtension, TLSExtSignatureAlgorithms, {'type': TLSExtensionType.SIGNATURE_ALGORITHMS})
 bind_layers(TLSExtension, TLSExtSupportedVersions, {'type': TLSExtensionType.SUPPORTED_VERSIONS})
 bind_layers(TLSExtension, TLSExtCookie, {'type': TLSExtensionType.COOKIE})
 # <--
