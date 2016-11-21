@@ -326,7 +326,7 @@ class TestTLSClientHello(unittest.TestCase):
                 tls.TLSExtension() /
                 tls.TLSExtECPointsFormat(ec_point_formats=[tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2]),
                 tls.TLSExtension() /
-                tls.TLSExtEllipticCurves(elliptic_curves=[tls.TLSSupportedGroups.SECT571R1, ]),
+                tls.TLSExtEllipticCurves(named_group_list=[tls.TLSSupportedGroup.SECT571R1, ]),
                 tls.TLSExtension() /
                 tls.TLSExtHeartbeat(mode=tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND),
                 tls.TLSExtension() /
@@ -373,7 +373,7 @@ class TestTLSClientHello(unittest.TestCase):
         self.assertEquals(extensions.pop()[tls.TLSExtRenegotiationInfo].data, "myreneginfo")
         self.assertEquals(extensions.pop()[tls.TLSExtSessionTicketTLS].data, "myticket")
         self.assertEquals(extensions.pop()[tls.TLSExtHeartbeat].mode, tls.TLSHeartbeatMode.PEER_NOT_ALLOWED_TO_SEND)
-        self.assertEquals(extensions.pop()[tls.TLSExtEllipticCurves].elliptic_curves[0], tls.TLSSupportedGroups.SECT571R1)
+        self.assertEquals(extensions.pop()[tls.TLSExtSupportedGroups].named_group_list[0], tls.TLSSupportedGroup.SECT571R1)
         self.assertEquals(extensions.pop()[tls.TLSExtECPointsFormat].ec_point_formats[0],
                           tls.TLSEcPointFormat.ANSIX962_COMPRESSED_CHAR2)
         self.assertEquals(extensions.pop()[tls.TLSExtCertificateURL].certificate_urls[0].url,

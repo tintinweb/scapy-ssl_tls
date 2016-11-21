@@ -332,7 +332,8 @@ TLS_SUPPORTED_GROUPS.update({256: "ffdhe2048",
                              258: "ffdhe4096",
                              259: "ffdhe6144",
                              260: "ffdhe8192"})
-TLSSupportedGroups = EnumStruct(TLS_SUPPORTED_GROUPS)
+TLSSupportedGroup = EnumStruct(TLS_SUPPORTED_GROUPS)
+DEFAULT_NAMED_GROUP_LIST = [TLSSupportedGroup.SECP256R1, TLSSupportedGroup.SECP384R1, TLSSupportedGroup.SECP521R1]
 
 TLS_HASH_ALGORITHMS = registry.TLS_HASHALGORITHM_REGISTRY
 TLSHashAlgorithm = EnumStruct(TLS_HASH_ALGORITHMS)
@@ -497,12 +498,13 @@ class TLSExtECPointsFormat(PacketNoPayload):
                                       length_from=lambda x:x.length)]
 
 
-class TLSExtEllipticCurves(PacketNoPayload):
-    name = "TLS Extension Elliptic Curves"
-    fields_desc = [XFieldLenField("length", None, length_of="elliptic_curves", fmt="H"),
-                   ReprFieldListField("elliptic_curves", None,
-                                      ShortEnumField("elliptic_curve", None, TLS_SUPPORTED_GROUPS),
+class TLSExtSupportedGroups(PacketNoPayload):
+    name = "TLS Extension Supported Groups"
+    fields_desc = [XFieldLenField("length", None, length_of="named_group_list", fmt="H"),
+                   ReprFieldListField("named_group_list", DEFAULT_NAMED_GROUP_LIST,
+                                      ShortEnumField("named_group", None, TLS_SUPPORTED_GROUPS),
                                       length_from=lambda x:x.length)]
+TLSExtEllipticCurves = TLSExtSupportedGroups
 
 
 class TLSExtSignatureAlgorithms(PacketNoPayload):
@@ -685,7 +687,7 @@ class TLSServerDHParams(PacketNoPayload):
 class TLSServerECDHParams(PacketNoPayload):
     name = "TLS EC Diffie-Hellman Server Params"
     fields_desc = [ByteEnumField("curve_type", TLSECCurveTypes.NAMED_CURVE, TLS_EC_CURVE_TYPES),
-                   ShortEnumField("curve_name", TLSSupportedGroups.SECP256R1, TLS_SUPPORTED_GROUPS),
+                   ShortEnumField("curve_name", TLSSupportedGroup.SECP256R1, TLS_SUPPORTED_GROUPS),
                    XFieldLenField("p_length", None, length_of="p", fmt="!B"),
                    StrLenField("p", '', length_from=lambda x:x.p_length),
                    ByteEnumField("hash_type", TLSHashAlgorithm.SHA256, TLS_HASH_ALGORITHMS),
@@ -1296,7 +1298,7 @@ bind_layers(TLSExtension, TLSExtServerNameIndication, {'type': TLSExtensionType.
 bind_layers(TLSExtension, TLSExtMaxFragmentLength, {'type': TLSExtensionType.MAX_FRAGMENT_LENGTH})
 bind_layers(TLSExtension, TLSExtCertificateURL, {'type': TLSExtensionType.CLIENT_CERTIFICATE_URL})
 bind_layers(TLSExtension, TLSExtECPointsFormat, {'type': TLSExtensionType.EC_POINT_FORMATS})
-bind_layers(TLSExtension, TLSExtEllipticCurves, {'type': TLSExtensionType.SUPPORTED_GROUPS})
+bind_layers(TLSExtension, TLSExtSupportedGroups, {'type': TLSExtensionType.SUPPORTED_GROUPS})
 bind_layers(TLSExtension, TLSExtALPN, {'type': TLSExtensionType.APPLICATION_LAYER_PROTOCOL_NEGOTIATION})
 bind_layers(TLSExtension, TLSExtHeartbeat, {'type': TLSExtensionType.HEARTBEAT})
 bind_layers(TLSExtension, TLSExtSessionTicketTLS, {'type': TLSExtensionType.SESSIONTICKET_TLS})
