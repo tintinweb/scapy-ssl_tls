@@ -807,6 +807,83 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertTrue(pubkey_extract_from_tls_certificate.can_sign())
 
 
+class TestTLSExtensions(unittest.TestCase):
+    def test_when_client_hello_has_a_key_share_extension_it_is_dissected_as_a_client_hello_key_share(self):
+        client_shares = [tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange=b"1234"),
+                         tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP521R1, key_exchange=b"5678")]
+        keyshares = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSClientHelloKeyShare(client_shares=client_shares)
+        extensions = [tls.TLSExtension() / tls.TLSExtSupportedGroups(), keyshares, tls.TLSExtension() / tls.TLSExtSupportedVersions(),
+                      tls.TLSExtension() / tls.TLSExtALPN(protocol_name_list=[tls.TLSALPNProtocol(data=b"h2")])]
+        client_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(cipher_suites=[tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384],
+                                                                                 extensions=extensions)
+        parsed_record = tls.TLS(str(client_hello))
+        parsed_client_hello = parsed_record[tls.TLSClientHello]
+
+        self.assertEqual(str(parsed_record), str(client_hello))
+        self.assertNotEqual(parsed_client_hello.extensions, [])
+        self.assertEqual(len(parsed_client_hello.extensions), len(extensions))
+        self.assertTrue(parsed_client_hello.extensions[0].haslayer(tls.TLSExtSupportedGroups))
+        self.assertTrue(parsed_client_hello.extensions[1].haslayer(tls.TLSExtKeyShare))
+        self.assertTrue(parsed_client_hello.extensions[1].haslayer(tls.TLSClientHelloKeyShare))
+        self.assertTrue(parsed_client_hello.extensions[2].haslayer(tls.TLSExtSupportedVersions))
+        self.assertTrue(parsed_client_hello.extensions[3].haslayer(tls.TLSExtALPN))
+        for extension in parsed_client_hello.extensions:
+            self.assertFalse(extension.haslayer(tls.TLSServerHelloKeyShare))
+            self.assertFalse(extension.haslayer(tls.TLSHelloRetryRequestKeyShare))
+        key_share = parsed_client_hello[tls.TLSClientHelloKeyShare]
+        self.assertEqual(len(key_share.client_shares), len(client_shares))
+        for i, v in enumerate(key_share.client_shares):
+            self.assertEqual(str(v), str(client_shares[i]))
+            self.assertEqual(v.named_group, client_shares[i].named_group)
+            self.assertEqual(v.key_exchange, client_shares[i].key_exchange)
+
+    def test_when_server_hello_has_a_key_share_extension_it_is_dissected_as_a_server_hello_key_share(self):
+        server_share = tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange=b"A"*12)
+        keyshare = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSServerHelloKeyShare(server_share=server_share)
+        extensions = [tls.TLSExtension() / tls.TLSExtSignatureAlgorithms(), keyshare, tls.TLSExtension() / tls.TLSExtCookie(cookie=b"B"*12)]
+        server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(version=tls.TLSVersion.TLS_1_3,
+                                                                                 cipher_suite=tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384,
+                                                                                 extensions=extensions)
+        parsed_record = tls.TLS(str(server_hello))
+        parsed_server_hello = parsed_record[tls.TLSServerHello]
+
+        self.assertEqual(str(parsed_record), str(server_hello))
+        self.assertNotEqual(parsed_server_hello.extensions, [])
+        self.assertEqual(len(parsed_server_hello.extensions), len(extensions))
+        self.assertTrue(parsed_server_hello.extensions[0].haslayer(tls.TLSExtSignatureAlgorithms))
+        self.assertTrue(parsed_server_hello.extensions[1].haslayer(tls.TLSExtKeyShare))
+        self.assertTrue(parsed_server_hello.extensions[1].haslayer(tls.TLSServerHelloKeyShare))
+        self.assertTrue(parsed_server_hello.extensions[2].haslayer(tls.TLSExtCookie))
+        for extension in parsed_server_hello.extensions:
+            self.assertFalse(extension.haslayer(tls.TLSClientHelloKeyShare))
+            self.assertFalse(extension.haslayer(tls.TLSHelloRetryRequestKeyShare))
+        key_share = parsed_server_hello[tls.TLSServerHelloKeyShare]
+        self.assertEqual(len(key_share.server_share), len(server_share))
+        self.assertEqual(str(key_share.server_share), str(server_share))
+        self.assertEqual(key_share.server_share.named_group, server_share.named_group)
+        self.assertEqual(key_share.server_share.key_exchange, server_share.key_exchange)
+
+    def test_when_hello_retry_request_has_a_key_share_extension_it_is_dissected_as_a_hello_retry_request_key_share(self):
+        hhr_share = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSHelloRetryRequestKeyShare(selected_group=tls.TLSSupportedGroup.FFDHE2048)
+        extensions = [hhr_share, tls.TLSExtension() / tls.TLSExtCookie(b"A"*15)]
+
+        hrr = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSHelloRetryRequest(extensions=extensions)
+        parsed_record = tls.TLS(str(hrr))
+        parsed_hrr = parsed_record[tls.TLSHelloRetryRequest]
+
+        self.assertEqual(str(parsed_record), str(hrr))
+        self.assertNotEqual(parsed_hrr.extensions, [])
+        self.assertEqual(len(parsed_hrr.extensions), len(extensions))
+        self.assertTrue(parsed_hrr.extensions[0].haslayer(tls.TLSExtKeyShare))
+        self.assertTrue(parsed_hrr.extensions[0].haslayer(tls.TLSHelloRetryRequestKeyShare))
+        self.assertTrue(parsed_hrr.extensions[1].haslayer(tls.TLSExtCookie))
+        for extension in parsed_hrr.extensions:
+            self.assertFalse(extension.haslayer(tls.TLSClientHelloKeyShare))
+            self.assertFalse(extension.haslayer(tls.TLSServerHelloKeyShare))
+        key_share = parsed_hrr[tls.TLSHelloRetryRequestKeyShare]
+        self.assertEqual(key_share.selected_group, hhr_share.selected_group)
+
+
 class TestTLSTopLevelFunctions(unittest.TestCase):
 
     def test_tls_payload_fragmentation_raises_error_with_negative_size(self):

@@ -177,7 +177,6 @@ class PacketNoPayload(Packet):
 
 
 class PacketLengthFieldPayload(Packet):
-
     """
     This type of packet provides only up to self.length bytes to the next layer (payload)
     Applicable when last field is .length and the length describes the next-layer length in bytes
@@ -216,6 +215,22 @@ class StackedLenPacket(Packet):
                 pass
             self.add_payload(p)
             s = s[s_len:]
+
+
+class TypedPacketListField(PacketListField):
+    """
+    This type of field allows the created packet to be aware of whom created it. This is useful
+    when a field of a packet needs to be aware of the packet type. For example, if an extension needs
+    to know in which context it has been called, such a context can be provided in the type_ field.
+    This is specifically used to handle the Key Share extension in TLS 1.3, where the parsing semantics
+    change depending on which handshake packet type has defined the Key Share.
+    """
+    def __init__(self, name, default, cls, count_from=None, length_from=None, type_=None):
+        self.type_ = type_
+        PacketListField.__init__(self, name, default, cls, count_from=None, length_from=None)
+
+    def m2i(self, pkt, m):
+        return self.cls(m, type_=self.type_)
 
 
 class EnumStruct(object):
@@ -469,6 +484,12 @@ class TLSExtension(PacketLengthFieldPayload):
     fields_desc = [XShortEnumField("type", TLSExtensionType.SERVER_NAME, TLS_EXTENSION_TYPES),
                    XLenField("length", None, fmt="!H")]
 
+    def __init__(self, *args, **fields):
+        # This tells us from which context we have been called from. It will hold the name of the calling packet,
+        # but could be any metadata
+        self.type_ = fields.pop("type_", None)
+        PacketLengthFieldPayload.__init__(self, *args, **fields)
+
 
 class TLSExtMaxFragmentLength(PacketNoPayload):
     name = "TLS Extension Max Fragment Length"
@@ -544,6 +565,48 @@ class TLSExtCookie(PacketNoPayload):
                    StrLenField("cookie", "", length_from=lambda x: x.length)]
 
 
+class TLSKeyShareEntry(PacketNoPayload):
+    name = "TLS Key Share Entry"
+    fields_desc = [ShortEnumField("named_group", None, TLS_SUPPORTED_GROUPS),
+                   XFieldLenField("length", None, length_of="key_exchange", fmt="H"),
+                   StrLenField("key_exchange", "", length_from=lambda x: x.length)]
+
+
+class TLSClientHelloKeyShare(PacketNoPayload):
+    name = "TLS Client Hello Key Share"
+    fields_desc = [XFieldLenField("length", None, length_of="client_shares", fmt="H"),
+                   PacketListField("client_shares", None, TLSKeyShareEntry, length_from=lambda x:x.length)]
+
+
+class TLSHelloRetryRequestKeyShare(PacketNoPayload):
+    name = "TLS Hello Retry Request Key Share"
+    fields_desc = [ShortEnumField("selected_group", None, TLS_SUPPORTED_GROUPS)]
+
+
+class TLSServerHelloKeyShare(PacketNoPayload):
+    name = "TLS Server Hello Key Share"
+    fields_desc = [PacketField("server_share", None, TLSKeyShareEntry)]
+
+
+class TLSExtKeyShare(Packet):
+    name = "TLS Extension Key Share"
+    fields_desc = []
+    type_map = {"TLSHelloRetryRequest": TLSHelloRetryRequestKeyShare,
+                "TLSClientHello": TLSClientHelloKeyShare,
+                "TLSServerHello": TLSServerHelloKeyShare}
+
+    def guess_payload_class(self, raw_bytes):
+        pkt = self.underlayer
+        # If our underlayer is an extension whose type_ is defined
+        # Use this as the upper layer
+        if pkt is not None and pkt.haslayer(TLSExtension):
+            upper_cls = TLSExtKeyShare.type_map.get(pkt.type_)
+            if upper_cls is not None:
+                return upper_cls
+        # Otherwise, revert to default payload guessing
+        return Packet.guess_payload_class(self, raw_bytes)
+
+
 class TLSHelloRequest(Packet):
     name = "TLS Hello Request"
     fields_desc = []
@@ -552,8 +615,8 @@ class TLSHelloRequest(Packet):
 class TLSHelloRetryRequest(Packet):
     name = "TLS Hello Retry Request"
     fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_3, TLS_VERSIONS),
-                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
-                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)]
+                   XFieldLenField("length", None, length_of="extensions", fmt="H"),
+                   TypedPacketListField("extensions", None, TLSExtension, length_from=lambda x:x.length, type_="TLSHelloRetryRequest")]
 
 
 class TLSClientHello(PacketNoPayload):
@@ -572,7 +635,7 @@ class TLSClientHello(PacketNoPayload):
                                       length_from=lambda x:x.compression_methods_length),
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
                                        lambda pkt, s, val: True if val or pkt.extensions or (s and struct.unpack("!H", s[:2])[0] == len(s) - 2) else False),
-                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)]
+                   TypedPacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length, type_="TLSClientHello")]
 
 
 class TLSServerHello(PacketNoPayload):
@@ -593,7 +656,7 @@ class TLSServerHello(PacketNoPayload):
                                     lambda pkt: pkt.version < TLSVersion.TLS_1_3),
                    StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
                                        lambda pkt, s, val: True if val or pkt.extensions or (s and struct.unpack("!H", s[:2])[0] == len(s) - 2) else False),
-                   PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)]
+                   TypedPacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length, type_="TLSServerHello")]
 
 
 class TLSSessionTicket(PacketNoPayload):
@@ -1282,6 +1345,7 @@ bind_layers(TLSRecord, TLSHandshake, {'content_type': TLSContentType.HANDSHAKE})
 bind_layers(TLSHandshake, TLSHelloRequest, {'type': TLSHandshakeType.HELLO_REQUEST})
 bind_layers(TLSHandshake, TLSClientHello, {'type': TLSHandshakeType.CLIENT_HELLO})
 bind_layers(TLSHandshake, TLSServerHello, {'type': TLSHandshakeType.SERVER_HELLO})
+bind_layers(TLSHandshake, TLSHelloRetryRequest, {"type": TLSHandshakeType.HELLO_RETRY_REQUEST})
 bind_layers(TLSHandshake, TLSCertificateList, {'type': TLSHandshakeType.CERTIFICATE})
 bind_layers(TLSHandshake, TLSServerKeyExchange, {'type': TLSHandshakeType.SERVER_KEY_EXCHANGE})
 bind_layers(TLSHandshake, TLSServerHelloDone, {'type': TLSHandshakeType.SERVER_HELLO_DONE})
@@ -1305,6 +1369,7 @@ bind_layers(TLSExtension, TLSExtRenegotiationInfo, {'type': TLSExtensionType.REN
 bind_layers(TLSExtension, TLSExtSignatureAlgorithms, {'type': TLSExtensionType.SIGNATURE_ALGORITHMS})
 bind_layers(TLSExtension, TLSExtSupportedVersions, {'type': TLSExtensionType.SUPPORTED_VERSIONS})
 bind_layers(TLSExtension, TLSExtCookie, {'type': TLSExtensionType.COOKIE})
+bind_layers(TLSExtension, TLSExtKeyShare, {'type': TLSExtensionType.KEY_SHARE})
 # <--
 
 # DTLSRecord
