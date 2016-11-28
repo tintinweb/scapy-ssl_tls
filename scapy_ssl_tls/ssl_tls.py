@@ -607,6 +607,11 @@ class TLSExtKeyShare(Packet):
         return Packet.guess_payload_class(self, raw_bytes)
 
 
+class TLSExtPadding(PacketNoPayload):
+    name = "TLS Extension Padding"
+    fields_desc = [StrField("padding", b"\x00" * 16)]
+
+
 class TLSHelloRequest(Packet):
     name = "TLS Hello Request"
     fields_desc = []
@@ -1370,6 +1375,7 @@ bind_layers(TLSExtension, TLSExtSignatureAlgorithms, {'type': TLSExtensionType.S
 bind_layers(TLSExtension, TLSExtSupportedVersions, {'type': TLSExtensionType.SUPPORTED_VERSIONS})
 bind_layers(TLSExtension, TLSExtCookie, {'type': TLSExtensionType.COOKIE})
 bind_layers(TLSExtension, TLSExtKeyShare, {'type': TLSExtensionType.KEY_SHARE})
+bind_layers(TLSExtension, TLSExtPadding, {'type': TLSExtensionType.PADDING})
 # <--
 
 # DTLSRecord
