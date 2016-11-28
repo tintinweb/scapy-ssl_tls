@@ -337,6 +337,9 @@ TLSTypeBoolean = EnumStruct(TLS_TYPE_BOOLEAN)
 
 TLS_EC_POINT_FORMATS = registry.EC_POINT_FORMAT_REGISTRY
 TLSEcPointFormat = EnumStruct(TLS_EC_POINT_FORMATS)
+# Fix inconsistency in casing
+TLSECPointFormat = TLSEcPointFormat
+DEFAULT_EC_POINT_FORMAT_LIST = [TLSECPointFormat.UNCOMPRESSED]
 
 TLS_EC_CURVE_TYPES = registry.EC_CURVE_TYPE_REGISTRY
 TLSECCurveTypes = EnumStruct(TLS_EC_CURVE_TYPES)
@@ -515,7 +518,7 @@ class TLSExtCertificateURL(PacketNoPayload):
 class TLSExtECPointsFormat(PacketNoPayload):
     name = "TLS Extension EC Points Format"
     fields_desc = [XFieldLenField("length", None, length_of="ec_point_formats", fmt="B"),
-                   ReprFieldListField("ec_point_formats", None,
+                   ReprFieldListField("ec_point_formats", DEFAULT_EC_POINT_FORMAT_LIST,
                                       ByteEnumField("ec_point_format", None, TLS_EC_POINT_FORMATS),
                                       length_from=lambda x:x.length)]
 
