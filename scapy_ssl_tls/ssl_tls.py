@@ -471,12 +471,13 @@ class TLSALPNProtocol(PacketNoPayload):
     name = "TLS ALPN Protocol"
     fields_desc = [XFieldLenField("length", None, length_of="data", fmt="B"),
                    StrLenField("data", "", length_from=lambda x:x.length)]
+DEFAULT_ALPN_LIST = [TLSALPNProtocol(data="h2"), TLSALPNProtocol(data="http/1.1")]
 
 
 class TLSExtALPN(PacketNoPayload):
     name = "TLS Extension Application-Layer Protocol Negotiation"
     fields_desc = [XFieldLenField("length", None, length_of="protocol_name_list", fmt="H"),
-                   PacketListField("protocol_name_list", None, TLSALPNProtocol, length_from=lambda x:x.length)]
+                   PacketListField("protocol_name_list", DEFAULT_ALPN_LIST, TLSALPNProtocol, length_from=lambda x:x.length)]
 
 
 class TLSExtension(PacketLengthFieldPayload):
