@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import binascii
 import unittest
 
 from Cryptodome.PublicKey import RSA
@@ -47,3 +48,14 @@ class TestAsymKeyStore(unittest.TestCase):
         self.assertEqual(self.rsa.publickey(), rsa_keystore.public)
         self.assertEqual(2048, rsa_keystore.size)
         self.assertEqual(None, rsa_keystore.certificate)
+
+
+class TestTLSKeystoreTopLevelFunctions(unittest.TestCase):
+
+    def test_when_ansi_string_is_malformed_then_exception_is_raised(self):
+        x, y = int(binascii.hexlify("123"), 16), int(binascii.hexlify("456"), 16)
+        with self.assertRaises(ValueError):
+            tlsk.ansi_str_to_point("1234")
+        with self.assertRaises(ValueError):
+            tlsk.ansi_str_to_point("\x04123")
+        self.assertEqual(tlsk.ansi_str_to_point("\x04123456"), (x, y))

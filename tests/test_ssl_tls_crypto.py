@@ -85,6 +85,14 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         rsa_priv_key = RSA.importKey(self.pem_priv_key)
         self.priv_key = PKCS1_v1_5.new(rsa_priv_key)
         self.pub_key = PKCS1_v1_5.new(rsa_priv_key.publickey())
+        self.tls13_client_extensions = [tls.TLSExtension() / tls.TLSExtSupportedVersions(),
+                                        tls.TLSExtension() / tls.TLSExtSignatureAlgorithms(),
+                                        tls.TLSExtension() / tls.TLSExtSupportedGroups(),
+                                        tls.TLSExtension() / tls.TLSExtALPN(),
+                                        tls.TLSExtension() / tls.TLSExtECPointsFormat(),
+                                        tls.TLSExtension() / tls.TLSExtServerNameIndication(server_names=tls.TLSServerName(data="sni.example.com")),
+                                        tls.TLSExtension(type=tls.TLSExtensionType.EXTENDED_MASTER_SECRET)]
+        self.tls13_server_extensions = []
         unittest.TestCase.setUp(self)
 
     def test_negotiated_cipher_is_used_in_context(self):
@@ -217,11 +225,65 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         client_keys = ec.Keypair(secp256r1, client_privkey)
         client_pubkey = tls_ctx.get_client_ecdh_pubkey(client_privkey)
         self.assertTrue(client_pubkey.startswith("\x04"))
-        self.assertEqual("\x04%s%s" % (tlsc.int_to_str(client_keys.pub.x), tlsc.int_to_str(client_keys.pub.y)),
+        self.assertEqual("\x04%s%s" % (tlsk.int_to_str(client_keys.pub.x), tlsk.int_to_str(client_keys.pub.y)),
                          client_pubkey)
         self.assertEqual(client_keys.pub, tls_ctx.client_ctx.kex_keystore.public)
         self.assertEqual("'(\x17\x94l\xd7AO\x03\xd4Fi\x05}mP\x1aX5C7\xf0_\xa9\xb0\xac\xba{r\x1f\x12\x8f",
                          tls_ctx.premaster_secret)
+
+    def test_after_tl13_server_hello_then_key_material_is_installed(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        nist256 = reg.get_curve(tls.TLS_SUPPORTED_GROUPS[tls.TLSSupportedGroup.SECP256R1])
+        keypair = ec.make_keypair(nist256)
+        client_keystore = tlsk.ECDHKeyStore.from_keypair(nist256, keypair)
+        tls_ctx.client_ctx.shares.append(client_keystore)
+        ec_pub = tlsk.point_to_ansi_str(keypair.pub)
+        key_share = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSClientHelloKeyShare(
+            client_shares=[tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange=ec_pub)])
+        self.tls13_client_extensions.append(key_share)
+        client_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(cipher_suites=[tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384],
+                                                                                 extensions=self.tls13_client_extensions)
+        self.assertEqual(len(tls_ctx.client_ctx.shares), 1)
+        self.assertIn(client_keystore, tls_ctx.client_ctx.shares)
+        self.assertIsNotNone(tls_ctx.client_ctx.shares[0].private)
+        tls_ctx.insert(client_hello)
+        self.assertIsNotNone(tls_ctx.client_ctx.shares[0].private)
+        self.assertEqual(client_keystore, tls_ctx.client_ctx.shares[0])
+
+        server_ec_pub = ("\x043\xc0\xd0D\xa6\xe8\x9c\xbf\xf7\x0e\xa1\x80\xdf\x15\n\xf3\x85\x7f\xf6\xb2\xa2\x01\xfc\xcf\x93FH"
+                         "\xed\xfa\x87\xb0\x19L\xc5\xb1\xd6\xf0\xcap?\xf1\xe7\x04\xc5\xde\xba/\xea\x1a\x86\xfb\xc9\rI\x9cU?r`"
+                         "\x18\xac\xb95\xc8")
+        tls13_server_extensions = [tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSServerHelloKeyShare(
+            server_share=tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange=server_ec_pub))]
+        server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(version=tls.TLSVersion.TLS_1_3,
+                                                                                 cipher_suite=tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384,
+                                                                                 extensions=tls13_server_extensions)
+        tls_ctx.insert(server_hello)
+        self.assertNotIsInstance(tls_ctx.client_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertNotIsInstance(tls_ctx.server_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertIsNotNone(tls_ctx.premaster_secret)
+        self.assertIsNotNone(tls_ctx.master_secret)
+        self.assertNotIsInstance(tls_ctx.client_ctx.sym_keystore, tlsk.EmptySymKeyStore)
+        self.assertNotIsInstance(tls_ctx.server_ctx.sym_keystore, tlsk.EmptySymKeyStore)
+
+    def test_when_mismatching_key_shares_are_used_then_a_protocol_error_is_raised(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        client_key_share = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSClientHelloKeyShare(
+            client_shares=[tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange="\x041234")])
+        client_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(cipher_suites=[tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384],
+                                                                                 extensions=[client_key_share,
+                                                                                             tls.TLSExtension() / tls.TLSExtSupportedVersions()])
+        server_key_share = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSServerHelloKeyShare(
+            server_share=tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP521R1, key_exchange="\x041234"))
+        server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(version=tls.TLSVersion.TLS_1_3,
+                                                                                 cipher_suite=tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384,
+                                                                                 extensions=[server_key_share])
+        tls_ctx.insert(client_hello)
+        with self.assertRaises(tls.TLSProtocolError):
+            tls_ctx.insert(server_hello)
+        self.assertIsInstance(tls_ctx.client_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertNotIsInstance(tls_ctx.server_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertIsNone(tls_ctx.master_secret)
 
 
 class TestTLSSecurityParameters(unittest.TestCase):

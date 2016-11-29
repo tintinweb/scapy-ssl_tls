@@ -250,6 +250,8 @@ TLS_VERSIONS = {
     0x0304: "TLS_1_3",
     # DTLS
     0x0100: "PROTOCOL_DTLS_1_0_OPENSSL_PRE_0_9_8f",
+    0x7f10: "TLS_1_3_DRAFT_16",
+    0x7f12: "TLS_1_3_DRAFT_18",
     0xfeff: "DTLS_1_0",
     0xfefd: "DTLS_1_1",
 }
