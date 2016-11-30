@@ -3,6 +3,7 @@
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
 # http://www.secdev.org/projects/scapy/doc/build_dissect.html
 
+from __future__ import division
 import binascii
 import copy
 import os
@@ -10,6 +11,9 @@ import struct
 import zlib
 import re
 import warnings
+
+import math
+
 import pkcs7
 import ssl_tls as tls
 import ssl_tls_keystore as tlsk
@@ -553,6 +557,151 @@ class TLSPRF(object):
             bytes_ += HMAC.new(key=key, msg="%s%s%s" % (block, label, random), digestmod=digest).digest()
             block = HMAC.new(key=key, msg=block, digestmod=digest).digest()
         return bytes_[:num_bytes]
+
+
+class TLS13PRF(object):
+    LABEL_EXTERNAL_PSK_BINDER_KEY = "external psk binder key"
+    LABEL_RESUMPTION_PSK_BINDER_KEY = "resumption psk binder key"
+    LABEL_EARLY_TRAFFIC_SECRET = "client early traffic secret"
+    LABEL_EARLY_EXPORTER_MASTER_SECRET = "early exporter master secret"
+    LABEL_CLIENT_HANDSHAKE_SECRET = "client handshake traffic secret"
+    LABEL_SERVER_HANDSHAKE_SECRET = "server handshake traffic secret"
+    LABEL_CLIENT_TRAFFIC_SECRET = "client application traffic secret"
+    LABEL_SERVER_TRAFFIC_SECRET = "server application traffic secret"
+    LABEL_EXPORTER_MASTER_SECRET = "exporter master secret"
+    LABEL_RESUMPTION_MASTER_SECRET = "resumption master secret"
+    LABEL_UPDATE_TRAFFIC_SECRET = "application traffic secret"
+    LABEL_WRITE_KEY = "key"
+    LABEL_WRITE_IV = "iv"
+    LABEL_FINISHED = "finished"
+
+    def __init__(self, digest=SHA256):
+        self.digest = digest
+        self.digest_size = self.digest.digest_size
+
+    class HKDFLabel(object):
+        LABEL_PREFIX = b"TLS 1.3, "
+
+        def __init__(self, len_, label, hash):
+            self.len_ = struct.pack("!H", len_)
+            if (len(label) > 255) or (len(hash) > 255):
+                raise ValueError("All values must be 255 bytes or less")
+            self.label = "%s%s" % (self.LABEL_PREFIX, label)
+            self.hash = hash
+
+        def __str__(self):
+            return "%s%s%s%s%s" % (self.len_, struct.pack("B", len(self.label)), self.label, struct.pack("B", len(self.hash)), self.hash)
+
+    class TLSPRFEarlySecrets(object):
+        def __init__(self, early_secret, binder_key=b"", client_early_traffic_secret=b"", early_exporter_secret=b""):
+            self.early_secret = early_secret
+            self.binder_key = binder_key
+            self.client_early_traffic_secret = client_early_traffic_secret
+            self.early_exporter_secret = early_exporter_secret
+
+    class TLSPRFWriteSecrets(object):
+        def __init__(self, secret, write_key, write_iv):
+            self.secret = secret
+            self.write_key = write_key
+            self.write_iv = write_iv
+
+    class TLSPRFHandshakeSecrets(object):
+        def __init__(self, handshake_secret, client_handshake_secrets, server_handshake_secrets):
+            self.handshake_secret = handshake_secret
+            self.client = client_handshake_secrets
+            self.server = server_handshake_secrets
+
+    class TLSPRFTrafficSecrets(object):
+        def __init__(self, master_secret, client_traffic_secrets, server_traffic_secrets, exporter_secret):
+            self.master_secret = master_secret
+            self.client = client_traffic_secrets
+            self.server = server_traffic_secrets
+            self.exporter_secret = exporter_secret
+
+    def extract(self, key, salt=None):
+        return HKDF(self.digest).extract(key, salt).prk
+
+    def expand_label(self, key, label, hash_, len_=None):
+        len_ = len_ or self.digest_size
+        return HKDF(self.digest).expand(len_, str(TLS13PRF.HKDFLabel(len_, label, hash_)), key)
+
+    def derive_early_secrets(self, psk=None, client_hello_hash=b"", resumption_psk=True):
+        psk = psk or "\x00" * self.digest_size
+        binder_label = TLS13PRF.LABEL_RESUMPTION_PSK_BINDER_KEY if resumption_psk else TLS13PRF.LABEL_EXTERNAL_PSK_BINDER_KEY
+        hkdf = HKDF(self.digest).extract(psk)
+        if client_hello_hash == b"":
+            return TLS13PRF.TLSPRFEarlySecrets(hkdf.prk)
+        else:
+            return TLS13PRF.TLSPRFEarlySecrets(hkdf.prk,
+                                               self.expand_label(hkdf.prk, binder_label, b""),
+                                               self.expand_label(hkdf.prk, TLS13PRF.LABEL_EARLY_TRAFFIC_SECRET, client_hello_hash),
+                                               self.expand_label(hkdf.prk, TLS13PRF.LABEL_EARLY_EXPORTER_MASTER_SECRET, client_hello_hash))
+
+    def derive_handshake_secrets(self, group_key, early_secret, hellos_hash, cipher):
+        hkdf = HKDF(self.digest).extract(group_key, early_secret)
+        secrets = []
+        for label in [TLS13PRF.LABEL_CLIENT_HANDSHAKE_SECRET, TLS13PRF.LABEL_SERVER_HANDSHAKE_SECRET]:
+            secret = self.expand_label(hkdf.prk, label, hellos_hash)
+            write_secrets = self._derive_write_keys(secret, cipher)
+            secrets.append(write_secrets)
+        return TLS13PRF.TLSPRFHandshakeSecrets(hkdf.prk, *secrets)
+
+    def derive_resumption_secret(self, handshake_secret, client_finish_hash):
+        hkdf = HKDF(self.digest).extract(b"\x00" * self.digest_size, handshake_secret)
+        return self.expand_label(hkdf.prk, TLS13PRF.LABEL_RESUMPTION_MASTER_SECRET, client_finish_hash)
+
+    def derive_finish_secret(self, handshake_secret):
+        return self.expand_label(handshake_secret, TLS13PRF.LABEL_FINISHED, b"")
+
+    def derive_traffic_secrets(self, handshake_secret, finish_hash, cipher):
+        hkdf = HKDF(self.digest).extract(b"\x00" * self.digest_size, handshake_secret)
+        secrets = []
+        for label in [TLS13PRF.LABEL_CLIENT_TRAFFIC_SECRET, TLS13PRF.LABEL_SERVER_TRAFFIC_SECRET]:
+            secret = self.expand_label(hkdf.prk, label, finish_hash)
+            write_secrets = self._derive_write_keys(secret, cipher)
+            secrets.append(write_secrets)
+        exporter_secret = self.expand_label(hkdf.prk, TLS13PRF.LABEL_EXPORTER_MASTER_SECRET, finish_hash)
+        return TLS13PRF.TLSPRFTrafficSecrets(hkdf.prk, secrets[0], secrets[1], exporter_secret)
+
+    def _derive_write_keys(self, secret, cipher):
+        key = self.expand_label(secret, TLS13PRF.LABEL_WRITE_KEY, b"", cipher["key_len"])
+        iv = self.expand_label(secret, TLS13PRF.LABEL_WRITE_IV, b"", cipher["iv_len"])
+        return TLS13PRF.TLSPRFWriteSecrets(secret, key, iv)
+
+
+class HKDFError(Exception):
+    pass
+
+
+class HKDF(object):
+    def __init__(self, digest):
+        if digest is None:
+            raise HKDFError("Digest cannot be None")
+        self.digest = digest
+        self.digest_size = self.digest.digest_size
+        self.prk = b""
+
+    def extract(self, ikm, salt=None):
+        if salt is None:
+            salt = b"\x00" * self.digest_size
+        self.prk = HMAC.new(salt, msg=ikm, digestmod=self.digest).digest()
+        return self
+
+    def expand(self, len_, info=b"", prk=None):
+        # L is len_, T is bytes_ in RFC 5869
+        if prk is not None:
+            self.prk = prk
+        if self.prk == b"":
+            raise HKDFError("PRK must be derived prior to calling expand")
+        if len_ > 255 * self.digest_size:
+            raise HKDFError("HKDF can output at max %d bytes, but you asked for %d" % (255 * self.digest_size, len_))
+        n = int(math.ceil(len_ / self.digest_size))
+        block = b""
+        bytes_ = b""
+        for i in range(1, n + 1):
+            block = HMAC.new(self.prk, "%s%s%s" % (block, info, struct.pack("B", i)), digestmod=self.digest).digest()
+            bytes_ += block
+        return bytes_[:len_]
 
 
 class CryptoData(object):
