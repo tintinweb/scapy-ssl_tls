@@ -261,10 +261,13 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         tls_ctx.insert(server_hello)
         self.assertNotIsInstance(tls_ctx.client_ctx.kex_keystore, tlsk.EmptyKexKeystore)
         self.assertNotIsInstance(tls_ctx.server_ctx.kex_keystore, tlsk.EmptyKexKeystore)
-        self.assertIsNotNone(tls_ctx.premaster_secret)
-        self.assertIsNotNone(tls_ctx.master_secret)
+        self.assertIsNotNone(tls_ctx.group_secret)
+        self.assertIsNone(tls_ctx.premaster_secret)
+        self.assertIsNone(tls_ctx.master_secret)
         self.assertNotIsInstance(tls_ctx.client_ctx.sym_keystore, tlsk.EmptySymKeyStore)
         self.assertNotIsInstance(tls_ctx.server_ctx.sym_keystore, tlsk.EmptySymKeyStore)
+        self.assertEqual(len(tls_ctx.client_ctx.sym_keystore_history), 1)
+        self.assertEqual(len(tls_ctx.server_ctx.sym_keystore_history), 1)
 
     def test_when_mismatching_key_shares_are_used_then_a_protocol_error_is_raised(self):
         tls_ctx = tlsc.TLSSessionCtx()

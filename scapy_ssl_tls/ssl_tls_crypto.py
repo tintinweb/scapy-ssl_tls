@@ -63,9 +63,20 @@ class TLSContext(object):
         self.crypto_ctx = None
         self.compression = None
         self.shares = []
+        self.sym_keystore_history = []
         self.asym_keystore = tlsk.EmptyAsymKeystore()
         self.kex_keystore = tlsk.EmptyKexKeystore()
-        self.sym_keystore = tlsk.EmptySymKeyStore()
+        self.__sym_keystore = tlsk.EmptySymKeyStore()
+
+    @property
+    def sym_keystore(self):
+        return self.__sym_keystore
+
+    @sym_keystore.setter
+    def sym_keystore(self, value):
+        if value not in self.sym_keystore_history:
+            self.sym_keystore_history.append(value)
+        self.__sym_keystore = value
 
     def load_rsa_keys_from_file(self, key_file, client=False):
         with open(key_file, "r") as f:
@@ -91,10 +102,13 @@ class TLSContext(object):
             {shares}
         {asym_ks}
         {kex_ks}
-        {sym_ks}"""
+        {sym_ks}
+        symetric keystore history:
+            {sym_history}"""
         return template.format(name=self.name, random=repr(self.random), sess_id=repr(self.session_id),
                                shares="\n".join([str(share) for share in self.shares]),
-                               asym_ks=self.asym_keystore, kex_ks=self.kex_keystore, sym_ks=self.sym_keystore)
+                               asym_ks=self.asym_keystore, kex_ks=self.kex_keystore, sym_ks=self.sym_keystore,
+                               sym_history="\n".join([str(sym_ks) for sym_ks in self.sym_keystore_history]))
 
 
 class TLSSessionCtx(object):
@@ -108,6 +122,7 @@ class TLSSessionCtx(object):
         self.history = []
         self.requires_iv = False
         self.sec_params = None
+        self.cipher_properties = {}
         self.negotiated = namedtuple("negotiated", ["ciphersuite", "key_exchange", "encryption", "mac", "compression",
                                                     "compression_algo", "version", "sig", "resumption"])
         self.negotiated.ciphersuite = None
@@ -123,6 +138,13 @@ class TLSSessionCtx(object):
         self.encrypted_premaster_secret = None
         self.premaster_secret = None
         self.master_secret = None
+
+        self.group_secret = None
+        self.early_secrets = None
+        self.handshake_secrets = None
+        self.master_secrets = None
+        self.resumption_secret = None
+
         self.prf = None
 
     def __str__(self):
@@ -138,6 +160,10 @@ TLS Session Context:
     encrypted_premaster_secret: {epms}
     premaster_secret: {pms}
     master_secret: {ms}
+    early_secrets: {early_secrets}
+    handshake_secrets: {handshake_secrets}
+    master_secrets: {master_secrets}
+    resumption_secret: {resumption_secret}
     {client_ctx}
     {server_ctx}"""
         return template.format(version=tls.TLS_VERSIONS[self.negotiated.version],
@@ -146,7 +172,9 @@ TLS Session Context:
                                hmac=self.negotiated.mac,
                                comp=tls.TLS_COMPRESSION_METHODS.get(self.negotiated.compression, tls.TLSCompressionMethod.NULL),
                                resume=self.negotiated.resumption, epms=repr(self.encrypted_premaster_secret),
-                               pms=repr(self.premaster_secret), ms=repr(self.master_secret), client_ctx=self.client_ctx,
+                               pms=repr(self.premaster_secret), ms=repr(self.master_secret), early_secrets=self.early_secrets,
+                               handshake_secrets=self.handshake_secrets, master_secrets=self.master_secrets,
+                               resumption_secret=repr(self.resumption_secret), client_ctx=self.client_ctx,
                                server_ctx=self.server_ctx)
 
     def insert(self, pkt):
@@ -170,6 +198,7 @@ TLS Session Context:
         self.client_ctx.random = struct.pack("!I", client_hello.gmt_unix_time) + client_hello.random_bytes
         # This is a TLS 1.3 hello, retrieve and store key shares
         if client_hello.haslayer(tls.TLSExtSupportedVersions):
+            # TODO: If psks are used, initialize the PRF here
             if client_hello.haslayer(tls.TLSClientHelloKeyShare):
                 client_shares = client_hello[tls.TLSClientHelloKeyShare].client_shares
                 for client_share in client_shares:
@@ -183,10 +212,10 @@ TLS Session Context:
                             break
                     if not is_user_keystore:
                         self.client_ctx.shares.append(keystore)
-
-        # Generate a random PMS. Overriden at decryption time if private key is provided
-        if self.premaster_secret is None:
-            self.premaster_secret = self._generate_random_pms(client_hello.version)
+        else:
+            # Generate a random PMS. Overriden at decryption time if private key is provided
+            if self.premaster_secret is None:
+                self.premaster_secret = self._generate_random_pms(client_hello.version)
 
     def __handle_tls12_server_hello(self, server_hello):
         self.server_ctx.session_id = server_hello.session_id
@@ -202,21 +231,11 @@ TLS Session Context:
             warnings.warn("Compression method 0x%02x not supported. Compression operations will fail" %
                           self.negotiated.compression)
 
-        try:
-            self.negotiated.key_exchange = \
-                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["key_exchange"]["name"]
-            self.negotiated.sig = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["key_exchange"][
-                "sig"]
-            self.negotiated.encryption = (
-                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["name"],
-                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["key_len"],
-                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["mode_name"])
-            self.negotiated.mac = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["hash"]["name"]
-        except KeyError:
-            warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % self.negotiated.ciphersuite)
+        self.negotiated.key_exchange = self.cipher_properties["key_exchange"]["name"]
+        self.negotiated.sig = self.cipher_properties["key_exchange"]["sig"]
+        self.negotiated.mac = self.cipher_properties["hash"]["name"]
 
-        self.prf = TLSPRF(self.negotiated.version,
-                          TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite].get("prf", {}).get("type"))
+        self.prf = TLSPRF(self.negotiated.version, self.cipher_properties.get("prf", {}).get("type"))
 
         if self.negotiated.resumption:
             self.sec_params = TLSSecurityParameters.from_master_secret(self.prf,
@@ -228,13 +247,6 @@ TLS Session Context:
 
     def __handle_tls13_server_hello(self, server_hello):
         self.server_ctx.random = server_hello.random
-        try:
-            self.negotiated.encryption = (
-                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["name"],
-                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["key_len"],
-                TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]["mode_name"])
-        except KeyError:
-            warnings.warn("Cipher 0x%04x not supported. Crypto operations will fail" % self.negotiated.ciphersuite)
 
         if server_hello.haslayer(tls.TLSServerHelloKeyShare):
             server_share = server_hello[tls.TLSServerHelloKeyShare].server_share
@@ -251,16 +263,21 @@ TLS Session Context:
                         warnings.warn("Did you install a KEX keystore?: %s" % ve)
                     else:
                         # PMS is x coordinate of secret
-                        self.premaster_secret = tlsk.int_to_str(secret_point.x)
-                        self.prf = TLSPRF(self.negotiated.version,
-                                          TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite].get("prf", {}).get("type"))
+                        self.group_secret = tlsk.int_to_str(secret_point.x)
+                        prf = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite].get("prf")
+                        if prf is None:
+                            raise tls.TLSProtocolError("Trying to use a TLS 1.3 cipher without a defined PRF")
 
-                        self.sec_params = TLSSecurityParameters.from_pre_master_secret(self.prf,
-                                                                                       self.negotiated.ciphersuite,
-                                                                                       self.premaster_secret,
-                                                                                       self.client_ctx.random,
-                                                                                       self.server_ctx.random)
-                        self.__generate_secrets()
+                        self.prf = TLS13PRF(prf["type"])
+                        self.sec_params = TLSSecurityParameters(self.prf, self.negotiated.ciphersuite, self.client_ctx.random, self.server_ctx.random)
+                        cipher = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]
+                        self.early_secrets = self.prf.derive_early_secrets(client_hello_hash=self.get_handshake_hash(self.prf.digest, tls.TLSClientHello))
+                        self.handshake_secrets = self.prf.derive_handshake_secrets(self.group_secret, self.early_secrets.early_secret,
+                                                                                   self.get_handshake_hash(self.prf.digest), cipher)
+                        self.client_ctx.sym_keystore = tlsk.CipherKeyStore(self.cipher_properties, self.handshake_secrets.client.write_key,
+                                                                           iv=self.handshake_secrets.client.write_iv)
+                        self.server_ctx.sym_keystore = tlsk.CipherKeyStore(self.cipher_properties, self.handshake_secrets.server.write_key,
+                                                                           iv=self.handshake_secrets.server.write_iv)
             if not keyshare_match:
                 raise tls.TLSProtocolError("No keyshare match between client and server")
         else:
@@ -271,7 +288,15 @@ TLS Session Context:
         self.server_ctx.handshake = server_hello
         self.negotiated.version = server_hello.version
         self.negotiated.ciphersuite = server_hello.cipher_suite
+        try:
+            self.cipher_properties = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]
+        except KeyError:
+            raise RuntimeError("Unsupported cipher: 0x%04x => %s" % (self.negotiated.ciphersuite,
+                                                                     tls.TLS_CIPHER_SUITES.get(self.negotiated.ciphersuite, "UNKNOWN")))
+        self.negotiated.encryption = (self.cipher_properties["cipher"]["name"], self.cipher_properties["cipher"]["key_len"],
+                                      self.cipher_properties["cipher"]["mode_name"])
         self.requires_iv = True if tls.TLSVersion.TLS_1_0 < self.negotiated.version < tls.TLSVersion.TLS_1_3 else False
+
         if self.negotiated.version < tls.TLSVersion.TLS_1_3:
             self.__handle_tls12_server_hello(server_hello)
         # TlS 1.3 case. Extract KEX data from KeyShare extension
@@ -487,15 +512,23 @@ TLS Session Context:
                                                  num_bytes=12)
         return prf_verify_data
 
-    def get_handshake_hash(self, hash_):
+    def get_handshake_digest(self, hash_):
         for handshake in self._walk_handshake_msgs():
             hash_.update(str(handshake))
         return hash_
 
+    def get_handshake_hash(self, digest, up_to=None):
+        digest = digest.new()
+        for handshake in self._walk_handshake_msgs():
+            digest.update(str(handshake))
+            if handshake.haslayer(up_to):
+                break
+        return digest.digest()
+
     def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=None):
         if self.client_ctx.asym_keystore.private is None:
             raise RuntimeError("Missing client private key. Can't sign")
-        msg_hash = self.get_handshake_hash(hash_)
+        msg_hash = self.get_handshake_digest(hash_)
         if pre_sign_hook is not None:
             msg_hash = pre_sign_hook(msg_hash)
         # Will throw exception if we can't sign or if data is larger the modulus
@@ -582,15 +615,15 @@ class TLS13PRF(object):
     class HKDFLabel(object):
         LABEL_PREFIX = b"TLS 1.3, "
 
-        def __init__(self, len_, label, hash):
+        def __init__(self, len_, label, hash_):
             self.len_ = struct.pack("!H", len_)
-            if (len(label) > 255) or (len(hash) > 255):
+            if (len(label) > 255) or (len(hash_) > 255):
                 raise ValueError("All values must be 255 bytes or less")
             self.label = "%s%s" % (self.LABEL_PREFIX, label)
-            self.hash = hash
+            self.hash_ = hash_
 
         def __str__(self):
-            return "%s%s%s%s%s" % (self.len_, struct.pack("B", len(self.label)), self.label, struct.pack("B", len(self.hash)), self.hash)
+            return "%s%s%s%s%s" % (self.len_, struct.pack("B", len(self.label)), self.label, struct.pack("B", len(self.hash_)), self.hash_)
 
     class TLSPRFEarlySecrets(object):
         def __init__(self, early_secret, binder_key=b"", client_early_traffic_secret=b"", early_exporter_secret=b""):
@@ -599,11 +632,27 @@ class TLS13PRF(object):
             self.client_early_traffic_secret = client_early_traffic_secret
             self.early_exporter_secret = early_exporter_secret
 
+        def __str__(self):
+            template = """
+        early_secret: {secret}
+        binder_key: {binder_key}
+        client_early_traffic_secret: {early_traffic_secret}
+        early_exporter_secret: {exporter}"""
+            return template.format(secret=repr(self.early_secret), binder_key=repr(self.binder_key),
+                                   early_traffic_secret=repr(self.client_early_traffic_secret), exporter=repr(self.early_exporter_secret))
+
     class TLSPRFWriteSecrets(object):
         def __init__(self, secret, write_key, write_iv):
             self.secret = secret
             self.write_key = write_key
             self.write_iv = write_iv
+
+        def __str__(self):
+            template = """
+            secret: {secret}
+            write_key: {key}
+            write_iv: {iv}"""
+            return template.format(secret=repr(self.secret), key=repr(self.write_key), iv=repr(self.write_iv))
 
     class TLSPRFHandshakeSecrets(object):
         def __init__(self, handshake_secret, client_handshake_secrets, server_handshake_secrets):
@@ -611,12 +660,27 @@ class TLS13PRF(object):
             self.client = client_handshake_secrets
             self.server = server_handshake_secrets
 
+        def __str__(self):
+            template = """
+        handshake_secret: {secret}
+        client_handshake_secrets: {client}
+        server_handshake_secrets: {server}"""
+            return template.format(secret=repr(self.handshake_secret), client=self.client, server=self.server)
+
     class TLSPRFTrafficSecrets(object):
         def __init__(self, master_secret, client_traffic_secrets, server_traffic_secrets, exporter_secret):
             self.master_secret = master_secret
             self.client = client_traffic_secrets
             self.server = server_traffic_secrets
             self.exporter_secret = exporter_secret
+
+        def __str__(self):
+            template = """
+        master_secret: {secret}
+        exporter_secret: {exporter}
+        client_traffic_secrets: {client}
+        server_traffic_secrets: {server}"""
+            return template.format(secret=repr(self.master_secret), exporter=repr(self.exporter_secret), client=self.client, server=self.server)
 
     def extract(self, key, salt=None):
         return HKDF(self.digest).extract(key, salt).prk
@@ -817,8 +881,8 @@ class GCMCryptoContext(CryptoContext):
     def __init__(self, tls_ctx, ctx):
         super(GCMCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.AEAD)
         # Tag size is hardcoded to 128 bits in GCM for TLS
-        self.tag_size = self.tls_ctx.sec_params.GCM_TAG_SIZE = 16
-        self.explicit_iv_size = self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE = 8
+        self.tag_size = self.tls_ctx.sec_params.GCM_TAG_SIZE
+        self.explicit_iv_size = self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE
 
     def __init_ciphers(self, nonce):
         self.enc_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
@@ -1330,8 +1394,8 @@ class TLSSecurityParameters(object):
                                                       "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
                                                       "hash": {"type": NullHash, "name": "NULL"}},
         tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x1302], "export": False,
-                                                    "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM,
-                                                               "mode_name": CipherMode.AEAD},
+                                                    "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD,
+                                                               "iv_len": 12},
                                                     "prf": {"type": SHA384, "name": "SHA384"}},
         # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
         # 0x0088: DHE_RSA_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
