@@ -274,7 +274,7 @@ class EmptySymKeyStore(SymKeyStore):
 
 class CipherKeyStore(SymKeyStore):
 
-    def __init__(self, properties, key, hmac, iv=b""):
+    def __init__(self, properties, key, hmac=b"", iv=b""):
         self.properties = properties
         # Be consistent and track everything in bits
         self.block_size = self.properties["cipher"]["type"].block_size * 8
