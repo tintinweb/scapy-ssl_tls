@@ -672,7 +672,7 @@ class TestTLSPRF(unittest.TestCase):
         self.assertEqual(prf.digest, SHA384)
 
 
-class TestGcmCryptoContext(unittest.TestCase):
+class TestEAEADCryptoContext(unittest.TestCase):
     def setUp(self):
         cipher_suite = tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256
         self.tls_ctx = tlsc.TLSSessionCtx()
@@ -693,9 +693,9 @@ class TestGcmCryptoContext(unittest.TestCase):
         self.tls_ctx.client_ctx.sym_keystore = self.tls_ctx.sec_params.client_keystore
         unittest.TestCase.setUp(self)
 
-    def test_when_GCM_crypto_container_is_built_aead_is_generated(self):
+    def test_when_EAEAD_crypto_container_is_built_aead_is_generated(self):
         plaintext = b"1234"
-        crypto_container = tlsc.GCMCryptoContainer.from_data(self.tls_ctx, self.ctx, plaintext)
+        crypto_container = tlsc.EAEADCryptoContainer.from_data(self.tls_ctx, self.ctx, plaintext)
         self.assertEqual(str(crypto_container), plaintext)
         self.assertTrue(crypto_container.aead != b"")
         self.assertTrue(crypto_container.aead.startswith(struct.pack("!Q", 5)))
@@ -704,7 +704,7 @@ class TestGcmCryptoContext(unittest.TestCase):
         with self.assertRaises(AttributeError):
             crypto_container.mac
 
-    def test_when_GCM_crypto_context_is_used_security_parameters_are_set(self):
+    def test_when_EAEAD_crypto_context_is_used_security_parameters_are_set(self):
         self.assertEqual(len(self.tls_ctx.client_ctx.sym_keystore.iv), 4)
         self.assertEqual(self.tls_ctx.client_ctx.sym_keystore.iv, "\xd4\x80\xd0\xa8")
         self.assertEqual(len(self.tls_ctx.server_ctx.sym_keystore.iv), 4)
@@ -718,11 +718,11 @@ class TestGcmCryptoContext(unittest.TestCase):
         self.assertEqual(len(self.tls_ctx.server_ctx.sym_keystore.key), 16)
         self.assertEqual(self.tls_ctx.server_ctx.sym_keystore.key, "\xda\xa7{\xcb&\xd3\xfb\xe3\x1f\xb3v2\xa9\\?\xa6")
 
-    def test_when_GCM_crypto_context_is_used_nonce_is_incremented(self):
+    def test_when_EAEAD_crypto_context_is_used_nonce_is_incremented(self):
         plaintext = b"1234"
         initial_nonce = self.tls_ctx.server_ctx.nonce
         initial_seq = self.tls_ctx.server_ctx.sequence
-        crypto_ctx = tlsc.GCMCryptoContext(self.tls_ctx, self.ctx)
+        crypto_ctx = tlsc.EAEADCryptoContext(self.tls_ctx, self.ctx)
         ciphertext = crypto_ctx.encrypt_data(plaintext)
         self.assertEqual(initial_nonce + 1, self.tls_ctx.server_ctx.nonce)
         self.assertEqual(initial_seq + 1, self.tls_ctx.server_ctx.sequence)
