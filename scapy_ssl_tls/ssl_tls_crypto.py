@@ -278,6 +278,9 @@ TLS Session Context:
                                                                            iv=self.handshake_secrets.client.write_iv)
                         self.server_ctx.sym_keystore = tlsk.CipherKeyStore(self.cipher_properties, self.handshake_secrets.server.write_key,
                                                                            iv=self.handshake_secrets.server.write_iv)
+                        factory = CryptoContextFactory(self)
+                        self.client_ctx.crypto_ctx = factory.new(self.client_ctx)
+                        self.server_ctx.crypto_ctx = factory.new(self.server_ctx)
             if not keyshare_match:
                 raise tls.TLSProtocolError("No keyshare match between client and server")
         else:
@@ -401,7 +404,6 @@ TLS Session Context:
             self.server_ctx.sym_keystore = self.sec_params.server_keystore
         self.master_secret = self.sec_params.master_secret
         # Retrieve ciphers used for client/server encryption and decryption
-        # TODO: use factory to assign CryptoContext
         factory = CryptoContextFactory(self)
         self.client_ctx.crypto_ctx = factory.new(self.client_ctx)
         self.server_ctx.crypto_ctx = factory.new(self.server_ctx)
@@ -770,12 +772,13 @@ class HKDF(object):
 
 class CryptoData(object):
     def __init__(self, data, sequence, version, content_type=tls.TLSContentType.APPLICATION_DATA,
-                 data_len=None):
+                 data_len=None, padding_len=0):
         self.data = data
         self.sequence = sequence
         self.version = version
         self.content_type = content_type
         self.data_len = data_len or len(data)
+        self.padding = b"\x00" * padding_len
 
     @classmethod
     def from_context(cls, tls_ctx, ctx, data=b""):
@@ -796,7 +799,8 @@ class CipherMode(object):
     NULL = "NULL"
     STREAM = "STREAM"
     CBC = "CBC"
-    AEAD = "GCM"
+    EAEAD = "EAEAD"
+    IAEAD = "IAEAD"
 
 
 class CryptoContext(object):
@@ -877,9 +881,9 @@ class CBCCryptoContext(CryptoContext):
         return cleartext
 
 
-class GCMCryptoContext(CryptoContext):
+class EAEADCryptoContext(CryptoContext):
     def __init__(self, tls_ctx, ctx):
-        super(GCMCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.AEAD)
+        super(EAEADCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.EAEAD)
         # Tag size is hardcoded to 128 bits in GCM for TLS
         self.tag_size = self.tls_ctx.sec_params.GCM_TAG_SIZE
         self.explicit_iv_size = self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE
@@ -891,12 +895,11 @@ class GCMCryptoContext(CryptoContext):
                                                           nonce=nonce)
 
     def get_nonce(self, nonce=None):
-        if nonce is None:
-            nonce = struct.pack("!Q", self.ctx.nonce)
+        nonce = nonce or struct.pack("!Q", self.ctx.nonce)
         return b"%s%s" % (self.ctx.sym_keystore.iv, nonce)
 
     def encrypt_data(self, data):
-        crypto_container = GCMCryptoContainer.from_data(self.tls_ctx, self.ctx, data)
+        crypto_container = EAEADCryptoContainer.from_data(self.tls_ctx, self.ctx, data)
         return self.encrypt(crypto_container)
 
     def encrypt(self, crypto_container):
@@ -914,7 +917,7 @@ class GCMCryptoContext(CryptoContext):
         # Create an empty Crypto container to retrieve AEAD data based on length of cleartext
         crypto_data = CryptoData.from_context(self.tls_ctx, self.ctx, "\x00" * len(ciphertext))
         crypto_data.content_type = content_type
-        crypto_container = GCMCryptoContainer.from_context(self.tls_ctx, self.ctx, crypto_data)
+        crypto_container = EAEADCryptoContainer.from_context(self.tls_ctx, self.ctx, crypto_data)
         self.__init_ciphers(self.get_nonce(explicit_nonce))
         self.dec_cipher.update(crypto_container.aead)
         cleartext = self.dec_cipher.decrypt(ciphertext)
@@ -927,10 +930,54 @@ class GCMCryptoContext(CryptoContext):
         return "%s%s%s" % (explicit_nonce, cleartext, tag)
 
 
+class IAEADCryptoContext(CryptoContext):
+    def __init__(self, tls_ctx, ctx):
+        super(IAEADCryptoContext, self).__init__(tls_ctx, ctx, CipherMode.IAEAD)
+        # Tag size is hardcoded to 128 bits in GCM for TLS
+        self.tag_size = self.tls_ctx.sec_params.GCM_TAG_SIZE
+
+    def __init_ciphers(self, nonce):
+        self.enc_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          nonce=nonce)
+        self.dec_cipher = self.sec_params.cipher_type.new(self.ctx.sym_keystore.key, mode=self.sec_params.cipher_mode,
+                                                          nonce=nonce)
+
+    def get_nonce(self, nonce=None, sequence=None):
+        iv = nonce or self.ctx.sym_keystore.iv
+        # Sequence is left padded to iv length
+        sequence = sequence or struct.pack("!Q", self.ctx.sequence).rjust(len(iv), b"\x00")
+        if len(iv) != len(sequence):
+            raise ValueError("IV and sequence length must be identical")
+        return b"".join([chr(ord(v) ^ ord(iv[i])) for i, v in enumerate(sequence)])
+
+    def encrypt_data(self, data):
+        crypto_container = IAEADCryptoContainer.from_data(self.tls_ctx, self.ctx, data)
+        return self.encrypt(crypto_container)
+
+    def encrypt(self, crypto_container):
+        self.__init_ciphers(self.get_nonce())
+        ciphertext, mac = self.enc_cipher.encrypt_and_digest(str(crypto_container))
+        bytes_ = "%s%s" % (ciphertext, mac)
+        self.ctx.sequence += 1
+        return bytes_
+
+    def decrypt(self, ciphertext, content_type=tls.TLSContentType.APPLICATION_DATA):
+        ciphertext, tag = ciphertext[:-self.tag_size], ciphertext[-self.tag_size:]
+        self.__init_ciphers(self.get_nonce())
+        cleartext = self.dec_cipher.decrypt(ciphertext)
+        try:
+            self.dec_cipher.verify(tag)
+        except ValueError as why:
+            warnings.warn("Verification of GCM tag failed: %s" % why)
+        self.ctx.sequence += 1
+        return "%s%s" % (cleartext, tag)
+
+
 class CryptoContextFactory(object):
     crypto_context_map = {CipherMode.STREAM: StreamCryptoContext,
                           CipherMode.CBC: CBCCryptoContext,
-                          CipherMode.AEAD: GCMCryptoContext}
+                          CipherMode.EAEAD: EAEADCryptoContext,
+                          CipherMode.IAEAD: IAEADCryptoContext}
 
     def __init__(self, tls_ctx):
         self.tls_ctx = tls_ctx
@@ -1029,9 +1076,9 @@ class CBCCryptoContainer(CryptoContainer):
         return "%s%s%s%s%s" % (self.explicit_iv, self.crypto_data.data, self.mac, self.padding, self.padding_len)
 
 
-class GCMCryptoContainer(CryptoContainer):
+class EAEADCryptoContainer(CryptoContainer):
     def __init__(self, crypto_data):
-        super(GCMCryptoContainer, self).__init__(crypto_data, None)
+        super(EAEADCryptoContainer, self).__init__(crypto_data, None)
         self.aead = b""
         self.__aead()
 
@@ -1042,7 +1089,7 @@ class GCMCryptoContainer(CryptoContainer):
     @classmethod
     def from_data(cls, tls_ctx, ctx, data):
         crypto_data = CryptoData.from_context(tls_ctx, ctx, data)
-        return GCMCryptoContainer.from_context(tls_ctx, ctx, crypto_data)
+        return EAEADCryptoContainer.from_context(tls_ctx, ctx, crypto_data)
 
     def __aead(self):
         sequence_ = struct.pack("!Q", self.crypto_data.sequence)
@@ -1055,10 +1102,28 @@ class GCMCryptoContainer(CryptoContainer):
         return self.crypto_data.data
 
 
+class IAEADCryptoContainer(CryptoContainer):
+    def __init__(self, crypto_data):
+        super(IAEADCryptoContainer, self).__init__(crypto_data, None)
+
+    @classmethod
+    def from_context(cls, tls_ctx, ctx, crypto_data):
+        return cls(crypto_data)
+
+    @classmethod
+    def from_data(cls, tls_ctx, ctx, data):
+        crypto_data = CryptoData.from_context(tls_ctx, ctx, data)
+        return IAEADCryptoContainer.from_context(tls_ctx, ctx, crypto_data)
+
+    def __str__(self):
+        return b"%s%s%s" % (self.crypto_data.data, struct.pack("!B", self.crypto_data.content_type), self.crypto_data.padding)
+
+
 class CryptoContainerFactory(object):
     crypto_container_map = {CipherMode.STREAM: StreamCryptoContainer,
                             CipherMode.CBC: CBCCryptoContainer,
-                            CipherMode.AEAD: GCMCryptoContainer}
+                            CipherMode.EAEAD: EAEADCryptoContainer,
+                            CipherMode.IAEAD: IAEADCryptoContainer}
 
     def __init__(self, tls_ctx):
         self.tls_ctx = tls_ctx
@@ -1321,80 +1386,80 @@ class TLSSecurityParameters(object):
                                                                "hash": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x009c], "export": False,
                                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
-                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                                  "hash": {"type": NullHash, "name": "NULL"},
                                                                  "prf": {"type": SHA256, "name": "SHA256"}},
         tls.TLSCipherSuite.RSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x009d], "export": False,
                                                          "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
-                                                         "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                         "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                          "hash": {"type": NullHash, "name": "NULL"},
                                                          "prf": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.DHE_RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x009e], "export": False,
                                                          "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
-                                                         "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                         "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                          "hash": {"type": NullHash, "name": "NULL"},
                                                          "prf": {"type": SHA256, "name": "SHA256"}},
         tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x009f], "export": False,
                                                              "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
-                                                             "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                             "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                              "hash": {"type": NullHash, "name": "NULL"},
                                                              "prf": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.DHE_DSS_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x00a2], "export": False,
                                                              "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": DSA},
-                                                             "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                             "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                              "hash": {"type": NullHash, "name": "NULL"},
                                                              "prf": {"type": SHA256, "name": "SHA256"}},
         tls.TLSCipherSuite.DHE_DSS_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x009e], "export": False,
                                                              "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
-                                                             "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                             "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                              "hash": {"type": NullHash, "name": "NULL"},
                                                              "prf": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc02b], "export": False,
                                                                "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
-                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                                "hash": {"type": NullHash, "name": "NULL"},
                                                                "prf": {"type": SHA256, "name": "SHA256"}},
         tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc02c], "export": False,
                                                                  "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
-                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                                 "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                                  "hash": {"type": NullHash, "name": "NULL"},
                                                                  "prf": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0xc02f], "export": False,
                                                                "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
-                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                                "hash": {"type": NullHash, "name": "NULL"},
                                                                "prf": {"type": SHA256, "name": "SHA256"}},
         tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc030], "export": False,
                                                                "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
-                                                               "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.EAEAD},
                                                                "hash": {"type": NullHash, "name": "NULL"},
                                                                "prf": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.RSA_WITH_AES_128_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09c], "export": False,
                                                   "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
-                                                  "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                  "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.EAEAD},
                                                   "hash": {"type": NullHash, "name": "NULL"}},
         tls.TLSCipherSuite.RSA_WITH_AES_256_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09d], "export": False,
                                                   "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
-                                                  "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                  "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.EAEAD},
                                                   "hash": {"type": NullHash, "name": "NULL"}},
         tls.TLSCipherSuite.DHE_RSA_WITH_AES_128_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09e], "export": False,
                                                       "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
-                                                      "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.EAEAD},
                                                       "hash": {"type": NullHash, "name": "NULL"}},
         tls.TLSCipherSuite.DHE_RSA_WITH_AES_256_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc09f], "export": False,
                                                       "key_exchange": {"type": DHE, "name": tls.TLSKexNames.DHE, "sig": RSA},
-                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.EAEAD},
                                                       "hash": {"type": NullHash, "name": "NULL"}},
         tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_128_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc0ac], "export": False,
                                                       "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
-                                                      "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CCM, "mode_name": CipherMode.EAEAD},
                                                       "hash": {"type": NullHash, "name": "NULL"}},
         tls.TLSCipherSuite.ECDHE_ECDSA_WITH_AES_256_CCM: {"name": tls.TLS_CIPHER_SUITES[0xc0ad], "export": False,
                                                       "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": ECDSA},
-                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.AEAD},
+                                                      "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CCM, "mode_name": CipherMode.EAEAD},
                                                       "hash": {"type": NullHash, "name": "NULL"}},
         tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384: {"name": tls.TLS_CIPHER_SUITES[0x1302], "export": False,
-                                                    "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.AEAD,
+                                                    "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_GCM, "mode_name": CipherMode.IAEAD,
                                                                "iv_len": 12},
                                                     "prf": {"type": SHA384, "name": "SHA384"}},
         # 0x0087: DHE_DSS_WITH_CAMELLIA_256_CBC_SHA => Camelia support should use camcrypt or the camelia patch for pycrypto
@@ -1443,9 +1508,12 @@ class TLSSecurityParameters(object):
 
     def __set_sec_param_sizes(self):
         # Stream ciphers have a block size of one, but IV should be 0
-        if self.cipher_mode_name == CipherMode.AEAD:
+        if self.cipher_mode_name == CipherMode.EAEAD:
             self.mac_key_length = 0
             self.iv_length = 4
+        elif self.cipher_mode_name == CipherMode.IAEAD:
+            self.mac_key_length = 0
+            self.iv_length = 12
         elif self.cipher_mode_name == CipherMode.CBC:
             self.mac_key_length = self.negotiated_crypto_param["hash"]["type"].digest_size
             self.iv_length = self.block_size

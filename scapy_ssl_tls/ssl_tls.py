@@ -865,10 +865,17 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
                         data = raw_bytes[:-self.padding_len - hash_size - 1]
                 except IndexError:
                     data = raw_bytes
-            elif self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.AEAD:
+            elif self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.EAEAD:
                 self.explicit_iv = raw_bytes[:self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE]
                 self.mac = raw_bytes[-self.tls_ctx.sec_params.GCM_TAG_SIZE:]
                 data = raw_bytes[self.tls_ctx.sec_params.GCM_EXPLICIT_IV_SIZE:-self.tls_ctx.sec_params.GCM_TAG_SIZE]
+            elif self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.IAEAD:
+                self.mac = raw_bytes[-self.tls_ctx.sec_params.GCM_TAG_SIZE:]
+                cleartext = raw_bytes[:-self.tls_ctx.sec_params.GCM_TAG_SIZE]
+                padding_index = find_padding_start(cleartext)
+                self.padding = cleartext[padding_index:]
+                self.padding_len = len(self.padding)
+                data = cleartext[:padding_index - 1]
             else:
                 self.mac = raw_bytes[-hash_size:]
                 data = raw_bytes[:-hash_size]
@@ -1241,6 +1248,13 @@ class SSL(Packet):
         return s
 
 TLS = SSL
+
+
+def find_padding_start(payload, padding_byte=b"\x00"):
+    for i, v in enumerate(payload[::-1]):
+        if v != padding_byte:
+            return len(payload) - i
+
 
 cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
                      TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE,
