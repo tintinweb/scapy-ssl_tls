@@ -1166,7 +1166,6 @@ class TLSSocket(object):
 
 # entry class
 class SSL(Packet):
-
     """
     COMPOUND CLASS for SSL
     """
@@ -1210,6 +1209,8 @@ class SSL(Packet):
             payload_len = record(raw_bytes[pos:pos + record_header_len]).length
             if self.tls_ctx is not None:
                 payload = record(raw_bytes[pos:pos + record_header_len + payload_len], ctx=self.tls_ctx)
+                # Perform inline decryption if required
+                payload = self.do_decrypt_payload(payload)
                 self.tls_ctx.insert(payload)
             else:
                 payload = record(raw_bytes[pos:pos + record_header_len + payload_len])
@@ -1220,6 +1221,31 @@ class SSL(Packet):
         self.fields["records"] = records
         # This will always be empty (equivalent to returning "")
         return raw_bytes[pos:]
+
+    def do_decrypt_payload(self, record):
+        encrypted_payload, layer = self._get_encrypted_payload(record)
+        if encrypted_payload is not None or self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+            try:
+                if self.tls_ctx.client:
+                    cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                           record.content_type)
+                else:
+                    cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload,
+                                                                           record.content_type)
+                if self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+                    tag = cleartext[-self.tls_ctx.sec_params.GCM_TAG_SIZE:]
+                    cleartext = cleartext[:-self.tls_ctx.sec_params.GCM_TAG_SIZE]
+                    content_map = {0x15: TLSAlert, 0x16: TLSHandshakes, 0x17: TLSPlaintext}
+                    padding_index = find_padding_start(cleartext)
+                    content_type = struct.unpack("B", cleartext[padding_index - 1])[0]
+                    layer = content_map[content_type]
+                    cleartext = "%s%s" % (cleartext, tag)
+                pkt = layer(cleartext, ctx=self.tls_ctx)
+                record[self.guessed_next_layer].payload = pkt
+            # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
+            except ValueError as ve:
+                raise TLSProtocolError("Decryption failed: %s" % ve, pkt=record)
+        return record
 
     def _get_encrypted_payload(self, record):
         encrypted_payload = None
@@ -1241,31 +1267,6 @@ class SSL(Packet):
             encrypted_payload = record[TLSCiphertext].data
             decrypted_type = TLSPlaintext
         return encrypted_payload, decrypted_type
-
-    def post_dissect(self, s):
-        if self.tls_ctx is not None:
-            for record in self.records:
-                encrypted_payload, layer = self._get_encrypted_payload(record)
-                if encrypted_payload is not None:
-                    try:
-                        if self.tls_ctx.client:
-                            cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
-                                                                                   record.content_type)
-                        else:
-                            cleartext = self.tls_ctx.client_ctx.crypto_ctx.decrypt(encrypted_payload,
-                                                                                   record.content_type)
-                        pkt = layer(cleartext, ctx=self.tls_ctx)
-                        original_record = record
-                        record[self.guessed_next_layer].payload = pkt
-                        # If the encrypted is in the history packet list, update it with the unencrypted version
-                        if original_record in self.tls_ctx.history:
-                            record_index = self.tls_ctx.history.index(original_record)
-                            self.tls_ctx.history[record_index] = record
-                    # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
-                    except ValueError as ve:
-                        raise ValueError("Decryption failed: %s" % ve)
-        return s
-
 TLS = SSL
 
 
@@ -1327,10 +1328,7 @@ tls_to_raw = to_raw
 class TLSProtocolError(Exception):
 
     def __init__(self, *args, **kwargs):
-        try:
-            self.pkt = kwargs["pkt"]
-        except KeyError:
-            self.pkt = None
+        self.pkt = kwargs.pop("pkt", None)
         Exception.__init__(self, *args, **kwargs)
 
 

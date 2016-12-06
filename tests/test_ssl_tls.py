@@ -247,7 +247,7 @@ class TestTLSDissector(unittest.TestCase):
         tls_ctx.insert(client_kex)
         tls_ctx.insert(tls.to_raw(tls.TLSFinished(), tls_ctx))
         handshake = tls.TLSRecord() / tls.TLSHandshake() / "C" * 5
-        with self.assertRaises(ValueError):
+        with self.assertRaises(tls.TLSProtocolError):
             tls.TLS(str(handshake), ctx=tls_ctx)
 
 
