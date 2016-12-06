@@ -429,6 +429,8 @@ class TLSRecord(StackedLenPacket):
         """
         cls = StackedLenPacket.guess_payload_class(self, payload)
         p = cls(payload, _internal=1, _underlayer=self)
+        if p.haslayer(TLSHandshakes) and len(p[TLSHandshakes].handshakes) > 0:
+            p = p[TLSHandshakes].handshakes[0]
         try:
             if cls == Raw().__class__ or p.length > len(payload):
                 # length does not fit len raw_bytes, assume its corrupt or encrypted
@@ -922,10 +924,27 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
         return self.payload.getfieldval(attr)
 
 
-class TLSHandshake(TLSDecryptablePacket):
+class TLSHandshake(PacketLengthFieldPayload):
     name = "TLS Handshake"
     fields_desc = [ByteEnumField("type", TLSHandshakeType.CLIENT_HELLO, TLS_HANDSHAKE_TYPES),
                    XBLenField("length", None, fmt="!I", numbytes=3)]
+
+    def __init__(self, *args, **fields):
+        self.tls_ctx = fields.pop("ctx", None)
+        PacketLengthFieldPayload.__init__(self, *args, **fields)
+
+
+class PacketListFieldContext(PacketListField):
+    def m2i(self, pkt, m):
+        if pkt is not None and hasattr(pkt, "tls_ctx"):
+            return self.cls(m, ctx=pkt.tls_ctx)
+        else:
+            return PacketListField.m2i(self, pkt, m)
+
+
+class TLSHandshakes(TLSDecryptablePacket):
+    name = "TLS Handshakes"
+    fields_desc = [PacketListFieldContext("handshakes", None, TLSHandshake)]
 
 
 class TLSFinished(PacketNoPayload):
@@ -1209,7 +1228,7 @@ class SSL(Packet):
         if record.haslayer(TLSRecord) and record[TLSRecord].content_type == TLSContentType.HANDSHAKE \
                 and record.haslayer(TLSCiphertext):
             encrypted_payload = str(record.payload)
-            decrypted_type = TLSHandshake
+            decrypted_type = TLSHandshakes
         # Do not attempt to decrypt cleartext Alerts and CCS
         elif record.haslayer(TLSAlert) and record.length != 0x2:
             encrypted_payload = str(record.payload)
@@ -1257,9 +1276,7 @@ def find_padding_start(payload, padding_byte=b"\x00"):
 
 
 cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
-                     TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE,
-                                                        str(TLSHandshake(type=TLSHandshakeType.FINISHED) /
-                                                            tls_ctx.get_verify_data())),
+                     TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(TLSHandshakes(handshakes=[TLSHandshake(type=TLSHandshakeType.FINISHED) / tls_ctx.get_verify_data()]))),
                      TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt)),
                      TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt))}
 
@@ -1364,7 +1381,7 @@ bind_layers(TLSRecord, TLSChangeCipherSpec, {'content_type': TLSContentType.CHAN
 bind_layers(TLSRecord, TLSCiphertext, {"content_type": TLSContentType.APPLICATION_DATA})
 bind_layers(TLSRecord, TLSHeartBeat, {'content_type': TLSContentType.HEARTBEAT})
 bind_layers(TLSRecord, TLSAlert, {'content_type': TLSContentType.ALERT})
-bind_layers(TLSRecord, TLSHandshake, {'content_type': TLSContentType.HANDSHAKE})
+bind_layers(TLSRecord, TLSHandshakes, {'content_type': TLSContentType.HANDSHAKE})
 
 # --> handshake proto
 bind_layers(TLSHandshake, TLSHelloRequest, {'type': TLSHandshakeType.HELLO_REQUEST})
