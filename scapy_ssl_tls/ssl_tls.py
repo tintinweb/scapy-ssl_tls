@@ -745,6 +745,7 @@ class TLSServerDHParams(PacketNoPayload):
                    StrLenField("g", '', length_from=lambda x:x.g_length),
                    XFieldLenField("ys_length", None, length_of="y_s", fmt="!H"),
                    StrLenField("y_s", "", length_from=lambda x:x.ys_length),
+                   ShortEnumField("scheme_type", TLSSignatureScheme.RSA_PKCS1_SHA256, TLS_SIGNATURE_SCHEMES),
                    XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
                    StrLenField("sig", '', length_from=lambda x:x.sig_length)]
 
@@ -769,7 +770,8 @@ class TLSServerKeyExchange(TLSKeyExchange):
         dh_params = TLSServerDHParams(payload)
         ecdh_params = TLSServerECDHParams(payload)
         # Try to figure out what is the next Key Exchange layer
-        if dh_params.p_length == len(dh_params.p) and dh_params.g_length == len(dh_params.g) and dh_params.ys_length == len(dh_params.y_s):
+        if dh_params.p_length == len(dh_params.p) and dh_params.g_length == len(dh_params.g) and \
+                        dh_params.ys_length == len(dh_params.y_s) and dh_params.sig_length == len(dh_params.sig):
             return TLSServerDHParams
         elif ecdh_params.p_length == len(ecdh_params.p) and ecdh_params.sig_length == len(ecdh_params.sig):
             return TLSServerECDHParams
