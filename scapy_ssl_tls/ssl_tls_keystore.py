@@ -70,6 +70,8 @@ def pem_to_der(certificate):
 
 
 def nb_bits(int_):
+    if int_ == 0:
+        return 0
     return int(math.ceil(math.log(int_) / math.log(2)))
 
 
@@ -79,6 +81,8 @@ def int_to_str(int_):
 
 
 def str_to_int(str_):
+    if str_ == "":
+        return 0
     return int(binascii.hexlify(str_), 16)
 
 
