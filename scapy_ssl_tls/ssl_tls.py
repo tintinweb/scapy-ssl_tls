@@ -790,10 +790,49 @@ class TLSCertificate(PacketNoPayload):
                    PacketLenField("data", None, x509.X509Cert, length_from=lambda x:x.length)]
 
 
-class TLSCertificateList(PacketNoPayload):
-    name = "TLS Certificate List"
+class TLS10Certificate(PacketNoPayload):
+    name = "TLS 1.0 Certificates"
     fields_desc = [XBLenField("length", None, length_of="certificates", fmt="!I", numbytes=3),
-                   PacketListField("certificates", None, TLSCertificate, length_from=lambda x:x.length)]
+                   PacketListField("certificates", None, TLSCertificate, length_from=lambda x: x.length)]
+
+
+class TLSCertificateEntry(PacketNoPayload):
+    name = "TLS Certificate Entry"
+    fields_desc = [XBLenField("length", None, length_of="cert_data", fmt="!I", numbytes=3),
+                   PacketLenField("cert_data", None, x509.X509Cert, length_from=lambda x: x.length),
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
+                   PacketListField("extensions", None, TLSExtension, length_from=lambda x: x.extensions_length)]
+
+
+class TLS13Certificate(PacketNoPayload):
+    name = "TLS 1.3 Certificates"
+    fields_desc = [XFieldLenField("request_context_length", None, length_of="request_context", fmt="B"),
+                   StrLenField("request_context", "", length_from=lambda x: x.request_context_length),
+                   XBLenField("length", None, length_of="certificates", fmt="!I", numbytes=3),
+                   PacketListField("certificates", None, TLSCertificateEntry, length_from=lambda x: x.length)]
+
+
+class TLSCertificateList(Packet):
+    name = "TLS Certificate List"
+    fields_desc = []
+
+    def guess_payload_class(self, payload):
+        tls13_cert = TLS13Certificate(payload)
+        tls10_cert = TLS10Certificate(payload)
+        certs_len = lambda certs: len(b"".join([str(cert) for cert in certs.certificates]))
+        if tls13_cert.request_context_length == len(tls13_cert.request_context) and tls13_cert.length == certs_len(tls13_cert):
+            return TLS13Certificate
+        elif tls10_cert.length == certs_len(tls10_cert):
+            return TLS10Certificate
+        else:
+            pkt = self.underlayer
+            # If our underlayer is a handshake, use the tls_ctx to determine
+            # whether we are using a tls 1.3 cert or an older version
+            if pkt is not None and pkt.haslayer(TLSHandshake):
+                if pkt.tls_ctx is not None:
+                    if pkt.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+                        return TLS13Certificate
+            return TLS10Certificate
 
 
 class TLSCertificateVerify(PacketNoPayload):
