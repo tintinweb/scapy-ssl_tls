@@ -622,6 +622,12 @@ class TLSHelloRetryRequest(Packet):
                    TypedPacketListField("extensions", None, TLSExtension, length_from=lambda x:x.length, type_="TLSHelloRetryRequest")]
 
 
+class TLSEncryptedExtensions(PacketNoPayload):
+    name = "TLS Encrypted Extensions"
+    fields_desc = [XFieldLenField("length", None, length_of="extensions", fmt="H"),
+                   TypedPacketListField("extensions", None, TLSExtension, length_from=lambda x:x.length, type_="TLSEncryptedExtensions")]
+
+
 class TLSClientHello(PacketNoPayload):
     name = "TLS Client Hello"
     fields_desc = [XShortEnumField("version", TLSVersion.TLS_1_2, TLS_VERSIONS),
@@ -1394,6 +1400,7 @@ bind_layers(TLSHandshake, TLSFinished, {'type': TLSHandshakeType.FINISHED})
 bind_layers(TLSHandshake, TLSSessionTicket, {'type': TLSHandshakeType.NEWSESSIONTICKET})
 bind_layers(TLSHandshake, TLSCertificateRequest, {"type": TLSHandshakeType.CERTIFICATE_REQUEST})
 bind_layers(TLSHandshake, TLSCertificateVerify, {"type": TLSHandshakeType.CERTIFICATE_VERIFY})
+bind_layers(TLSHandshake, TLSEncryptedExtensions, {"type": TLSHandshakeType.ENCRYPTED_EXTENSIONS})
 # <---
 
 # --> extensions
