@@ -65,7 +65,7 @@ class TestTLSRecord(unittest.TestCase):
         der_cert = '0\x82\x03\xe70\x82\x02\xcf\xa0\x03\x02\x01\x02\x02\t\x00\xb9\xee\xd4\xd9U\xa5\x9e\xb30\r\x06\t*\x86H\x86\xf7\r\x01\x01\x05\x05\x000p1\x0b0\t\x06\x03U\x04\x06\x13\x02UK1\x160\x14\x06\x03U\x04\n\x0c\rOpenSSL Group1"0 \x06\x03U\x04\x0b\x0c\x19FOR TESTING PURPOSES ONLY1%0#\x06\x03U\x04\x03\x0c\x1cOpenSSL Test Intermediate CA0\x1e\x17\r111208140148Z\x17\r211016140148Z0d1\x0b0\t\x06\x03U\x04\x06\x13\x02UK1\x160\x14\x06\x03U\x04\n\x0c\rOpenSSL Group1"0 \x06\x03U\x04\x0b\x0c\x19FOR TESTING PURPOSES ONLY1\x190\x17\x06\x03U\x04\x03\x0c\x10Test Server Cert0\x82\x01"0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x01\x05\x00\x03\x82\x01\x0f\x000\x82\x01\n\x02\x82\x01\x01\x00\xf3\x84\xf3\x926\xdc\xb2F\xcafz\xe5)\xc5\xf3I("\xd3\xb9\xfe\xe0\xde\xe48\xce\xee"\x1c\xe9\x91;\x94\xd0r/\x87\x85YKf\xb1\xc5\xf5z\x85]\xc2\x0f\xd3.)X6\xccHk\xa2\xa2\xb5&\xceg\xe2G\xb6\xdfI\xd2?\xfa\xa2\x10\xb7\xc2\x97D~\x874mm\xf2\x8b\xb4U+\xd6!\xdeSK\x90\xea\xfd\xea\xf985+\xf4\xe6\x9a\x0e\xf6\xbb\x12\xab\x87!\xc3/\xbc\xf4\x06\xb8\x8f\x8e\x10\x07\'\x95\xe5B\xcb\xd1\xd5\x10\x8c\x92\xac\xee\x0f\xdc#H\x89\xc9\xc6\x93\x0c"\x02\xe7t\xe7%\x00\xab\xf8\x0f\\\x10\xb5\x85;f\x94\xf0\xfbMW\x06U!"%\xdb\xf3\xaa\xa9`\xbfM\xaay\xd1\xab\x92H\xba\x19\x8e\x12\xech\xd9\xc6\xba\xdf\xecZ\x1c\xd8C\xfe\xe7R\xc9\xcf\x02\xd0\xc7\x7f\xc9~\xb0\x94\xe3SDX\x0b.\xfd)t\xb5\x06\x9b\\D\x8d\xfb2u\xa4:\xa8g{\x872\nP\x8d\xe1\xa2\x13J%\xaf\xe6\x1c\xb1%\xbf\xb4\x99\xa2S\xd3\xa2\x02\xbf\x11\x02\x03\x01\x00\x01\xa3\x81\x8f0\x81\x8c0\x0c\x06\x03U\x1d\x13\x01\x01\xff\x04\x020\x000\x0e\x06\x03U\x1d\x0f\x01\x01\xff\x04\x04\x03\x02\x05\xe00,\x06\t`\x86H\x01\x86\xf8B\x01\r\x04\x1f\x16\x1dOpenSSL Generated Certificate0\x1d\x06\x03U\x1d\x0e\x04\x16\x04\x14\x82\xbc\xcf\x00\x00\x13\xd1\xf79%\x9a\'\xe7\xaf\xd2\xef \x1bn\xac0\x1f\x06\x03U\x1d#\x04\x180\x16\x80\x146\xc3l\x88\xe7\x95\xfe\xb0\xbd\xec\xce>=\x86\xab!\x81\x87\xda\xda0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x05\x05\x00\x03\x82\x01\x01\x00\xa9\xbdMW@t\xfe\x96\xe9+\xd6x\xfd\xb3c\xcc\xf4\x0bM\x12\xcaZt\x8d\x9b\xf2a\xe6\xfd\x06\x11C\x84\xfc\x17\xa0\xeccc6\xb9\x9e6j\xb1\x02Zj[?j\xa1\xea\x05e\xac~@\x1aHe\x88\xd19M\xd3Kw\xe9\xc8\xbb+\x9eZ\xf4\x0849G\xb9\x02\x081\x9a\xf1\xd9\x17\xc5\xe9\xa6\xa5\x96Km@\xa9[e(\xcb\xcb\x00\x03\x82c7\xd3\xad\xb1\x96;v\xf5\x17\x16\x02{\xbdSSFr4\xd6\x08d\x9d\xbbC\xfbd\xb1I\x07w\tazB\x17\x110\x0c\xd9\'\\\xf5q\xb6\xf0\x180\xf3~\xf1\x85?2~J\xaf\xb3\x10\xf7l\xc6\x85K-\'\xad\n \\\xfb\x8d\x19p4\xb9u_|\x87\xd5\xc3\xec\x93\x13A\xfcs\x03\xb9\x8d\x1a\xfe\xf7&\x86I\x03\xa9\xc5\x82?\x80\r)I\xb1\x8f\xed$\x1b\xfe\xcfX\x90F\xe7\xa8\x87\xd4\x1ey\xef\x99m\x18\x9f>\x8b\x82\x07\xc1C\xc7\xe0%\xb6\xf1\xd3\x00\xd7@\xabK\x7f+z>\xa6\x99LT'
         stacked_handshake_layers = tls.TLSRecord() / tls.TLSHandshakes(handshakes=
                                                                        [tls.TLSHandshake() / tls.TLSServerHello(),
-                                                                        tls.TLSHandshake() / tls.TLSCertificateList(
+                                                                        tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
                                                                             certificates=[tls.TLSCertificate(data=x509.X509Cert(der_cert))]),
                                                                         tls.TLSHandshake() / tls.TLSServerHelloDone()])
         self.stacked_handshake = tls.TLS(str(stacked_handshake_layers))
@@ -95,7 +95,7 @@ class TestTLSRecord(unittest.TestCase):
         # check TLS layers one by one
         self.assertEqual(re.findall(r'<(TLS[\w]+)', str(repr(self.stacked_handshake))),
                          ['TLSRecord', 'TLSHandshakes', 'TLSHandshake', 'TLSServerHello',
-                          'TLSHandshake', 'TLSCertificateList', 'TLSCertificate',
+                          'TLSHandshake', 'TLSCertificateList', 'TLS10Certificate', 'TLSCertificate',
                           'TLSHandshake', 'TLSServerHelloDone'])
 
     def test_fragmentation_fails_on_non_aligned_boundary_for_handshakes(self):
@@ -794,7 +794,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         unittest.TestCase.setUp(self)
 
     def test_tls_certificate_x509(self):
-        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList(
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
             certificates=[tls.TLSCertificate(data=x509.X509Cert(self.der_cert))])])
 
         self.assertEqual(str(pkt[tls.TLSCertificateList].certificates[0].data), self.der_cert)
@@ -816,7 +816,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 
     def test_tls_certificate_multiple_x509(self):
         # issue #27
-        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList(
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
             certificates=[tls.TLSCertificate(data=x509.X509Cert(self.der_cert)),
                           tls.TLSCertificate(data=x509.X509Cert(self.der_cert)),
                           tls.TLSCertificate(data=x509.X509Cert(self.der_cert))])])
@@ -844,7 +844,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
             self.assertEqual(pkt[tls.TLSCertificate].data.pubkey, tlscert.data.pubkey)
 
     def test_tls_certificate_x509_pubkey(self):
-        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList(
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
             certificates=[tls.TLSCertificate(data=x509.X509Cert(self.der_cert))])])
         # dissect and extract pubkey
         pkt = tls.SSL(str(pkt))
@@ -861,6 +861,32 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 
         self.assertTrue(pubkey_extract_from_tls_certificate.can_encrypt())
         self.assertTrue(pubkey_extract_from_tls_certificate.can_sign())
+
+    def test_when_using_tls13_then_certificates_are_dissected_differently(self):
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS13Certificate(
+            request_context="1234",
+            certificates=[tls.TLSCertificateEntry(cert_data=x509.X509Cert(self.der_cert),
+                                                  extensions=[tls.TLSExtension(type=tls.TLSExtensionType.SIGNED_CERTIFICATE_TIMESTAMP) /
+                                                              "whatever"]),
+                          tls.TLSCertificateEntry(cert_data=x509.X509Cert(self.der_cert)),
+                          tls.TLSCertificateEntry(cert_data=x509.X509Cert(self.der_cert))])])
+        self.assertTrue(pkt.haslayer(tls.TLSCertificateList))
+        self.assertFalse(pkt.haslayer(tls.TLS10Certificate))
+        self.assertTrue(pkt.haslayer(tls.TLS13Certificate))
+        self.assertEqual(pkt[tls.TLS13Certificate].request_context, "1234")
+        self.assertEqual(len(pkt[tls.TLS13Certificate].certificates), 3)
+        self.assertTrue(pkt[tls.TLS13Certificate].certificates[0].haslayer(tls.TLSCertificateEntry))
+        self.assertTrue(pkt[tls.TLS13Certificate].certificates[0].haslayer(tls.TLSExtension))
+        self.assertEqual(pkt[tls.TLS13Certificate].certificates[0].extensions[0].type, tls.TLSExtensionType.SIGNED_CERTIFICATE_TIMESTAMP)
+        pkt = tls.TLSRecord(str(pkt))
+        self.assertTrue(pkt.haslayer(tls.TLSCertificateList))
+        self.assertFalse(pkt.haslayer(tls.TLS10Certificate))
+        self.assertTrue(pkt.haslayer(tls.TLS13Certificate))
+        self.assertEqual(pkt[tls.TLS13Certificate].request_context, "1234")
+        self.assertEqual(len(pkt[tls.TLS13Certificate].certificates), 3)
+        self.assertTrue(pkt[tls.TLS13Certificate].certificates[0].haslayer(tls.TLSCertificateEntry))
+        self.assertTrue(pkt[tls.TLS13Certificate].certificates[0].haslayer(tls.TLSExtension))
+        self.assertEqual(pkt[tls.TLS13Certificate].certificates[0].extensions[0].type, tls.TLSExtensionType.SIGNED_CERTIFICATE_TIMESTAMP)
 
 
 class TestTLSExtensions(unittest.TestCase):
