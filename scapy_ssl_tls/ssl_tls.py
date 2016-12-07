@@ -1139,7 +1139,7 @@ class SSLv2ClientMasterKey(Packet):
 
 class TLSSocket(object):
 
-    def __init__(self, sock, client=None, tls_ctx=None):
+    def __init__(self, sock=socket.socket(), client=None, tls_ctx=None):
         if sock is not None:
             self._s = sock
         else:
@@ -1208,6 +1208,12 @@ class TLSSocket(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+    def do_handshake(self, version, ciphers, extensions=[]):
+        return tls_do_handshake(self, version, ciphers, extensions)
+
+    def do_round_trip(self, pkt, recv=True):
+        return tls_do_round_trip(self, pkt, recv)
 
 
 # entry class
@@ -1373,23 +1379,50 @@ tls_to_raw = to_raw
 
 
 class TLSProtocolError(Exception):
-
     def __init__(self, *args, **kwargs):
-        self.pkt = kwargs.pop("pkt", None)
-        Exception.__init__(self, *args, **kwargs)
+        try:
+            self.response = args[2]
+        except IndexError:
+            self.response = kwargs.pop("response", TLS())
+
+        try:
+            self.request = args[1]
+        except IndexError:
+            self.request = kwargs.pop("pkt", TLS())
+
+        Exception.__init__(self, args[0], **kwargs)
 
 
-def tls_do_handshake(tls_socket, version, ciphers):
-    client_hello = TLSRecord(version=version) / TLSHandshake() / TLSClientHello(version=version, cipher_suites=ciphers)
-    tls_socket.sendall(client_hello)
-    r = tls_socket.recvall()
-    if r.haslayer(TLSAlert):
-        raise TLSProtocolError("Alert returned by server", r)
-    client_key_exchange = TLSRecord(version=version) / TLSHandshake() / tls_socket.tls_ctx.get_client_kex_data()
-    client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
-    tls_socket.sendall(TLS.from_records([client_key_exchange, client_ccs]))
-    tls_socket.sendall(to_raw(TLSFinished(), tls_socket.tls_ctx))
-    tls_socket.recvall()
+def tls_do_round_trip(tls_socket, pkt, recv=True):
+    resp = TLS()
+    try:
+        tls_socket.sendall(pkt)
+        if recv:
+            resp = tls_socket.recvall()
+            if resp.haslayer(TLSAlert):
+                alert = resp[TLSAlert]
+                level = TLS_ALERT_LEVELS.get(alert.level, "unknown")
+                description = TLS_ALERT_DESCRIPTIONS.get(alert.description, "unknown description")
+                raise TLSProtocolError("%s alert returned by server: %s" % (level.upper(), description.upper()), pkt, resp)
+    except socket.error as se:
+        raise TLSProtocolError(se, pkt, resp)
+    return resp
+
+
+def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
+    if version <= TLSVersion.TLS_1_2:
+        client_hello = TLSRecord(version=version) / TLSHandshakes(handshakes=[TLSHandshake() /
+                                                                              TLSClientHello(version=version, cipher_suites=ciphers, extensions=extensions)])
+        resp1 = tls_do_round_trip(tls_socket, client_hello)
+
+        client_key_exchange = TLSRecord(version=version) / TLSHandshakes(handshakes=[TLSHandshake() / tls_socket.tls_ctx.get_client_kex_data()])
+        client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
+        tls_do_round_trip(tls_socket, TLS.from_records([client_key_exchange, client_ccs]), False)
+
+        resp2 = tls_do_round_trip(tls_socket, to_raw(TLSFinished(), tls_socket.tls_ctx))
+        return resp1, resp2
+    else:
+        raise NotImplementedError("Do handshake not implemented for TLS 1.3")
 
 
 def tls_fragment_payload(pkt, record=None, size=2**14):
