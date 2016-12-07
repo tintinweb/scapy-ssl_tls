@@ -25,6 +25,7 @@ from Cryptodome.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
 from Cryptodome.Hash import HMAC, MD5, SHA, SHA256, SHA384
 from Cryptodome.PublicKey import DSA, RSA
 from Cryptodome.Signature import PKCS1_v1_5 as Sig_PKCS1_v1_5
+from scapy.packet import Raw
 
 
 """
@@ -166,8 +167,8 @@ TLS Session Context:
     resumption_secret: {resumption_secret}
     {client_ctx}
     {server_ctx}"""
-        return template.format(version=tls.TLS_VERSIONS[self.negotiated.version],
-                               cipher=tls.TLS_CIPHER_SUITES[self.negotiated.ciphersuite],
+        return template.format(version=tls.TLS_VERSIONS.get(self.negotiated.version, "UNKNOWN"),
+                               cipher=tls.TLS_CIPHER_SUITES.get(self.negotiated.ciphersuite, "UNKNOWN"),
                                kex=self.negotiated.key_exchange, enc=self.negotiated.encryption,
                                hmac=self.negotiated.mac,
                                comp=tls.TLS_COMPRESSION_METHODS.get(self.negotiated.compression, tls.TLSCompressionMethod.NULL),
@@ -189,7 +190,7 @@ TLS Session Context:
 
         for pkt in ps:
             self.history.append(pkt)
-            self._process(pkt)    # fill structs
+            self._process(pkt)
 
     def __handle_client_hello(self, client_hello):
         # Update client context with random, session_id and generate a dummy PMS
@@ -356,6 +357,14 @@ TLS Session Context:
             warnings.warn("Unknown server key exchange")
 
     def __handle_client_kex(self, client_kex):
+        # Walk around a bug where tls_ctx is not defined, thus prevents correct parsing
+        # of the TLSKeyExchange by the upper layer. Dodgy, but I don't see anyway around it
+        if client_kex.haslayer(Raw):
+            if self.negotiated.key_exchange == tls.TLSKexNames.DHE:
+                client_kex = tls.TLSClientDHParams(data=client_kex[Raw].load)
+            elif self.negotiated.key_exchange == tls.TLSKexNames.RSA:
+                client_kex = tls.TLSClientRSAParams(data=client_kex[Raw].load)
+
         if client_kex.haslayer(tls.TLSClientRSAParams):
             self.encrypted_premaster_secret = client_kex[tls.TLSClientRSAParams].data
             # If we have the private key, let's decrypt the PMS
@@ -472,19 +481,20 @@ TLS Session Context:
 
     def get_client_kex_data(self, val=None):
         if self.negotiated.key_exchange == tls.TLSKexNames.RSA:
-            return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientRSAParams(data=self.get_encrypted_pms(val))
+            return tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=self.get_encrypted_pms(val))
         elif self.negotiated.key_exchange == tls.TLSKexNames.DHE:
-            return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientDHParams(data=self.get_client_dh_pubkey(val))
+            return tls.TLSClientKeyExchange() / tls.TLSClientDHParams(data=self.get_client_dh_pubkey(val))
         elif self.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
-            return tls.TLSClientKeyExchange(ctx=self) / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
+            return tls.TLSClientKeyExchange() / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
         else:
             raise NotImplementedError("Key exchange unknown or currently not supported")
 
     def _walk_handshake_msgs(self):
         for pkt in self.history:
-            for handshake in (r[tls.TLSHandshake] for r in pkt if r.haslayer(tls.TLSHandshake)):
-                if not handshake.haslayer(tls.TLSHelloRequest):
-                    yield handshake
+            if pkt.haslayer(tls.TLSHandshakes):
+                for handshake in pkt[tls.TLSHandshakes].handshakes:
+                    if not handshake.haslayer(tls.TLSHelloRequest):
+                        yield handshake
 
     def get_verify_data(self, data=None):
         if self.client:

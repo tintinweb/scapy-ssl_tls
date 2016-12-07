@@ -53,6 +53,7 @@ class TestSSLv2Record(unittest.TestCase):
         self.assertEqual(pkt[tls.SSLv2ClientHello].session_id, '')
         self.assertEqual(pkt[tls.SSLv2ClientHello].session_id_length, 0x0)
 
+
 class TestTLSRecord(unittest.TestCase):
 
     def setUp(self):
@@ -213,7 +214,7 @@ class TestTLSDissector(unittest.TestCase):
         app_response_records = tls.TLS(app_response, ctx=tls_ctx)
         tls_ctx.insert(app_response_records)
         # Test decryption against given states
-        self.assertTrue(server_finished_records.haslayer(tls.TLSHandshake))
+        self.assertTrue(server_finished_records.haslayer(tls.TLSHandshakes))
         self.assertTrue(server_finished_records.haslayer(tls.TLSFinished))
         self.assertEqual(server_finished_records[tls.TLSHandshakes].padding_len, ord("\x0b"))
         self.assertEqual(server_finished_records[tls.TLSHandshakes].padding,
@@ -246,9 +247,9 @@ class TestTLSDissector(unittest.TestCase):
              tls.TLSRecord() / tls.TLSChangeCipherSpec()], tls_ctx)
         tls_ctx.insert(client_kex)
         tls_ctx.insert(tls.to_raw(tls.TLSFinished(), tls_ctx))
-        handshake = tls.TLSRecord() / tls.TLSHandshake() / "C" * 5
+        record = tls.TLSRecord() / ("C" * 5)
         with self.assertRaises(tls.TLSProtocolError):
-            tls.TLS(str(handshake), ctx=tls_ctx)
+            tls.TLS(str(record), ctx=tls_ctx)
 
 
 class TestTLSDecryptablePacket(unittest.TestCase):
@@ -417,6 +418,54 @@ class TestTLSServerHello(unittest.TestCase):
         self.assertEqual(len(server_hello.random), 32)
 
 
+class TestKeyExchange(unittest.TestCase):
+    def test_when_server_key_exchange_is_dh_then_it_is_dissected_correctly(self):
+        record = tls.TLSRecord() / tls. TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello(),
+                                                                  tls.TLSHandshake() / tls.TLSServerKeyExchange() /
+                                                                  tls.TLSServerDHParams(p="1234", g="2", y_s="5", sig="456")])
+        self.assertTrue(record.haslayer(tls.TLSServerDHParams))
+        record = tls.TLSRecord(str(record))
+        self.assertTrue(record.haslayer(tls.TLSServerDHParams))
+        self.assertEqual(record[tls.TLSServerDHParams].p, "1234")
+        self.assertEqual(record[tls.TLSServerDHParams].g, "2")
+        self.assertEqual(record[tls.TLSServerDHParams].y_s, "5")
+        self.assertEqual(record[tls.TLSServerDHParams].sig, "456")
+
+    def test_when_server_key_exchange_is_ecdh_then_it_is_dissected_correctly(self):
+        record = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello(),
+                                                                 tls.TLSHandshake() / tls.TLSServerKeyExchange() /
+                                                                 tls.TLSServerECDHParams(p="1234", sig="456")])
+        self.assertTrue(record.haslayer(tls.TLSServerECDHParams))
+        record = tls.TLSRecord(str(record))
+        self.assertTrue(record.haslayer(tls.TLSServerECDHParams))
+        self.assertEqual(record[tls.TLSServerECDHParams].p, "1234")
+        self.assertEqual(record[tls.TLSServerECDHParams].sig, "456")
+
+    def test_when_client_key_exchange_is_dh_then_it_is_dissected_correctly(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.negotiated.key_exchange = tls.TLSKexNames.DHE
+        record = tls.TLSRecord(ctx=tls_ctx) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientKeyExchange() /
+                                                                                                 tls.TLSClientDHParams(data="3456")])
+        self.assertTrue(record.haslayer(tls.TLSClientKeyExchange))
+        self.assertTrue(record.haslayer(tls.TLSClientDHParams))
+        record = tls.TLSRecord(str(record), ctx=tls_ctx)
+        self.assertTrue(record.haslayer(tls.TLSClientKeyExchange))
+        self.assertTrue(record.haslayer(tls.TLSClientDHParams))
+        self.assertEqual(record[tls.TLSClientDHParams].data, "3456")
+
+    def test_when_client_key_exchange_is_rsa_then_it_is_dissected_correctly(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        tls_ctx.negotiated.key_exchange = tls.TLSKexNames.RSA
+        record = tls.TLSRecord(ctx=tls_ctx) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientKeyExchange() /
+                                                                            tls.TLSClientRSAParams(data="3456")])
+        self.assertTrue(record.haslayer(tls.TLSClientKeyExchange))
+        self.assertTrue(record.haslayer(tls.TLSClientRSAParams))
+        record = tls.TLSRecord(str(record), ctx=tls_ctx)
+        self.assertTrue(record.haslayer(tls.TLSClientKeyExchange))
+        self.assertTrue(record.haslayer(tls.TLSClientRSAParams))
+        self.assertEqual(record[tls.TLSClientRSAParams].data, "3456")
+
+
 class TestTLSPlaintext(unittest.TestCase):
 
     def test_built_plaintext_has_no_mac_and_padding_when_unspecified(self):
@@ -455,7 +504,7 @@ class TestPCAP(unittest.TestCase):
         # client hello
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
-        self.assertTrue(record.haslayer(tls.TLSHandshake))
+        self.assertTrue(record.haslayer(tls.TLSHandshakes))
         self.assertTrue(record.haslayer(tls.TLSClientHello))
         extensions = record[tls.TLSClientHello].extensions
         self.assertTrue(e for e in extensions if e.haslayer(tls.TLSExtECPointsFormat))
@@ -465,7 +514,7 @@ class TestPCAP(unittest.TestCase):
         # server hello
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
-        self.assertTrue(record.haslayer(tls.TLSHandshake))
+        self.assertTrue(record.haslayer(tls.TLSHandshakes))
         self.assertTrue(record.haslayer(tls.TLSServerHello))
         extensions = record[tls.TLSServerHello].extensions
         self.assertTrue(e for e in extensions if e.haslayer(tls.TLSExtRenegotiationInfo))
@@ -474,7 +523,7 @@ class TestPCAP(unittest.TestCase):
         # certificate list
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
-        self.assertTrue(record.haslayer(tls.TLSHandshake))
+        self.assertTrue(record.haslayer(tls.TLSHandshakes))
         self.assertTrue(record.haslayer(tls.TLSCertificateList))
         self.assertEqual(len(record[tls.TLSCertificateList].certificates), 1)
         self.assertTrue(record.haslayer(x509.X509Cert))
@@ -489,12 +538,12 @@ class TestPCAP(unittest.TestCase):
         # server hello done
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
-        self.assertTrue(record.haslayer(tls.TLSHandshake))
+        self.assertTrue(record.haslayer(tls.TLSHandshakes))
         self.assertEquals(record[tls.TLSHandshake].type, tls.TLSHandshakeType.SERVER_HELLO_DONE)
         # client key exchange
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
-        self.assertTrue(record.haslayer(tls.TLSHandshake))
+        self.assertTrue(record.haslayer(tls.TLSHandshakes))
         self.assertTrue(record.haslayer(tls.TLSClientKeyExchange))
         # TODO: Client and Server KEX cannot be dissected without a TLS context
         # self.assertTrue(record.haslayer(tls.TLSClientRSAParams))
@@ -523,7 +572,7 @@ class TestPCAP(unittest.TestCase):
         # Handshake - new session ticket
         record = pkts.pop()
         self.assertTrue(record.haslayer(tls.TLSRecord))
-        self.assertTrue(record.haslayer(tls.TLSHandshake))
+        self.assertTrue(record.haslayer(tls.TLSHandshakes))
         self.assertTrue(record.haslayer(tls.TLSSessionTicket))
         self.assertEqual(record[tls.TLSSessionTicket].lifetime, 7200)
         self.assertEqual(record[tls.TLSSessionTicket].ticket_length, 0xa0)
@@ -603,15 +652,17 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.cipher_suite = tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA
         # NULL
         self.comp_method = 0x0
-        self.client_hello = tls.TLSRecord(version=self.record_version) / tls.TLSHandshake() / tls.TLSClientHello(
-            version=self.hello_version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])
+        self.client_hello = tls.TLSRecord(version=self.record_version) / \
+                            tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello(version=self.hello_version,
+                                                                                                  compression_methods=[self.comp_method],
+                                                                                                  cipher_suites=[self.cipher_suite])])
         self.tls_ctx.insert(self.client_hello)
-        self.server_hello = tls.TLSRecord(version=self.hello_version) / tls.TLSHandshake() / tls.TLSServerHello(
-            version=self.hello_version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
+        self.server_hello = tls.TLSRecord(version=self.hello_version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello(
+            version=self.hello_version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)])
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.hello_version) / tls.TLSHandshake() / \
-            tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())
+        self.client_kex = tls.TLSRecord(version=self.hello_version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() /
+            tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())])
         self.tls_ctx.insert(self.client_kex)
         unittest.TestCase.setUp(self)
 

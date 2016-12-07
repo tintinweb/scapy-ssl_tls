@@ -192,9 +192,11 @@ class PacketLengthFieldPayload(Packet):
 
 
 class StackedLenPacket(Packet):
-
     """ Allows stacked packets. Tries to chop layers by layer.length
     """
+    def __init__(self, *args, **fields):
+        self.tls_ctx = fields.pop("ctx", None)
+        Packet.__init__(self, *args, **fields)
 
     def do_dissect_payload(self, s):
         # prototype for this layer. only layers of same type can be stacked
@@ -417,11 +419,6 @@ class TLSRecord(StackedLenPacket):
 
     def __init__(self, *args, **fields):
         self.fragments = []
-        try:
-            self.tls_ctx = fields["ctx"]
-            del(fields["ctx"])
-        except KeyError:
-            self.tls_ctx = None
         StackedLenPacket.__init__(self, *args, **fields)
 
     def guess_payload_class(self, payload):
@@ -442,18 +439,11 @@ class TLSRecord(StackedLenPacket):
 
     def do_build(self):
         """
-        Taken as is from superclass. Just raises exception when payload can't fit in a TLSRecord
+        Just raises exception when payload can't fit in a TLSRecord
         """
-        if not self.explicit:
-            self = self.__iter__().next()
         if len(self.payload) > TLSRecord.MAX_LEN:
             raise TLSFragmentationError()
-        pkt = self.self_build()
-        for t in self.post_transforms:
-            pkt = t(pkt)
-        pay = self.do_build_payload()
-        p = self.post_build(pkt, pay)
-        return p
+        return StackedLenPacket.do_build(self)
 
     def fragment(self, size=2**14):
         return tls_fragment_payload(self.payload, self, size)
@@ -688,36 +678,20 @@ class TLSHeartBeat(PacketNoPayload):
 
 
 class TLSKeyExchange(Packet):
-
     def __init__(self, *args, **fields):
-        try:
-            self.tls_ctx = fields["ctx"]
-            del(fields["ctx"])
-        except KeyError:
-            self.tls_ctx = None
+        # Unneeded, left for backwards compat
+        self.tls_ctx = fields.pop("ctx", None)
         Packet.__init__(self, *args, **fields)
 
-    def pre_dissect(self, s):
-        if self.firstlayer().name == TLSRecord.name:
-            # Go get the underlaying records context
-            # Will allow us to differentiate Ephemeral RSA (Freak)
-            # From DHE (Logjam) and ECDHE
-            try:
-                self.tls_ctx = self.firstlayer().tls_ctx
-            except AttributeError:
-                self.tls_ctx = None
-        return Packet.pre_dissect(self, s)
-
-    def guess_payload_class(self, raw_bytes):
-        next_layer = Raw
-        if self.tls_ctx is not None:
-            kex = self.tls_ctx.negotiated.key_exchange
-            if kex is not None:
-                try:
-                    next_layer = self.kex_payload_table[kex]
-                except KeyError:
-                    pass
-        return next_layer
+    def guess_payload_class(self, payload):
+        pkt = self.underlayer
+        # If our underlayer is a handshake, use the tls_ctx to determine
+        # wheat KEX we are currently using
+        if pkt is not None and pkt.haslayer(TLSHandshake) and hasattr(pkt, "tls_ctx"):
+            if pkt.tls_ctx is not None:
+                kex = pkt.tls_ctx.negotiated.key_exchange
+                return self.kex_payload_table.get(kex, Raw)
+        return Packet.guess_payload_class(self, payload)
 
 
 class TLSClientRSAParams(PacketNoPayload):
@@ -747,6 +721,15 @@ class TLSClientKeyExchange(TLSKeyExchange):
                          TLSKexNames.DHE: TLSClientDHParams,
                          TLSKexNames.ECDHE: TLSClientECDHParams}
 
+    def guess_payload_class(self, payload):
+        ecdh_params = TLSClientECDHParams(payload)
+        # Try to figure out what is the next Key Exchange layer. Can only do this for ECDHE,
+        # since RSA and DHE parse in exactly the same way.
+        if ecdh_params.length == len(ecdh_params.data) and ecdh_params.data.startswith(b"\x04"):
+            return TLSClientECDHParams
+        else:
+            return TLSKeyExchange.guess_payload_class(self, payload)
+
 
 class TLSServerDHParams(PacketNoPayload):
     name = "TLS Diffie-Hellman Server Params"
@@ -775,7 +758,18 @@ class TLSServerKeyExchange(TLSKeyExchange):
     name = "TLS Server Key Exchange"
     kex_payload_table = {TLSKexNames.DHE: TLSServerDHParams,
                          TLSKexNames.ECDHE: TLSServerECDHParams}
-    # Add ERSA in the future
+
+    def guess_payload_class(self, payload):
+        dh_params = TLSServerDHParams(payload)
+        ecdh_params = TLSServerECDHParams(payload)
+        # Try to figure out what is the next Key Exchange layer
+        if dh_params.p_length == len(dh_params.p) and dh_params.g_length == len(dh_params.g) and dh_params.ys_length == len(dh_params.y_s):
+            return TLSServerDHParams
+        elif ecdh_params.p_length == len(ecdh_params.p) and ecdh_params.sig_length == len(ecdh_params.sig):
+            return TLSServerECDHParams
+        # If we don't have a match, fallback to the standard mechanism
+        else:
+            return TLSKeyExchange.guess_payload_class(payload)
 
 
 class TLSServerHelloDone(PacketNoPayload):
@@ -881,6 +875,11 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
             else:
                 self.mac = raw_bytes[-hash_size:]
                 data = raw_bytes[:-hash_size]
+        # Try and obtain the context from the underlying Record context
+        else:
+            if self.tls_ctx is None and self.underlayer is not None and isinstance(self.underlayer, TLSRecord):
+                if self.underlayer.tls_ctx is not None:
+                    self.tls_ctx = self.underlayer.tls_ctx
         # Return plaintext without mac and padding
         return data
 
@@ -1171,13 +1170,10 @@ class SSL(Packet):
     """
     name = "SSL/TLS"
     fields_desc = [PacketListField("records", None, TLSRecord)]
+    CONTENT_TYPE_MAP = {0x15: TLSAlert, 0x16: TLSHandshakes, 0x17: TLSPlaintext}
 
     def __init__(self, *args, **fields):
-        try:
-            self.tls_ctx = fields["ctx"]
-            del(fields["ctx"])
-        except KeyError:
-            self.tls_ctx = None
+        self.tls_ctx = fields.pop("ctx", None)
         Packet.__init__(self, *args, **fields)
 
     @classmethod
@@ -1235,10 +1231,12 @@ class SSL(Packet):
                 if self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
                     tag = cleartext[-self.tls_ctx.sec_params.GCM_TAG_SIZE:]
                     cleartext = cleartext[:-self.tls_ctx.sec_params.GCM_TAG_SIZE]
-                    content_map = {0x15: TLSAlert, 0x16: TLSHandshakes, 0x17: TLSPlaintext}
                     padding_index = find_padding_start(cleartext)
                     content_type = struct.unpack("B", cleartext[padding_index - 1])[0]
-                    layer = content_map[content_type]
+                    try:
+                        layer = TLS.CONTENT_TYPE_MAP[content_type]
+                    except KeyError:
+                        raise TLSProtocolError("Decryption failed. Invalid 0x%02x content_type in payload" % content_type, pkt=record)
                     cleartext = "%s%s" % (cleartext, tag)
                 pkt = layer(cleartext, ctx=self.tls_ctx)
                 record[self.guessed_next_layer].payload = pkt
@@ -1277,7 +1275,9 @@ def find_padding_start(payload, padding_byte=b"\x00"):
 
 
 cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
-                     TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(TLSHandshakes(handshakes=[TLSHandshake(type=TLSHandshakeType.FINISHED) / tls_ctx.get_verify_data()]))),
+                     TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE,
+                                                        str(TLSHandshakes(handshakes=[TLSHandshake(type=TLSHandshakeType.FINISHED) /
+                                                                                      tls_ctx.get_verify_data()]))),
                      TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt)),
                      TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt))}
 
