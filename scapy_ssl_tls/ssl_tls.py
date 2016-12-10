@@ -1155,6 +1155,10 @@ class TLSSocket(object):
             self.tls_ctx = tlsc.TLSSessionCtx(self.client)
         else:
             self.tls_ctx = tls_ctx
+        self.ctx = self.tls_ctx.client_ctx if self.client else self.tls_ctx.server_ctx
+        self.compress_hook = None
+        self.pre_encrypt_hook = None
+        self.encrypt_hook = None
 
     def _is_listening(self):
         import errno
@@ -1179,7 +1183,10 @@ class TLSSocket(object):
     def sendall(self, pkt, timeout=2):
         prev_timeout = self._s.gettimeout()
         self._s.settimeout(timeout)
-        self._s.sendall(str(pkt))
+        if self.ctx.must_encrypt:
+            self._s.sendall(str(tls_to_raw(pkt, self.tls_ctx, True, self.compress_hook, self.pre_encrypt_hook, self.encrypt_hook)))
+        else:
+            self._s.sendall(str(pkt))
         self.tls_ctx.insert(pkt)
         self._s.settimeout(prev_timeout)
 
@@ -1419,7 +1426,7 @@ def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
         client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
         tls_do_round_trip(tls_socket, TLS.from_records([client_key_exchange, client_ccs]), False)
 
-        resp2 = tls_do_round_trip(tls_socket, to_raw(TLSFinished(), tls_socket.tls_ctx))
+        resp2 = tls_do_round_trip(tls_socket, TLSFinished())
         return resp1, resp2
     else:
         raise NotImplementedError("Do handshake not implemented for TLS 1.3")
