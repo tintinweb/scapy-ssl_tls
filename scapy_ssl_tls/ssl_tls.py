@@ -1279,6 +1279,7 @@ class SSL(Packet):
         return raw_bytes[pos:]
 
     def do_decrypt_payload(self, record):
+        content_type = None
         encrypted_payload, layer = self._get_encrypted_payload(record)
         if encrypted_payload is not None or self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
             try:
@@ -1296,13 +1297,14 @@ class SSL(Packet):
                     try:
                         layer = TLS.CONTENT_TYPE_MAP[content_type]
                     except KeyError:
-                        raise TLSProtocolError("Decryption failed. Invalid 0x%02x content_type in payload" % content_type, pkt=record)
+                        raise TLSProtocolError("Decryption failed. Invalid 0x%02x content_type in payload" % content_type, response=record)
                     cleartext = "%s%s" % (cleartext, tag)
                 pkt = layer(cleartext, ctx=self.tls_ctx)
                 record[self.guessed_next_layer].payload = pkt
+                record.content_type = content_type or record.content_type
             # Decryption failed, raise error otherwise we'll be in inconsistent state with sender
             except ValueError as ve:
-                raise TLSProtocolError("Decryption failed: %s" % ve, pkt=record)
+                raise TLSProtocolError("Decryption failed: %s" % ve, response=record)
         return record
 
     def _get_encrypted_payload(self, record):
@@ -1377,7 +1379,10 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
         ciphertext = ctx.crypto_ctx.encrypt(crypto_container)
 
     if include_record:
-        tls_ciphertext = TLSRecord(version=tls_ctx.negotiated.version, content_type=content_type) / ciphertext
+        if tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+            tls_ciphertext = TLSRecord(content_type=TLSContentType.APPLICATION_DATA) / ciphertext
+        else:
+            tls_ciphertext = TLSRecord(version=tls_ctx.negotiated.version, content_type=content_type) / ciphertext
     else:
         tls_ciphertext = ciphertext
     return tls_ciphertext
@@ -1408,9 +1413,10 @@ def tls_do_round_trip(tls_socket, pkt, recv=True):
             resp = tls_socket.recvall()
             if resp.haslayer(TLSAlert):
                 alert = resp[TLSAlert]
-                level = TLS_ALERT_LEVELS.get(alert.level, "unknown")
-                description = TLS_ALERT_DESCRIPTIONS.get(alert.description, "unknown description")
-                raise TLSProtocolError("%s alert returned by server: %s" % (level.upper(), description.upper()), pkt, resp)
+                if alert.level != TLSAlertLevel.WARNING:
+                    level = TLS_ALERT_LEVELS.get(alert.level, "unknown")
+                    description = TLS_ALERT_DESCRIPTIONS.get(alert.description, "unknown description")
+                    raise TLSProtocolError("%s alert returned by server: %s" % (level.upper(), description.upper()), pkt, resp)
     except socket.error as se:
         raise TLSProtocolError(se, pkt, resp)
     return resp
