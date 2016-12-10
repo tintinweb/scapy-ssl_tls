@@ -68,6 +68,7 @@ class TLSContext(object):
         self.asym_keystore = tlsk.EmptyAsymKeystore()
         self.kex_keystore = tlsk.EmptyKexKeystore()
         self.__sym_keystore = tlsk.EmptySymKeyStore()
+        self.must_encrypt = False
 
     @property
     def sym_keystore(self):
@@ -119,6 +120,7 @@ class TLSSessionCtx(object):
         self.server = not self.client
         self.client_ctx = TLSContext("Client TLS context")
         self.server_ctx = TLSContext("Server TLS context")
+
         # packet history
         self.history = []
         self.requires_iv = False
@@ -147,6 +149,8 @@ class TLSSessionCtx(object):
         self.resumption_secret = None
 
         self.prf = None
+
+        self.__ccs_count = 0
 
     def __str__(self):
         template = """
@@ -282,6 +286,8 @@ TLS Session Context:
                         factory = CryptoContextFactory(self)
                         self.client_ctx.crypto_ctx = factory.new(self.client_ctx)
                         self.server_ctx.crypto_ctx = factory.new(self.server_ctx)
+                        self.client_ctx.must_encrypt = True
+                        self.server_ctx.must_encrypt = True
             if not keyshare_match:
                 raise tls.TLSProtocolError("No keyshare match between client and server")
         else:
@@ -406,6 +412,13 @@ TLS Session Context:
                                                                        self.server_ctx.random)
         self.__generate_secrets()
 
+    def __handle_ccs(self, ccs):
+        if self.__ccs_count == 0:
+            self.client_ctx.must_encrypt = True
+        else:
+            self.server_ctx.must_encrypt = True
+        self.__ccs_count += 1
+
     def __generate_secrets(self):
         if isinstance(self.client_ctx.sym_keystore, tlsk.EmptySymKeyStore):
             self.client_ctx.sym_keystore = self.sec_params.client_keystore
@@ -433,6 +446,8 @@ TLS Session Context:
                 self.__handle_server_kex(pkt[tls.TLSServerKeyExchange])
             if pkt.haslayer(tls.TLSClientKeyExchange):
                 self.__handle_client_kex(pkt[tls.TLSClientKeyExchange])
+        if pkt.haslayer(tls.TLSChangeCipherSpec):
+            self.__handle_ccs(pkt[tls.TLSChangeCipherSpec])
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))
