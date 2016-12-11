@@ -71,6 +71,9 @@ class TestHandshakeWithData(unittest.TestCase):
         #self.tls_server = JavaTlsServer(args=(("127.0.0.1", 8443),))
         wait_for_server(self.tls_server.bind)
 
+    def tearDown(self):
+        self.tls_server.kill()
+
     def do_test(self, target, **kwargs):
         """
         perform ssl handshake with http get
