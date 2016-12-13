@@ -615,14 +615,39 @@ TLS Session Context:
             digest.update(str(handshake))
         return digest.digest()
 
-    def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=None):
+    def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=lambda x: x, sig=Sig_PKCS1_v1_5):
+        """Legacy way to get the certificate verify hash. Added sig as last parameter to preserve prior use"""
         if self.client_ctx.asym_keystore.private is None:
             raise RuntimeError("Missing client private key. Can't sign")
         msg_hash = self.get_handshake_digest(hash_)
-        if pre_sign_hook is not None:
-            msg_hash = pre_sign_hook(msg_hash)
+        msg_hash = pre_sign_hook(msg_hash)
         # Will throw exception if we can't sign or if data is larger the modulus
-        return Sig_PKCS1_v1_5.new(self.client_ctx.asym_keystore.private).sign(msg_hash)
+        return sig.new(self.client_ctx.asym_keystore.private).sign(msg_hash)
+
+    def _compute_cert_verify(self, ctx, hash_, label, sig=Sig_PKCS1_v1_5, digest=SHA256, pre_sign_hook=lambda x: x):
+        sig_prefix = b"\x20" * 64
+        # The hash of the handshake is computed over the PRF hash, NOT the sig hash
+        sig_content = b"%s%s\x00%s" % (sig_prefix, label, hash_)
+        # Now sign using the proper signature scheme, specified in the cert verify alg field
+        return ctx.compute_cert_verify(pre_sign_hook(sig_content), sig, digest)
+
+    def compute_server_cert_verify(self, sig=Sig_PKCS1_v1_5, digest=SHA256, pre_sign_hook=lambda x: x):
+        sig_label = b"TLS 1.3, server CertificateVerify"
+        if self.prf is None:
+            raise RuntimeError("PRF must be initialized prior to computing TLS 1.3 signature")
+        hash_ = self.get_handshake_hash(self.prf.digest, tls.TLSCertificateList)
+        return self._compute_cert_verify(self.server_ctx, hash_, sig_label, sig, digest, pre_sign_hook)
+
+    def compute_client_cert_verify(self, sig=Sig_PKCS1_v1_5, digest=SHA256, pre_sign_hook=lambda x: x):
+        if self.negotiated.version >= tls.TLSVersion.TLS_1_3:
+            sig_label = b"TLS 1.3, client CertificateVerify"
+            if self.prf is None:
+                raise RuntimeError("PRF must be initialized prior to computing TLS 1.3 signature")
+            # TODO: calculate handshake hash properly until the second tls.TLSCertificateList for client based certs
+            hash_ = self.get_handshake_hash(self.prf.digest, tls.TLSCertificateList)
+            return self._compute_cert_verify(self.server_ctx, hash_, sig_label, sig, digest, pre_sign_hook)
+        else:
+            return self.get_client_signed_handshake_hash(digest.new(), pre_sign_hook, sig)
 
     def set_mode(self, client=None, server=None):
         self.client = client if client else not server
