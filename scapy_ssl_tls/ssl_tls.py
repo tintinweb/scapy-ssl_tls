@@ -1337,11 +1337,9 @@ def find_padding_start(payload, padding_byte=b"\x00"):
 
 
 cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
-                     TLSFinished: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE,
-                                                        str(TLSHandshakes(handshakes=[TLSHandshake(type=TLSHandshakeType.FINISHED) /
-                                                                                      tls_ctx.get_verify_data()]))),
-                     TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt)),
-                     TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt))}
+                     TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt[TLSChangeCipherSpec])),
+                     TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt[TLSAlert])), #}
+                     TLSHandshakes: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(pkt[TLSHandshakes]))}
 
 
 def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
@@ -1357,6 +1355,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
     for tls_proto, handler in cleartext_handler.iteritems():
         if pkt.haslayer(tls_proto):
             content_type, data = handler(pkt[tls_proto], tls_ctx)
+            break
     if content_type is None and data is None:
         raise KeyError("Unhandled encryption for TLS protocol: %s" % pkt.name)
 
@@ -1432,7 +1431,7 @@ def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
         client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
         tls_do_round_trip(tls_socket, TLS.from_records([client_key_exchange, client_ccs]), False)
 
-        resp2 = tls_do_round_trip(tls_socket, TLSFinished())
+        resp2 = tls_do_round_trip(tls_socket, TLSHandshakes(handshakes=[TLSHandshake() / TLSFinished(data=tls_socket.tls_ctx.get_verify_data())]))
         return resp1, resp2
     else:
         raise NotImplementedError("Do handshake not implemented for TLS 1.3")

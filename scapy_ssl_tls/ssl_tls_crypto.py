@@ -62,7 +62,9 @@ class TLSContext(object):
         self.random = None
         self.session_id = None
         self.crypto_ctx = None
-        self.compression = None
+        self.compression = NullCompression
+        self.finished_secret = None
+        self.finished_hashes = []
         self.shares = []
         self.sym_keystore_history = []
         self.asym_keystore = tlsk.EmptyAsymKeystore()
@@ -95,22 +97,32 @@ class TLSContext(object):
     def load_rsa_keys(self, private):
         self.asym_keystore = tlsk.RSAKeystore.from_private(private)
 
+    def compute_cert_verify(self, message, sig=Sig_PKCS1_v1_5, digest=SHA256):
+        if self.asym_keystore.private is None:
+            raise RuntimeError("Cannot sign, missing private key. Did you install an ASYM keystore?")
+        return sig.new(self.asym_keystore.private).sign(digest.new(message))
+
     def __str__(self):
         template = """
     {name}:
         random: {random}
-        session_id: {sess_id}
+        session id: {sess_id}
         shares:
             {shares}
+        finished:
+            secret: {secret}
+            finished hashes: {macs}
         {asym_ks}
         {kex_ks}
         {sym_ks}
         symetric keystore history:
             {sym_history}"""
+        flatten_list = lambda list_, func: "\n".join([func(x) for x in list_]) if list_ != [] else ""
         return template.format(name=self.name, random=repr(self.random), sess_id=repr(self.session_id),
-                               shares="\n".join([str(share) for share in self.shares]),
+                               shares=flatten_list(self.shares, str),
+                               secret=repr(self.finished_secret), macs=flatten_list(self.finished_hashes, repr),
                                asym_ks=self.asym_keystore, kex_ks=self.kex_keystore, sym_ks=self.sym_keystore,
-                               sym_history="\n".join([str(sym_ks) for sym_ks in self.sym_keystore_history]))
+                               sym_history=flatten_list(self.sym_keystore_history, str))
 
 
 class TLSSessionCtx(object):
@@ -150,6 +162,7 @@ class TLSSessionCtx(object):
 
         self.prf = None
 
+        self.__finish_count = 0
         self.__ccs_count = 0
 
     def __str__(self):
@@ -271,14 +284,17 @@ TLS Session Context:
                         self.group_secret = tlsk.int_to_str(secret_point.x)
                         prf = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite].get("prf")
                         if prf is None:
-                            raise tls.TLSProtocolError("Trying to use a TLS 1.3 cipher without a defined PRF")
+                            raise tls.TLSProtocolError("Trying to use a TLS 1.3 cipher without a defined PRF", response=server_hello)
 
                         self.prf = TLS13PRF(prf["type"])
                         self.sec_params = TLSSecurityParameters(self.prf, self.negotiated.ciphersuite, self.client_ctx.random, self.server_ctx.random)
                         cipher = TLSSecurityParameters.crypto_params[self.negotiated.ciphersuite]["cipher"]
                         self.early_secrets = self.prf.derive_early_secrets(client_hello_hash=self.get_handshake_hash(self.prf.digest, tls.TLSClientHello))
+
                         self.handshake_secrets = self.prf.derive_handshake_secrets(self.group_secret, self.early_secrets.early_secret,
-                                                                                   self.get_handshake_hash(self.prf.digest), cipher)
+                                                                                   self.get_handshake_hash(self.prf.digest, tls.TLSServerHello), cipher)
+                        self.client_ctx.finished_secret = self.prf.derive_finish_secret(self.handshake_secrets.client.secret)
+                        self.server_ctx.finished_secret = self.prf.derive_finish_secret(self.handshake_secrets.server.secret)
                         self.client_ctx.sym_keystore = tlsk.CipherKeyStore(self.cipher_properties, self.handshake_secrets.client.write_key,
                                                                            iv=self.handshake_secrets.client.write_iv)
                         self.server_ctx.sym_keystore = tlsk.CipherKeyStore(self.cipher_properties, self.handshake_secrets.server.write_key,
@@ -419,6 +435,30 @@ TLS Session Context:
             self.server_ctx.must_encrypt = True
         self.__ccs_count += 1
 
+    def __handle_finished(self, finished):
+        if self.negotiated.version >= tls.TLSVersion.TLS_1_3:
+            ctx = self.client_ctx
+            verify_data = self.derive_client_finished()
+            # This is the first finished in the connection, coming from the server. Transition to traffic secrets
+            if self.__finish_count == 0:
+                ctx = self.server_ctx
+                verify_data = self.derive_server_finished()
+                self.master_secrets = self.prf.derive_traffic_secrets(self.handshake_secrets.handshake_secret, self.get_handshake_hash(self.prf.digest),
+                                                                      self.cipher_properties["cipher"])
+                ctx.sequence = 0
+                ctx.sym_keystore = tlsk.CipherKeyStore(self.cipher_properties, self.master_secrets.server.write_key,
+                                                       iv=self.master_secrets.server.write_iv)
+            # First client finished. Transition to traffic secrets
+            elif self.__finish_count == 1:
+                ctx.sequence = 0
+                ctx.sym_keystore = tlsk.CipherKeyStore(self.cipher_properties, self.master_secrets.client.write_key,
+                                                       iv=self.master_secrets.client.write_iv)
+
+            ctx.finished_hashes.append(finished.data)
+            if finished.data != verify_data and finished.data != "":
+                warnings.warn("Finished hash does not match. Wanted %s, got %s" % (repr(verify_data), repr(finished.data)))
+        self.__finish_count += 1
+
     def __generate_secrets(self):
         if isinstance(self.client_ctx.sym_keystore, tlsk.EmptySymKeyStore):
             self.client_ctx.sym_keystore = self.sec_params.client_keystore
@@ -446,6 +486,8 @@ TLS Session Context:
                 self.__handle_server_kex(pkt[tls.TLSServerKeyExchange])
             if pkt.haslayer(tls.TLSClientKeyExchange):
                 self.__handle_client_kex(pkt[tls.TLSClientKeyExchange])
+            if pkt.haslayer(tls.TLSFinished):
+                self.__handle_finished(pkt[tls.TLSFinished])
         if pkt.haslayer(tls.TLSChangeCipherSpec):
             self.__handle_ccs(pkt[tls.TLSChangeCipherSpec])
 
@@ -511,32 +553,51 @@ TLS Session Context:
                     if not handshake.haslayer(tls.TLSHelloRequest):
                         yield handshake
 
-    def get_verify_data(self, data=None):
-        if self.client:
-            label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
-        else:
-            label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
-        if data is None:
-            verify_data = []
-            for handshake in self._walk_handshake_msgs():
-                if handshake.haslayer(tls.TLSFinished):
-                    # Special case of encrypted handshake. Remove crypto material to compute verify_data
-                    verify_data.append("%s%s%s" % (chr(handshake.type), struct.pack(">I", handshake.length)[1:],
-                                                   handshake[tls.TLSFinished].data))
-                else:
-                    verify_data.append(str(handshake))
-        else:
-            verify_data = [data]
+    def _derive_finished(self, secret, hash_):
+        return HMAC.new(secret, hash_, digestmod=self.prf.digest).digest()
 
-        if self.negotiated.version == tls.TLSVersion.TLS_1_2:
-            prf_verify_data = self.prf.get_bytes(self.master_secret, label,
-                                                 self.prf.digest.new("".join(verify_data)).digest(),
-                                                 num_bytes=12)
+    def derive_server_finished(self):
+        if self.server_ctx.finished_secret is None:
+            raise ValueError("No finished secret available")
+        return self._derive_finished(self.server_ctx.finished_secret, self.get_handshake_hash(self.prf.digest, tls.TLSFinished, False))
+
+    def derive_client_finished(self):
+        if self.client_ctx.finished_secret is None:
+            raise ValueError("No finished secret available")
+        return self._derive_finished(self.client_ctx.finished_secret, self.get_handshake_hash(self.prf.digest, tls.TLSFinished, True))
+
+    def get_verify_data(self, data=None):
+        if self.negotiated.version >= tls.TLSVersion.TLS_1_3:
+            if self.client:
+                prf_verify_data = self.derive_client_finished()
+            else:
+                prf_verify_data = self.derive_server_finished()
         else:
-            prf_verify_data = self.prf.get_bytes(self.master_secret, label,
-                                                 "%s%s" % (MD5.new("".join(verify_data)).digest(),
-                                                           SHA.new("".join(verify_data)).digest()),
-                                                 num_bytes=12)
+            if self.client:
+                label = TLSPRF.TLS_MD_CLIENT_FINISH_CONST
+            else:
+                label = TLSPRF.TLS_MD_SERVER_FINISH_CONST
+            if data is None:
+                verify_data = []
+                for handshake in self._walk_handshake_msgs():
+                    if handshake.haslayer(tls.TLSFinished):
+                        # Special case of encrypted handshake. Remove crypto material to compute verify_data
+                        verify_data.append("%s%s%s" % (chr(handshake.type), struct.pack(">I", handshake.length)[1:],
+                                                       handshake[tls.TLSFinished].data))
+                    else:
+                        verify_data.append(str(handshake))
+            else:
+                verify_data = [data]
+
+            if self.negotiated.version == tls.TLSVersion.TLS_1_2:
+                prf_verify_data = self.prf.get_bytes(self.master_secret, label,
+                                                     self.prf.digest.new("".join(verify_data)).digest(),
+                                                     num_bytes=12)
+            else:
+                prf_verify_data = self.prf.get_bytes(self.master_secret, label,
+                                                     "%s%s" % (MD5.new("".join(verify_data)).digest(),
+                                                               SHA.new("".join(verify_data)).digest()),
+                                                     num_bytes=12)
         return prf_verify_data
 
     def get_handshake_digest(self, hash_):
@@ -544,12 +605,14 @@ TLS Session Context:
             hash_.update(str(handshake))
         return hash_
 
-    def get_handshake_hash(self, digest, up_to=None):
+    def get_handshake_hash(self, digest, up_to=None, include=True):
         digest = digest.new()
         for handshake in self._walk_handshake_msgs():
-            digest.update(str(handshake))
             if handshake.haslayer(up_to):
+                if include:
+                    digest.update(str(handshake))
                 break
+            digest.update(str(handshake))
         return digest.digest()
 
     def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=None):
