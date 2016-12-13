@@ -10,6 +10,9 @@ from scapy.packet import bind_layers, Packet, Raw
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
+# Added this to get all certificate dissection to work OK, without the need to import this in the client script
+# See: #PR31
+from scapy.all import conf
 
 import ssl_tls_registry as registry
 
