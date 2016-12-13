@@ -4,6 +4,11 @@ language: python
 python:
 #  - "2.6"
   - "2.7"
+# parallel testsuites
+env:
+  - TEST_SUITE=unit
+  - TEST_SUITE=integration_external
+  - TEST_SUITE=integration_examples
 # command to install dependencies
 install:
   - pip install -r requirements.txt
@@ -11,7 +16,6 @@ install:
   - python setup.py install
 # command to run tests
 script:
-# unittests
-  - python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --cover-branch --xcoverage-file=cover/cobertura.xml
-# integration against external services
-  - python tests/integration_external.py
+  - if [ $TEST_SUITE == "unit" ]; then python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --cover-branch --xcoverage-file=cover/cobertura.xml; else true; fi
+  - if [ $TEST_SUITE == "integration_external" ]; then python tests/integration_external.py; else true; fi
+  - if [ $TEST_SUITE == "integration_examples" ]; then python tests/integration_examples.py; else true; fi
