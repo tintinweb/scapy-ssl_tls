@@ -2,48 +2,52 @@
 
 from __future__ import print_function
 import os
-import socket
-import sys
+
 
 basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 try:
     # This import works from the project directory
     from scapy_ssl_tls.ssl_tls import *
-    from scapy_ssl_tls.ssl_tls_crypto import *
 except ImportError:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
-    from scapy.layers.ssl_tls_crypto import *
+
+host = ("localhost", 8443)
+cipher = TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA
 
 with open(os.path.join(basedir, "tests/integration/keys/cert.der"), "rb") as f:
     cert = f.read()
 certificates = TLSCertificate(data=cert)
 
+with TLSSocket(client=False) as tls_socket:
+    tls_socket.tls_ctx.server_ctx.load_rsa_keys_from_file(os.path.join(basedir, "tests/integration/keys/key.pem"))
 
-socket_ = socket.socket()
-socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
-tls_socket = TLSSocket(socket_, client=False)
-tls_socket.bind(("", 8443))
-tls_socket.listen(1)
-tls_socket.tls_ctx.server_ctx.load_rsa_keys_from_file(os.path.join(basedir, "tests/integration/keys/key.pem"))
-c_socket, _ = tls_socket.accept()
+    try:
+        tls_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+        tls_socket.bind(host)
+        tls_socket.listen(1)
+        client_socket, _ = tls_socket.accept()
+    except socket.error as se:
+        print("Failed to bind server: %s" % (host,), file=sys.stderr)
+    else:
+        try:
+            r = client_socket.recvall()
+            version = r[TLSClientHello].version
+            server_hello = TLSRecord(version=version) / TLSHandshakes(handshakes=[TLSHandshake() / TLSServerHello(version=version, cipher_suite=cipher),
+                                                                                  TLSHandshake() / TLSCertificateList() /
+                                                                                                   TLS10Certificate(certificates=certificates),
+                                                                                  TLSHandshake(type=TLSHandshakeType.SERVER_HELLO_DONE)])
+            r = client_socket.do_round_trip(server_hello)
+            r.show()
 
-r = c_socket.recvall()
-version = r[TLSClientHello].version
-server_hello = TLSRecord(version=version) / TLSHandshake() / TLSServerHello(version=version)
-server_certs = TLSRecord(version=version) / TLSHandshake() / TLSCertificateList(certificates=certificates)
-server_done = TLSRecord(version=version) / TLSHandshake(type=TLSHandshakeType.SERVER_HELLO_DONE)
-records = TLS.from_records([server_hello, server_certs, server_done])
-c_socket.sendall(records)
+            client_socket.do_round_trip(TLSRecord(version=version) / TLSChangeCipherSpec(), recv=False)
+            r = client_socket.do_round_trip(TLSHandshakes(handshakes=[TLSHandshake() / TLSFinished(data=client_socket.tls_ctx.get_verify_data())]))
 
-r = c_socket.recvall()
-
-server_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
-c_socket.sendall(TLS.from_records([server_ccs]))
-c_socket.sendall(to_raw(TLSFinished(), c_socket.tls_ctx))
-
-r = c_socket.recvall()
-c_socket.sendall(to_raw(TLSPlaintext(data="It works!\n"), c_socket.tls_ctx))
-c_socket.sendall(to_raw(TLSAlert(), c_socket.tls_ctx))
-
-print(c_socket.tls_ctx)
+            r.show()
+            client_socket.do_round_trip(TLSPlaintext(data="It works!\n"), recv=False)
+            client_socket.do_round_trip(TLSAlert(), recv=False)
+        except TLSProtocolError as tpe:
+            print("Got TLS error: %s" % tpe, file=sys.stderr)
+            tpe.response.show()
+        finally:
+            print(client_socket.tls_ctx)
