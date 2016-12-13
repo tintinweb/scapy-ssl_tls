@@ -3,10 +3,6 @@
 
 from __future__ import with_statement
 from __future__ import print_function
-import socket
-import sys
-from scapy.all import *
-
 
 try:
     # This import works from the project directory
@@ -17,11 +13,13 @@ except ImportError:
 
 tls_version = TLSVersion.TLS_1_2
 ciphers = [TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256]
+# ciphers = [TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA384]
 # ciphers = [TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA]
 # ciphers = [TLSCipherSuite.RSA_WITH_RC4_128_SHA]
 # ciphers = [TLSCipherSuite.DHE_RSA_WITH_AES_128_CBC_SHA]
 # ciphers = [TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA]
-extensions = []
+extensions = [TLSExtension() / TLSExtECPointsFormat(),
+              TLSExtension() / TLSExtSupportedGroups()]
 
 
 def tls_client(ip):
@@ -34,10 +32,12 @@ def tls_client(ip):
         else:
             try:
                 server_hello, server_kex = tls_socket.do_handshake(tls_version, ciphers, extensions)
+                server_hello.show()
             except TLSProtocolError as tpe:
                 print("Got TLS error: %s" % tpe, file=sys.stderr)
+                tpe.response.show()
             else:
-                resp = tls_socket.do_round_trip(to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"), tls_socket.tls_ctx))
+                resp = tls_socket.do_round_trip(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"))
                 print("Got response from server")
                 resp.show()
             finally:
