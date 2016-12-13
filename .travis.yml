@@ -14,6 +14,8 @@ install:
   - pip install -r requirements.txt
   - pip install nosexcover
   - python setup.py install
+# for integration examples
+  - pip install futures
 # command to run tests
 script:
   - if [ $TEST_SUITE == "unit" ]; then python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --cover-branch --xcoverage-file=cover/cobertura.xml; else true; fi
