@@ -27,7 +27,10 @@ from Cryptodome.PublicKey import DSA, RSA
 from Cryptodome.Signature import PKCS1_v1_5 as Sig_PKCS1_v1_5
 from scapy.packet import Raw
 
-
+# Added this to get all certificate dissection to work OK, without the need to import this in the client script
+# See: #PR31
+# Do not move this under ssl_tls.py, it will break one UT. I have no clue as to why
+from scapy.all import conf
 """
 https://tools.ietf.org/html/rfc4346#section-6.3
     key_block = PRF(SecurityParameters.master_secret,
