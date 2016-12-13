@@ -171,7 +171,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_fixed_crypto_data_matches_verify_data(self):
         version = tls.TLSVersion.TLS_1_0
         client_verify_data = "e23f73911909a86be9e93fdb"
-        server_verify_data = "c83b8eb028d3c4a8d82c1c17"
+        server_verify_data = "dfed5860b3eb4a3deaa9cf39"
         tls_ctx = tlsc.TLSSessionCtx()
         # tls_ctx.rsa_load_keys(self.pem_priv_key)
         client_hello = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello(version=version,
@@ -193,10 +193,10 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(client_verify_data, binascii.hexlify(tls_ctx.get_verify_data()))
         # Make sure that client finish is included in server finish calculation
         tls_ctx.set_mode(server=True)
-        client_finish = tls.TLSRecord(version=version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.tls_to_raw(
-            tls.TLSFinished(data=tls_ctx.get_verify_data()), tls_ctx)])
+        verify_data = tls_ctx.get_verify_data()
+        client_finish = tls.TLSRecord(version=version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSFinished(data=verify_data)])
         tls_ctx.insert(client_finish)
-        self.assertEqual(server_verify_data, binascii.hexlify(tls_ctx.get_verify_data()))
+        self.assertEqual(server_verify_data, binascii.hexlify(verify_data))
 
     def test_client_dh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()

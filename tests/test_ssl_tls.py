@@ -202,7 +202,7 @@ class TestTLSDissector(unittest.TestCase):
             [tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientKeyExchange() / tls_ctx.get_encrypted_pms()]),
              tls.TLSRecord() / tls.TLSChangeCipherSpec()], tls_ctx)
         tls_ctx.insert(client_kex)
-        tls_ctx.insert(tls.to_raw(tls.TLSFinished(), tls_ctx))
+        tls_ctx.insert(tls.to_raw(tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSFinished(data=tls_ctx.get_verify_data())]), tls_ctx))
         server_finished = binascii.unhexlify(
             "14030100010116030100305b0241932c63c0cf1e4955e0cc65f751a3921fe8227c2bae045c66be327f7e68a39dc163b382c90d2caaf197ba0563a7")
         server_finished_records = tls.TLS(server_finished, ctx=tls_ctx)
@@ -246,7 +246,7 @@ class TestTLSDissector(unittest.TestCase):
             [tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientKeyExchange() / tls_ctx.get_encrypted_pms()]),
              tls.TLSRecord() / tls.TLSChangeCipherSpec()], tls_ctx)
         tls_ctx.insert(client_kex)
-        tls_ctx.insert(tls.to_raw(tls.TLSFinished(), tls_ctx))
+        tls_ctx.insert(tls.to_raw(tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSFinished(data=tls_ctx.get_verify_data())]), tls_ctx))
         record = tls.TLSRecord() / ("C" * 5)
         with self.assertRaises(tls.TLSProtocolError):
             tls.TLS(str(record), ctx=tls_ctx)
@@ -721,8 +721,9 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
             self.assertTrue(all(map(lambda x: True if x == chr(11) else False, crypto_container.padding)))
             return "A" * 48
 
-        client_finished = tls.TLSRecord(content_type=0x16) / tls.to_raw(tls.TLSFinished(), self.tls_ctx,
-                                                                        include_record=False, encrypt_hook=encrypt)
+        client_finished = tls.TLSRecord(content_type=0x16) / tls.to_raw(tls.TLSHandshakes(handshakes=[tls.TLSHandshake() /
+                                                                                                      tls.TLSFinished(data=self.tls_ctx.get_verify_data())]),
+                                                                        self.tls_ctx, include_record=False, encrypt_hook=encrypt)
         pkt = tls.TLS(str(client_finished))
         # 4 bytes of TLSHandshake header, 12 bytes of verify_data, 20 bytes of
         # HMAC SHA1, 11 bytes of padding, 1 padding length byte
