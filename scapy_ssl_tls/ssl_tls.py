@@ -397,6 +397,9 @@ DEFAULT_SIG_SCHEME_LIST = [TLSSignatureScheme.ECDSA_SECP521R1_SHA512,
                            # Leave SHA1 for now, for ease of testing
                            TLSSignatureScheme.RSA_PKCS1_SHA1]
 
+TLS_CERTIFICATE_STATUS_TYPES = registry.TLS_CERTIFICATE_STATUS_TYPES
+TLSCertificateStatusType = EnumStruct(TLS_CERTIFICATE_STATUS_TYPES)
+
 
 class TLSKexNames(object):
     RSA = "RSA"
@@ -545,6 +548,21 @@ class TLSExtRenegotiationInfo(PacketNoPayload):
     name = "TLS Extension Renegotiation Info"
     fields_desc = [XFieldLenField("length", None, length_of="data", fmt="B"),
                    StrLenField("data", '', length_from=lambda x:x.length)]
+
+
+class TLSOCSPResponderID(PacketNoPayload):
+    name = "TLS OCSP Responder ID"
+    fields_desc = [XFieldLenField("length", None, length_of="responder_id", fmt="H"),
+                   StrLenField("responder_id", "", length_from=lambda x: x.length)]
+
+
+class TLSExtCertificateStatusRequest(PacketNoPayload):
+    name = "TLS Extension Certificate Status Request"
+    fields_desc = [ByteEnumField("status_type", TLSCertificateStatusType.OCSP, TLS_CERTIFICATE_STATUS_TYPES),
+                   XFieldLenField("responder_id_length", None, length_of="responder_id_list", fmt="H"),
+                   PacketListField("responder_id_list", None, TLSOCSPResponderID, length_from=lambda x: x.responder_id_length),
+                   XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
+                   StrLenField("extensions", "", length_from=lambda x: x.extensions_length)]
 
 
 # TLS 1.3 specific extensions
@@ -1502,6 +1520,7 @@ bind_layers(TLSExtension, TLSExtSupportedVersions, {'type': TLSExtensionType.SUP
 bind_layers(TLSExtension, TLSExtCookie, {'type': TLSExtensionType.COOKIE})
 bind_layers(TLSExtension, TLSExtKeyShare, {'type': TLSExtensionType.KEY_SHARE})
 bind_layers(TLSExtension, TLSExtPadding, {'type': TLSExtensionType.PADDING})
+bind_layers(TLSExtension, TLSExtCertificateStatusRequest, {'type': TLSExtensionType.STATUS_REQUEST})
 # <--
 
 # DTLSRecord
