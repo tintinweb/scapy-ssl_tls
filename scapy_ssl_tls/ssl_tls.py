@@ -397,6 +397,12 @@ DEFAULT_SIG_SCHEME_LIST = [TLSSignatureScheme.ECDSA_SECP521R1_SHA512,
                            # Leave SHA1 for now, for ease of testing
                            TLSSignatureScheme.RSA_PKCS1_SHA1]
 
+TLS_PSK_KEY_EXCHANGE_MODE = {}
+TLS_PSK_KEY_EXCHANGE_MODE.update({0: "psk_ke",
+                                  1: "psk_dhe_ke",
+                                  255: "reserved"})
+TLSPSKKeyExchangeMode = EnumStruct(TLS_PSK_KEY_EXCHANGE_MODE)
+
 TLS_CERTIFICATE_STATUS_TYPES = registry.TLS_CERTIFICATE_STATUS_TYPES
 TLSCertificateStatusType = EnumStruct(TLS_CERTIFICATE_STATUS_TYPES)
 
@@ -624,6 +630,13 @@ class TLSExtKeyShare(Packet):
 class TLSExtPadding(PacketNoPayload):
     name = "TLS Extension Padding"
     fields_desc = [StrField("padding", b"\x00" * 16)]
+
+
+class TLSExtPSKKeyExchangeModes(PacketNoPayload):
+    name = "TLS Extension PSK Key Exchange Mode"
+    fields_desc = [XFieldLenField("length", None, length_of="ke_modes", fmt="B"),
+                   ReprFieldListField("ke_modes", [TLSPSKKeyExchangeMode.PSK_DHE_KE], ByteEnumField("ke_mode", None, TLS_PSK_KEY_EXCHANGE_MODE),
+                                      length_from=lambda x: x.length)]
 
 
 class TLSHelloRequest(Packet):
@@ -1520,6 +1533,7 @@ bind_layers(TLSExtension, TLSExtSupportedVersions, {'type': TLSExtensionType.SUP
 bind_layers(TLSExtension, TLSExtCookie, {'type': TLSExtensionType.COOKIE})
 bind_layers(TLSExtension, TLSExtKeyShare, {'type': TLSExtensionType.KEY_SHARE})
 bind_layers(TLSExtension, TLSExtPadding, {'type': TLSExtensionType.PADDING})
+bind_layers(TLSExtension, TLSExtPSKKeyExchangeModes, {'type': TLSExtensionType.PSK_KEY_EXCHANGE_MODES})
 bind_layers(TLSExtension, TLSExtCertificateStatusRequest, {'type': TLSExtensionType.STATUS_REQUEST})
 # <--
 
