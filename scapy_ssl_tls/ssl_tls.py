@@ -627,6 +627,50 @@ class TLSExtKeyShare(Packet):
         return Packet.guess_payload_class(self, raw_bytes)
 
 
+class TLSPSKIdentity(PacketNoPayload):
+    name = "TLS PSK Identity"
+    fields_desc = [XFieldLenField("length", None, length_of="identity", fmt="H"),
+                   StrLenField("identity", "", length_from=lambda x: x.length),
+                   XIntField("obfuscated_ticket_age", 0)]
+
+
+class TLSPSKBinderEntry(PacketNoPayload):
+    name = "TLS PSK Binder Entry"
+    fields_desc = [XFieldLenField("length", None, length_of="binder_entry", fmt="B"),
+                   StrLenField("binder_entry", "", length_from=lambda x: x.length)]
+
+
+class TLSClientHelloPreSharedKey(PacketNoPayload):
+    name = "TLS Client Hello Pre Shared Key"
+    fields_desc = [XFieldLenField("identities_length", None, length_of="identities", fmt="H"),
+                   PacketListField("identities", None, TLSPSKIdentity, length_from=lambda x:x.identities_length),
+                   XFieldLenField("binders_length", None, length_of="binders", fmt="H"),
+                   PacketListField("binders", None, TLSPSKBinderEntry, length_from=lambda x: x.binders_length)]
+
+
+class TLSServerHelloPreSharedKey(PacketNoPayload):
+    name = "TLS Server Hello Pre Shared Key"
+    fields_desc = [XShortField("selected_identity", 0)]
+
+
+class TLSExtPreSharedKey(Packet):
+    name = "TLS Extension Pre Shared Key"
+    fields_desc = []
+    type_map = {"TLSClientHello": TLSClientHelloPreSharedKey,
+                "TLSServerHello": TLSServerHelloPreSharedKey}
+
+    def guess_payload_class(self, raw_bytes):
+        pkt = self.underlayer
+        # If our underlayer is an extension whose type_ is defined
+        # Use this as the upper layer
+        if pkt is not None and pkt.haslayer(TLSExtension):
+            upper_cls = TLSExtPreSharedKey.type_map.get(pkt.type_)
+            if upper_cls is not None:
+                return upper_cls
+        # Otherwise, revert to default payload guessing
+        return Packet.guess_payload_class(self, raw_bytes)
+
+
 class TLSExtPadding(PacketNoPayload):
     name = "TLS Extension Padding"
     fields_desc = [StrField("padding", b"\x00" * 16)]
@@ -1535,6 +1579,7 @@ bind_layers(TLSExtension, TLSExtKeyShare, {'type': TLSExtensionType.KEY_SHARE})
 bind_layers(TLSExtension, TLSExtPadding, {'type': TLSExtensionType.PADDING})
 bind_layers(TLSExtension, TLSExtPSKKeyExchangeModes, {'type': TLSExtensionType.PSK_KEY_EXCHANGE_MODES})
 bind_layers(TLSExtension, TLSExtCertificateStatusRequest, {'type': TLSExtensionType.STATUS_REQUEST})
+bind_layers(TLSExtension, TLSExtPreSharedKey, {'type': TLSExtensionType.PRE_SHARED_KEY})
 # <--
 
 # DTLSRecord
