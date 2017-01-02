@@ -17,4 +17,5 @@ python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover
 ERR=$?
 echo "**> exiting virtualenv"
 deactivate
+echo "Note: integration testsuite not executed, please run it manually."
 exit $ERR

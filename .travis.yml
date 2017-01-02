@@ -1,12 +1,24 @@
+# pin to ubuntu 14.04 trusty tahr otherwise we end up with an outdated OpenSSL 1.0.1 14 Mar 2012 :/
+dist: trusty
 language: python
 python:
 #  - "2.6"
   - "2.7"
+# parallel testsuites
+env:
+  - TEST_SUITE=unit
+  - TEST_SUITE=integration_external
+  - TEST_SUITE=integration_examples
 # command to install dependencies
 install:
   - pip install -r requirements.txt
   - pip install nosexcover
   - python setup.py install
+# for integration examples
+  - pip install futures
 # command to run tests
 script:
-  - python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --cover-branch --xcoverage-file=cover/cobertura.xml
+  - if [ $TEST_SUITE == "unit" ]; then python setup.py nosetests --with-xcoverage --cover-package=scapy_ssl_tls --cover-html --cover-branch --xcoverage-file=cover/cobertura.xml; else true; fi
+  - if [ $TEST_SUITE == "integration_external" ]; then python tests/integration_external.py; else true; fi
+  - if [ $TEST_SUITE == "integration_examples" ]; then python tests/integration_examples.py; else true; fi
+
