@@ -60,6 +60,9 @@ class TLSClientAutomata(Automaton):
 
     def __init__(self, *args, **kwargs):
         self.callbacks = {}  # fname:func
+        # trickery: disable unneeded automata internal sockets by faking a null-obj
+        kwargs['ll'] = type('obj', (object,), {})
+        kwargs['recvsock'] = kwargs['ll']
         Automaton.__init__(self, *args, **kwargs)
         self.STATES = {TLSClientHello: 'CLIENT_HELLO_SENT',
                        TLSServerHello: 'SERVER_HELLO_RECV',
@@ -313,6 +316,9 @@ class TLSServerAutomata(Automaton):
 
     def __init__(self, *args, **kwargs):
         self.callbacks = {}  # fname:func
+        # trickery: disable unneeded automata internal sockets by faking a null-obj
+        kwargs['ll'] = type('obj', (object,), {})
+        kwargs['recvsock'] = kwargs['ll']
         Automaton.__init__(self, *args, **kwargs)
         self.STATES = {TLSClientHello: 'CLIENT_HELLO_RECV',
                        TLSServerHello: 'SERVER_HELLO_SENT',

@@ -68,7 +68,21 @@ class TestTLSRecord(unittest.TestCase):
                                                                         tls.TLSHandshake() / tls.TLSServerHelloDone()])
         self.stacked_handshake = tls.TLS(str(stacked_handshake_layers))
             # str(tls.TLSRecord(content_type="handshake") / "".join(list(map(str, stacked_handshake_layers)))))
+        self.empty_tls_handshake_serialized_expected = '\x16\x03\x01\x00\x04\x01\x00\x00\x00'
         unittest.TestCase.setUp(self)
+
+    def test_pkt_tls_de_serialize(self):
+        pkt = tls.SSL(self.empty_tls_handshake_serialized_expected)
+        self.assertIn(tls.TLSRecord, pkt)
+        self.assertIn(tls.TLSHandshake, pkt)
+        pkt[tls.TLSHandshake].type == tls.TLSHandshakeType.CLIENT_HELLO
+        pkt[tls.TLSHandshake].length == 0
+        pkt[tls.TLSRecord].content_type == tls.TLSContentType.HANDSHAKE
+        pkt[tls.TLSRecord].version == tls.TLSVersion.TLS_1_0
+        pkt[tls.TLSRecord].length == 0x04
+
+    def test_empty_handshake_serializes_to_known_data(self):
+        self.assertEqual(str(tls.TLSRecord() / tls.TLSHandshakes(handshakes=tls.TLSHandshake())), self.empty_tls_handshake_serialized_expected)
 
     def test_pkt_built_from_stacked_tls_records_is_identical(self):
         self.assertEqual(len(str(self.server_hello)), len(str(self.stacked_pkt.records[0])))

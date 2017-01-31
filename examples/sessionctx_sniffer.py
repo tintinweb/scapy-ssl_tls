@@ -151,6 +151,8 @@ class Sniffer(object):
 
     def __init__(self):
         self.ssl_session_map = {}
+        self.exit_after_num_valid_packets = None
+        self.valid_pkts = 0
 
     def _create_context(self, target, keyfile=None):
         self.target = target
@@ -183,6 +185,7 @@ class Sniffer(object):
             print ("SSLv2 not supported - skipping..", repr(p))
             return
 
+
         if p_ssl.haslayer(TLSServerHello):
             session.printed = False
             session.crypto.session.master_secret = None
@@ -212,6 +215,10 @@ class Sniffer(object):
             except ValueError as ve:
                 print ("Exception:", repr(ve))
 
+        self.valid_pkts += 1
+        if self.exit_after_num_valid_packets and self.valid_pkts > self.exit_after_num_valid_packets:
+            sys.exit(0)        
+
     def sniff(self, target, keyfile=None, iface=None):
         self._tcp_reassembler = L4TcpReassembler()
 
@@ -230,8 +237,9 @@ class Sniffer(object):
             self.process_ssl(p)
 
 
-def main(target, pcap=None, iface=None, keyfile=None):
+def main(target, pcap=None, iface=None, keyfile=None, num_pkts=None):
     sniffer = Sniffer()
+    sniffer.exit_after_num_valid_packets = num_pkts
     if pcap:
         print ("* pcap ready!")
         # pcap mainloop
@@ -243,7 +251,7 @@ def main(target, pcap=None, iface=None, keyfile=None):
 
 if __name__ == "__main__":
     if len(sys.argv) <= 3:
-        print ("USAGE: <host> <port> <inteface or pcap>")
+        print ("USAGE: <host> <port> <inteface or pcap> <keyfile> <abort_after_num_packets>")
         print ("\navailable interfaces:")
         for i in get_if_list():
             print ("   * %s" % i)
@@ -253,6 +261,7 @@ if __name__ == "__main__":
     pcap = None
     iface = None
     keyfile = None
+    num_pkts = None
     if len(sys.argv) > 3:
         if os.path.isfile(sys.argv[3]):
             pcap = sys.argv[3]
@@ -265,4 +274,7 @@ if __name__ == "__main__":
             raise Exception("PrivateKey File not Found! %s" % sys.argv[4])
         keyfile = sys.argv[4]
 
-    main((sys.argv[1], int(sys.argv[2])), iface=iface, pcap=pcap, keyfile=keyfile)
+    if len(sys.argv) > 5:
+        num_pkts = int(sys.argv[5])
+
+    main((sys.argv[1], int(sys.argv[2])), iface=iface, pcap=pcap, keyfile=keyfile, num_pkts=num_pkts)

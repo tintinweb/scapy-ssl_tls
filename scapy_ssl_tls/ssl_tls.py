@@ -397,6 +397,7 @@ DEFAULT_SIG_SCHEME_LIST = [TLSSignatureScheme.ECDSA_SECP521R1_SHA512,
                            # Leave SHA1 for now, for ease of testing
                            TLSSignatureScheme.RSA_PKCS1_SHA1]
 
+
 TLS_PSK_KEY_EXCHANGE_MODE = {}
 TLS_PSK_KEY_EXCHANGE_MODE.update({0: "psk_ke",
                                   1: "psk_dhe_ke",
