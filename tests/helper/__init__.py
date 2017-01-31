@@ -23,7 +23,6 @@ class PopenProcess(object):
     subprocess.Popen wrapper
     """
     def __init__(self, target, args=(), cwd=None, shell=None):
-        print [target] + [str(a) for a in args]
         self.pid = subprocess.Popen([target] + [str(a) for a in args], cwd=cwd, shell=shell, stdin=subprocess.PIPE)
         self.stdin = self.pid.stdin
 
@@ -64,7 +63,7 @@ class ForkProcess(object):
 
 def pytls_serve(bind=('', 8443),
                 certfile="../tests/files/openssl_1_0_1_f_server.pem",
-                ssl_version=ssl.PROTOCOL_TLSv1, ciphers="ALL"):
+                ssl_version=ssl.PROTOCOL_TLSv1_2, ciphers="ALL"):
     """
     python tls http echo server implementation
     :param bind:
@@ -78,14 +77,15 @@ def pytls_serve(bind=('', 8443),
     s.bind(bind)
     s.listen(1)
     while True:
+        ssl_sock = None
         client_sock, addr = s.accept()
-        ssl_sock = ssl.wrap_socket(client_sock,
-                                   server_side=True,
-                                   certfile=certfile,
-                                   keyfile=certfile,
-                                   ssl_version=ssl_version,
-                                   ciphers=ciphers,)
         try:
+            ssl_sock = ssl.wrap_socket(client_sock,
+                                       server_side=True,
+                                       certfile=certfile,
+                                       keyfile=certfile,
+                                       ssl_version=ssl_version,
+                                       ciphers=ciphers,)
             data = []
             chunk = ssl_sock.read()
             while chunk:
@@ -96,11 +96,12 @@ def pytls_serve(bind=('', 8443),
             # echo request
             head = "HTTP/1.1 200 OK\r\nContent-type: text/html\r\nX-SERVER: pytls\r\n\r\n"
             ssl_sock.write(head + ''.join(data))
-        except:
+        except Exception:
             pass
         finally:
-            ssl_sock.shutdown(socket.SHUT_RDWR)
-            ssl_sock.close()
+            if ssl_sock is not None:
+                ssl_sock.shutdown(socket.SHUT_RDWR)
+                ssl_sock.close()
 
 class PythonTlsServer(ForkProcess):
     """
