@@ -657,7 +657,7 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
             # CBC mode
             if self.tls_ctx.sec_params.negotiated_crypto_param["cipher"]["mode"] is not None:
                 try:
-                    self.padding_len = ord(raw_bytes[-1])
+                    self.padding_len = raw_bytes[-1]
                     self.padding = raw_bytes[-self.padding_len - 1:-1]
                     self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
                     if self.above_tls10:
@@ -952,7 +952,7 @@ class SSL(Packet):
         # figure out if we're UDP or TCP
         if self.underlayer is not None and self.underlayer.haslayer(UDP):
             self.guessed_next_layer = DTLSRecord
-        elif ord(raw_bytes[0]) & 0x80:
+        elif raw_bytes[0] & 0x80:
             self.guessed_next_layer = SSLv2Record
         else:
             self.guessed_next_layer = TLSRecord
