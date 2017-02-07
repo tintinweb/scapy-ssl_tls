@@ -326,7 +326,7 @@ class TLSRecord(StackedLenPacket):
         Taken as is from superclass. Just raises exception when payload can't fit in a TLSRecord
         """
         if not self.explicit:
-            self = self.__iter__().next()
+            self = next(self.__iter__())
         if len(self.payload) > TLSRecord.MAX_LEN:
             raise TLSFragmentationError()
         pkt = self.self_build()
