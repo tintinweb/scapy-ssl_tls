@@ -37,12 +37,12 @@ class BLenField(LenField):
         if self.numbytes:
             pack = pack[len(pack) - self.numbytes:]
         return s + pack
+
     def getfield(self, pkt, s):
         """Extract an internal value from a string"""
         upack_data = s[:self.sz]
         # prepend struct.calcsize()-len(data) bytes to satisfy struct.unpack
-        upack_data = '\x00' * (struct.calcsize(self.fmt) - self.sz) + upack_data
-
+        upack_data = b'\x00' * (struct.calcsize(self.fmt) - self.sz) + upack_data
         return  s[self.sz:], self.m2i(pkt, struct.unpack(self.fmt, upack_data)[0])
 
     def i2m(self, pkt, x):
@@ -60,6 +60,7 @@ class BLenField(LenField):
                 f = fld.i2count(pkt, fval)
             x = self.adjust_i2m(pkt, f)
         return x
+
     def m2i(self, pkt, x):
         return self.adjust_m2i(pkt, x)
 
@@ -313,9 +314,10 @@ class TLSRecord(StackedLenPacket):
         cls = StackedLenPacket.guess_payload_class(self, payload)
         p = cls(payload, _internal=1, _underlayer=self)
         try:
-            if cls == Raw().__class__ or p.length > len(payload) :
-                # length does not fit len raw_bytes, assume its corrupt or encrypted
-                cls = TLSCiphertext
+            if p.length is not None:
+                if cls == Raw().__class__ or p.length > len(payload) :
+                    # length does not fit len raw_bytes, assume its corrupt or encrypted
+                    cls = TLSCiphertext
         except AttributeError:
             # e.g. TLSChangeCipherSpec might land here
             pass
