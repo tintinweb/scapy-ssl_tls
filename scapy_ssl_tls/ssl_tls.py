@@ -580,8 +580,7 @@ class TLSServerKeyExchange(TLSKeyExchange):
 
 class TLSServerHelloDone(PacketNoPayload):
     name = "TLS Server Hello Done"
-    fields_desc = [XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
-                   StrLenField("data", "", length_from=lambda x:x.length)]
+    fields_desc = []
 
 
 class TLSCertificate(PacketNoPayload):

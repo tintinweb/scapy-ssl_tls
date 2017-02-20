@@ -457,8 +457,7 @@ class TLSServerAutomata(Automaton):
     @ATMT.action(send_server_hello_done)
     def do_send_server_hello_done(self):
         rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        (rec_hs / TLSServerHelloDone()).show2()
-        server_hello_done = TLSRecord(version=self.tls_version) / TLSHandshake(type=TLSHandshakeType.SERVER_HELLO_DONE)
+        server_hello_done = TLSRecord(version=self.tls_version) / TLSHandshake() / TLSServerHelloDone()
         self.tlssock.sendall(server_hello_done)
     
     @hookable
