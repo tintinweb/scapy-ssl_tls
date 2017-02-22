@@ -157,13 +157,11 @@ class TLSClientAutomata(Automaton):
     @hookable
     @ATMT.action(send_client_hello)
     def do_send_client_hello(self):
-        client_hello = TLSRecord(
-            version=self.tls_version) / TLSHandshake() / TLSClientHello(
-            version=self.tls_version,
-            compression_methods=[
-                TLSCompressionMethod.NULL,
-            ],
-            cipher_suites=self.cipher_suites)
+        client_hello = TLSRecord(version=self.tls_version) / \
+                       TLSHandshakes(handshakes=[TLSHandshake() /
+                                                 TLSClientHello(version=self.tls_version,
+                                                                compression_methods=[ TLSCompressionMethod.NULL,],
+                                                                cipher_suites=self.cipher_suites)])
         self.tlssock.sendall(client_hello)
 
     @hookable
@@ -201,8 +199,9 @@ class TLSClientAutomata(Automaton):
     @ATMT.action(send_client_key_exchange)
     def do_send_client_key_exchange(self):
         tls_version = self.tlssock.tls_ctx.negotiated.version
-        client_key_exchange = TLSRecord(
-            version=tls_version) / TLSHandshake() / self.tlssock.tls_ctx.get_client_kex_data()
+        client_key_exchange = TLSRecord(version=tls_version) / \
+                              TLSHandshakes(handshake=[TLSHandshake() /
+                                                       self.tlssock.tls_ctx.get_client_kex_data()])
         self.tlssock.sendall(client_key_exchange)
 
     @hookable
@@ -440,10 +439,11 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_hello)
     def do_send_server_hello(self):
-        rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        server_hello = rec_hs / TLSServerHello(version=self.tls_version,
-                                               compression_method=TLSCompressionMethod.NULL,
-                                               cipher_suite=self.cipher_suite)
+        server_hello = TLSRecord(version=self.tls_version) / \
+                       TLSHandshakes(handshakes=[TLSHandshake() /
+                                                 TLSServerHello(version=self.tls_version,
+                                                                compression_method=TLSCompressionMethod.NULL,
+                                                                cipher_suite=self.cipher_suite)])
         server_hello.show()
         self.tlssock.sendall(server_hello)
 
@@ -460,9 +460,9 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_certificates)
     def do_send_server_certificates(self):
-        rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        server_certificates = rec_hs / \
-                              TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])
+        server_certificates = TLSRecord(version=self.tls_version) / \
+                              TLSHandshakes(handshakes=[TLSHandshake() /
+                                                        TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])])
         server_certificates.show()
         self.tlssock.sendall(server_certificates)
 
@@ -479,8 +479,9 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_hello_done)
     def do_send_server_hello_done(self):
-        rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        server_hello_done = TLSRecord(version=self.tls_version) / TLSHandshake() / TLSServerHelloDone()
+        server_hello_done = TLSRecord(version=self.tls_version) / \
+                            TLSHandshakes(handshakes=[TLSHandshake() /
+                                                      TLSServerHelloDone()])
         self.tlssock.sendall(server_hello_done)
 
     @hookable
