@@ -425,9 +425,11 @@ class TLSScanner(object):
     def _scan_compressions(self, target, starttls=None, compression_list=TLS_COMPRESSION_METHODS.keys()):
         for comp in compression_list:
             # prepare pkt
-            pkt = TLSRecord() / TLSHandshake() / TLSClientHello(version=TLSVersion.TLS_1_1,
-                                                                cipher_suites=range(0xfe)[::-1],
-                                                                compression_methods=comp)
+            pkt = TLSRecord() / \
+                  TLSHandshakes(handshakes=[TLSHandshake() /
+                                            TLSClientHello(version=TLSVersion.TLS_1_1,
+                                                           cipher_suites=range(0xfe)[::-1],
+                                                           compression_methods=comp)])
             # connect
             try:
                 t = TCPConnection(target, starttls=starttls)
@@ -438,7 +440,10 @@ class TLSScanner(object):
                 print (repr(se))
 
     def _check_cipher(self, target, cipher_id, starttls=None, version=TLSVersion.TLS_1_0):
-        pkt = TLSRecord(version=version) / TLSHandshake() / TLSClientHello(version=version, cipher_suites=[cipher_id])
+        pkt = TLSRecord(version=version) / \
+              TLSHandshakes(handshakes=[TLSHandshake() /
+                                        TLSClientHello(version=version,
+                                                       cipher_suites=[cipher_id])])
         try:
             t = TCPConnection(target, starttls=starttls)
             t.sendall(pkt)
@@ -474,9 +479,12 @@ class TLSScanner(object):
              v) for k,
             v in TLS_VERSIONS.iteritems() if v.startswith("TLS_") or v.startswith("SSL_"))):
         for magic, name in versionlist:
-            pkt = TLSRecord(version=magic) / TLSHandshake() / TLSClientHello(version=magic,
-                                                                             cipher_suites=range(0xfe)[::-1],
-                                                                             extensions=[TLSExtension() / TLSExtHeartbeat(mode=TLSHeartbeatMode.PEER_ALLOWED_TO_SEND)])
+            pkt = TLSRecord(version=magic) / \
+                  TLSHandshakes(handshakes=[TLSHandshake() /
+                                            TLSClientHello(version=magic,
+                                                           cipher_suites=range(0xfe)[::-1],
+                                                           extensions=[TLSExtension() /
+                                                                       TLSExtHeartbeat(mode=TLSHeartbeatMode.PEER_ALLOWED_TO_SEND)])])
             try:
                 # connect
                 t = TCPConnection(target, starttls=starttls)
@@ -515,8 +523,10 @@ class TLSScanner(object):
                 self.capabilities.insert(future.result(), client=False)
 
     def _scan_scsv(self, target, starttls=None):
-        pkt = TLSRecord(version=TLSVersion.TLS_1_1) / TLSHandshake() / TLSClientHello(version=TLSVersion.TLS_1_0,
-                                                                                      cipher_suites=[TLSCipherSuite.FALLBACK_SCSV] + range(0xfe)[::-1])
+        pkt = TLSRecord(version=TLSVersion.TLS_1_1) / \
+              TLSHandshakes(handshakes=[TLSHandshake() /
+                                        TLSClientHello(version=TLSVersion.TLS_1_0,
+                                                       cipher_suites=[TLSCipherSuite.FALLBACK_SCSV] + range(0xfe)[::-1])])
         # connect
         try:
             t = TCPConnection(target, starttls=starttls)
@@ -532,7 +542,8 @@ class TLSScanner(object):
     def _scan_heartbleed(self, target, starttls=None, version=TLSVersion.TLS_1_0, payload_length=20):
         try:
             t = TCPConnection(target, starttls=starttls)
-            pkt = TLSRecord(version=version) / TLSHandshake() / TLSClientHello(version=version)
+            pkt = TLSRecord(version=version) / TLSHandshakes(handshakes=[TLSHandshake() /
+                                                                         TLSClientHello(version=version)])
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
             pkt = TLSRecord(version=version) / TLSHeartBeat(length=2**14 - 1, data='bleed...')
@@ -549,8 +560,11 @@ class TLSScanner(object):
         # todo: also test EMPTY_RENEGOTIATION_INFO_SCSV
         try:
             t = TCPConnection(target, starttls=starttls)
-            pkt = TLSRecord(version=version) / TLSHandshake() / \
-                TLSClientHello(version=version, extensions=TLSExtension() / TLSExtRenegotiationInfo())
+            pkt = TLSRecord(version=version) / \
+                  TLSHandshakes(handshakes=[TLSHandshake() /
+                                            TLSClientHello(version=version,
+                                                           extensions=TLSExtension() /
+                                                                      TLSExtRenegotiationInfo())])
             t.sendall(pkt)
             resp = t.recvall(timeout=0.5)
             if resp.haslayer(TLSExtRenegotiationInfo):

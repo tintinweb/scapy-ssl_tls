@@ -24,8 +24,9 @@ ec_pub = tlsk.point_to_ansi_str(keypair.pub)
 
 host = ("localhost", 8443)
 version = tls.tls_draft_version(18)
-key_share = TLSExtension() / TLSExtKeyShare() / TLSServerHelloKeyShare(server_share=TLSKeyShareEntry(named_group=TLSSupportedGroup.SECP256R1,
-                                                                                                     key_exchange=ec_pub))
+key_share = TLSExtension() / TLSExtKeyShare() / \
+            TLSServerHelloKeyShare(server_share=TLSKeyShareEntry(named_group=TLSSupportedGroup.SECP256R1,
+                                                                 key_exchange=ec_pub))
 named_groups = TLSExtension() / TLSExtSupportedGroups(named_group_list=[TLSSupportedGroup.SECP256R1,
                                                                         TLSSupportedGroup.SECP384R1,
                                                                         TLSSupportedGroup.SECP521R1])
@@ -46,15 +47,20 @@ with TLSSocket(client=False) as tls_socket:
             r = client_socket.recvall()
             r.show()
 
-            server_hello = TLSRecord() / TLSHandshakes(handshakes=[TLSHandshake() / TLSServerHello(version=version,
-                                                                                                   cipher_suite=TLSCipherSuite.TLS_AES_256_GCM_SHA384,
-                                                                                                   extensions=[key_share])])
+            server_hello = TLSRecord() / \
+                           TLSHandshakes(handshakes=[TLSHandshake() /
+                                                     TLSServerHello(version=version,
+                                                                    cipher_suite=TLSCipherSuite.TLS_AES_256_GCM_SHA384,
+                                                                    extensions=[key_share])])
             client_socket.sendall(server_hello)
-            client_socket.sendall(TLSRecord() / TLSHandshakes(handshakes=[TLSHandshake() / TLSEncryptedExtensions(extensions=[named_groups]),
-                                                                          TLSHandshake() / TLSCertificateList() / TLS13Certificate(certificates=certificates)]))
-            client_socket.sendall(TLSHandshakes(handshakes=[TLSHandshake() / TLSCertificateVerify(alg=TLSSignatureScheme.RSA_PKCS1_SHA256,
-                                                                                                  sig=client_socket.tls_ctx.compute_server_cert_verify())]))
-            r = client_socket.do_round_trip(TLSHandshakes(handshakes=[TLSHandshake() / TLSFinished(data=client_socket.tls_ctx.get_verify_data())]))
+            client_socket.sendall(TLSRecord() /
+                                  TLSHandshakes(handshakes=[TLSHandshake() / TLSEncryptedExtensions(extensions=[named_groups]),
+                                                            TLSHandshake() / TLSCertificateList() / TLS13Certificate(certificates=certificates)]))
+            client_socket.sendall(TLSHandshakes(handshakes=[TLSHandshake() /
+                                                            TLSCertificateVerify(alg=TLSSignatureScheme.RSA_PKCS1_SHA256,
+                                                                                 sig=client_socket.tls_ctx.compute_server_cert_verify())]))
+            r = client_socket.do_round_trip(TLSHandshakes(handshakes=[TLSHandshake() /
+                                                                      TLSFinished(data=client_socket.tls_ctx.get_verify_data())]))
             r.show()
 
             client_socket.sendall(TLSPlaintext(data="It works!"))

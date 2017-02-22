@@ -30,16 +30,17 @@ if __name__ == "__main__":
 
     # create TLS Handhsake / Client Hello packet
     p = TLSRecord(version='TLS_1_2') / \
-        TLSHandshake() / \
-        TLSClientHello(compression_methods=[TLSCompressionMethod.NULL, TLSCompressionMethod.DEFLATE] + range(255 - 2),
-                       cipher_suites=[TLSCipherSuite.NULL_WITH_NULL_NULL] + range(0xff - 1),
-                       extensions=[
-            TLSExtension() /
-            TLSExtServerNameIndication(server_names=[TLSServerName(data="a" * 500, length=16),
-                                                     TLSServerName(length=222)]),
-            TLSExtension() /
-            TLSExtServerNameIndication(server_names=[TLSServerName(length=2)])
-        ])
+        TLSHandshakes(handshakes=[
+            TLSHandshake() /
+            TLSClientHello(compression_methods=[TLSCompressionMethod.NULL, TLSCompressionMethod.DEFLATE] + range(255 - 2),
+                           cipher_suites=[TLSCipherSuite.NULL_WITH_NULL_NULL] + range(0xff - 1),
+                           extensions=[
+                TLSExtension() /
+                TLSExtServerNameIndication(server_names=[TLSServerName(data="a" * 500, length=16),
+                                                         TLSServerName(length=222)]),
+                TLSExtension() /
+                TLSExtServerNameIndication(server_names=[TLSServerName(length=2)])
+            ])])
 
     p.show()
 

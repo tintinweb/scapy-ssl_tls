@@ -46,15 +46,17 @@ def main():
             try:
                 r = client_socket.recvall()
                 version = r[TLSClientHello].version
-                server_hello = TLSRecord(version=version) / TLSHandshakes(handshakes=[TLSHandshake() / TLSServerHello(version=version, cipher_suite=cipher),
-                                                                                      TLSHandshake() / TLSCertificateList() /
-                                                                                                       TLS10Certificate(certificates=certificates),
-                                                                                      TLSHandshake(type=TLSHandshakeType.SERVER_HELLO_DONE)])
+                server_hello = TLSRecord(version=version) / \
+                               TLSHandshakes(handshakes=[TLSHandshake() / TLSServerHello(version=version, cipher_suite=cipher),
+                                                         TLSHandshake() / TLSCertificateList() /TLS10Certificate(certificates=certificates),
+                                                         TLSHandshake(type=TLSHandshakeType.SERVER_HELLO_DONE)])
                 r = client_socket.do_round_trip(server_hello)
                 r.show()
 
-                client_socket.do_round_trip(TLSRecord(version=version) / TLSChangeCipherSpec(), recv=False)
-                r = client_socket.do_round_trip(TLSHandshakes(handshakes=[TLSHandshake() / TLSFinished(data=client_socket.tls_ctx.get_verify_data())]))
+                client_socket.do_round_trip(TLSRecord(version=version) /
+                                            TLSChangeCipherSpec(), recv=False)
+                r = client_socket.do_round_trip(TLSHandshakes(handshakes=[TLSHandshake() /
+                                                                          TLSFinished(data=client_socket.tls_ctx.get_verify_data())]))
 
                 r.show()
                 client_socket.do_round_trip(TLSPlaintext(data="It works!\n"), recv=False)
