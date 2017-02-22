@@ -112,7 +112,7 @@ class TestExampleServerAgainstLocalOpenSslClient(unittest.TestCase):
     def setUp(self):
         self.bind = BIND
         
-    def server_testcase(self, target, args=[], cwd=None):
+    def server_testcase(self, target, args=[], cwd=None, expect=0):
         # spawn server (example script)
         wait_for_bind_to_become_ready(tuple(args[:2]))
         server = PythonInterpreter(target, args, cwd)
@@ -123,10 +123,10 @@ class TestExampleServerAgainstLocalOpenSslClient(unittest.TestCase):
         client = OpenSslClient(args=(self.bind))
         # wait for server to exit until client quits (getReturnCode waits until proc exits)
         client.stdin.write("It works!\r\n\r\n")
-        self.assertEqual(server.getReturnCode(), 0)
+        self.assertEqual(server.getReturnCode(), expect)
         print ("server exit")
         print ("terminating client...")
-        self.assertEqual(client.getReturnCode("Q\n"), 0)
+        self.assertEqual(client.getReturnCode("Q\n"), expect)
         client.kill()
         server.kill()
         
@@ -141,9 +141,10 @@ class TestExampleServerAgainstLocalOpenSslClient(unittest.TestCase):
                              cwd=EXAMPLES_CWD)
         
     def test_cve_2014_3466(self):
-        self.server_testcase("tls_server_automata.py", 
+        self.server_testcase("cve-2014-3466.py", 
                              args=list(BIND)+[SERVER_PEM], 
-                             cwd=EXAMPLES_CWD)
+                             cwd=EXAMPLES_CWD,
+                             expect=1)
 
 class TestExampleClientAgainstExternalServer(unittest.TestCase):
     """

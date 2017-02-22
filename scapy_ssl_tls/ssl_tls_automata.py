@@ -460,9 +460,15 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_certificates)
     def do_send_server_certificates(self):
+        if self.tls_version == "TLS_1_3":
+            cls_cert = TLS13Certificate
+        else:
+            cls_cert = TLS10Certificate
+
         server_certificates = TLSRecord(version=self.tls_version) / \
                               TLSHandshakes(handshakes=[TLSHandshake() /
-                                                        TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])])
+                                                        TLSCertificateList() / cls_cert(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])])
+
         server_certificates.show()
         self.tlssock.sendall(server_certificates)
 

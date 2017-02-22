@@ -18,6 +18,8 @@ except ImportError:
     from scapy.layers.ssl_tls_automata import TLSServerAutomata
     from scapy.layers.ssl_tls import *
 
+basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
+
 if __name__ == '__main__':
     #conf.prog.dot = r'"path_to_graphviz/dot"'
     logging.basicConfig(level=logging.DEBUG)
@@ -28,7 +30,7 @@ if __name__ == '__main__':
     else:
         target = ("127.0.0.1", 8443)
 
-    server_pem = sys.argv[3] if len(sys.argv) > 3 else "../tests/files/openssl_1_0_1_f_server.pem"
+    server_pem = sys.argv[3] if len(sys.argv) > 3 else os.path.join(basedir,"tests/files/openssl_1_0_1_f_server.pem")
 
     TLSServerAutomata.graph()
 
