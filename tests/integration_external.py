@@ -124,14 +124,14 @@ class TestHandshakeWithData(unittest.TestCase):
         self.do_test(target=target, tls_version=tls_version, compression_methods=compression_methods,
                      cipher_suites=cipher_suites)
 
-    # DSA not supportorted by Java and Python out of the box. This results in FP test failures. Commenting out for now.
-    # def test_external_tls_1_2_NULL_DHE_DSS_WITH_AES_128_CBC_SHA(self):
-    #     tls_version = TLSVersion.TLS_1_2
-    #     compression_methods = [TLSCompressionMethod.NULL, ]
-    #     cipher_suites = [TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA, ]
-    #     target = self.tls_server.bind
-    #     self.do_test(target=target, tls_version=tls_version, compression_methods=compression_methods,
-    #                  cipher_suites=cipher_suites)
+    @unittest.skip("DSA not supportorted by Java and Python out of the box. This results in FP test failures. Skipping out for now.")
+    def test_external_tls_1_2_NULL_DHE_DSS_WITH_AES_128_CBC_SHA(self):
+         tls_version = TLSVersion.TLS_1_2
+         compression_methods = [TLSCompressionMethod.NULL, ]
+         cipher_suites = [TLSCipherSuite.DHE_DSS_WITH_AES_128_CBC_SHA, ]
+         target = self.tls_server.bind
+         self.do_test(target=target, tls_version=tls_version, compression_methods=compression_methods,
+                      cipher_suites=cipher_suites)
 
 if __name__ == '__main__':
     # todo remove_me
