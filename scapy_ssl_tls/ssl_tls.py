@@ -1496,15 +1496,21 @@ def tls_do_round_trip(tls_socket, pkt, recv=True):
 
 def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
     if version <= TLSVersion.TLS_1_2:
-        client_hello = TLSRecord(version=version) / TLSHandshakes(handshakes=[TLSHandshake() /
-                                                                              TLSClientHello(version=version, cipher_suites=ciphers, extensions=extensions)])
+        client_hello = TLSRecord(version=version) / \
+                       TLSHandshakes(handshakes=[TLSHandshake() /
+                                                 TLSClientHello(version=version,
+                                                                cipher_suites=ciphers,
+                                                                extensions=extensions)])
         resp1 = tls_do_round_trip(tls_socket, client_hello)
 
-        client_key_exchange = TLSRecord(version=version) / TLSHandshakes(handshakes=[TLSHandshake() / tls_socket.tls_ctx.get_client_kex_data()])
+        client_key_exchange = TLSRecord(version=version) / \
+                              TLSHandshakes(handshakes=[TLSHandshake() /
+                                                        tls_socket.tls_ctx.get_client_kex_data()])
         client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
         tls_do_round_trip(tls_socket, TLS.from_records([client_key_exchange, client_ccs]), False)
 
-        resp2 = tls_do_round_trip(tls_socket, TLSHandshakes(handshakes=[TLSHandshake() / TLSFinished(data=tls_socket.tls_ctx.get_verify_data())]))
+        resp2 = tls_do_round_trip(tls_socket, TLSHandshakes(handshakes=[TLSHandshake() /
+                                                                        TLSFinished(data=tls_socket.tls_ctx.get_verify_data())]))
         return resp1, resp2
     else:
         raise NotImplementedError("Do handshake not implemented for TLS 1.3")
@@ -1520,7 +1526,9 @@ def tls_fragment_payload(pkt, record=None, size=2**14):
     else:
         fragments = []
         for payload in payloads:
-            fragments.append(TLSRecord(content_type=record.content_type, version=record.version, length=len(payload)) /
+            fragments.append(TLSRecord(content_type=record.content_type,
+                                       version=record.version,
+                                       length=len(payload)) /
                              payload)
             try:
                 stack = TLS.from_records(fragments, ctx=record.tls_ctx)
