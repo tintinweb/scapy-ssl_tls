@@ -27,6 +27,9 @@ TEST_SCRIPT_AS_CLIENT = [ 'SCSV_fallback_test.py', 'client_hello_complex_invalid
                            'full_rsa_connection_with_application_data.py', 'padding_and_mac_checks.py',
                            'sslv2_client_hello_valid.py', 'tls_client_automata.py']
 
+EXTERNAL_SERVER = ("cloudflare.com", 443) # tls13
+TEST_SCRIPT_AGAINST_EXTERNAL_SERVER = ['tls_1_3-client.py',]
+
 class TestExampleClientsAgainstLocalOpenSsl(unittest.TestCase):
     """
     TLS client tests: client.py <ip> <port>
@@ -97,8 +100,9 @@ def generator_client(target, args=[], cwd=None):
 
 # add test-cases to test-class
 for script in TEST_SCRIPT_AS_CLIENT:
-    setattr(TestExampleClientsAgainstLocalOpenSsl, "test_%s" % script.replace('.', '_'), generator_client(script, BIND, EXAMPLES_CWD))
-
+    setattr(TestExampleClientsAgainstLocalOpenSsl, 
+            "test_%s" % script.replace('.', '_'), 
+            generator_client(script, BIND, EXAMPLES_CWD))
 
 class TestExampleServerAgainstLocalOpenSslClient(unittest.TestCase):
     """
@@ -141,6 +145,23 @@ class TestExampleServerAgainstLocalOpenSslClient(unittest.TestCase):
                              args=list(BIND)+[SERVER_PEM], 
                              cwd=EXAMPLES_CWD)
 
+class TestExampleClientAgainstExternalServer(unittest.TestCase):
+    """
+    TLS client tests against external server: server.py <ip> <port>
+    """
+
+    def server_testcase(self, target, args=[], cwd=None):
+        # spawn server (example script)
+        server = PythonInterpreter(target, args, cwd)
+        # we cannot poll as this would mess up the server socket
+        self.assertEqual(client.getReturnCode("Q\n"), 0)
+        client.kill()
+        server.kill()
+
+for script in TEST_SCRIPT_AGAINST_EXTERNAL_SERVER:
+    setattr(TestExampleClientAgainstExternalServer,
+            "test_%s" % script.replace('.', '_'),
+            generator_client(script, EXTERNAL_SERVER, EXAMPLES_CWD))
 
 class TestExampleSnifferWithOpenSslServerAndClient(unittest.TestCase):
     """
