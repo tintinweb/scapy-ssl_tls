@@ -55,12 +55,19 @@ class TestTLSRecord(unittest.TestCase):
         self.assertTrue(self.stacked_handshake.haslayer(tls.TLSServerHello))
         self.assertTrue(self.stacked_handshake.haslayer(tls.TLSCertificateList))
         self.assertTrue(self.stacked_handshake.haslayer(tls.TLSCertificate))
-        self.assertTrue(self.stacked_handshake.haslayer(tls.TLSServerHelloDone))
+        # Note (tin): scapy only dissects as long as there are bytes left to be passed to sublayers.
+        #             since TLSServerHelloDone() is a zero-length layer, dissection already stops
+        #             at the TLSHandshake layer. As a consequence the dissection stream is not
+        #             going to have a TLSServerHelloDone() layer but the ServerHelloDone hint
+        #             set in the TLSHandhsake.type property.
+        # self.assertTrue(self.stacked_handshake.haslayer(tls.TLSServerHelloDone))
+        # check last handshake layer type
+        self.assertEquals(self.stacked_handshake[tls.TLSHandshake].payload[tls.TLSHandshake].payload[tls.TLSHandshake].type, tls.TLSHandshakeType.SERVER_HELLO_DONE)
         # check TLS layers one by one
         self.assertEqual(re.findall(r'<(TLS[\w]+)', str(repr(self.stacked_handshake))),
                          ['TLSRecord', 'TLSHandshake', 'TLSServerHello',
                           'TLSHandshake', 'TLSCertificateList', 'TLSCertificate',
-                          'TLSHandshake', 'TLSServerHelloDone'])
+                          'TLSHandshake'])
 
     def test_fragmentation_fails_on_non_aligned_boundary_for_handshakes(self):
         pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello()
