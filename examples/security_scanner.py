@@ -400,14 +400,11 @@ class TLSScanner(object):
             t = TCPConnection(target, starttls=starttls)
             ts = TLSSocket(t._s, client=True)
             tls_do_handshake(ts, version, TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA)
+            ts.pre_encrypt_hook = modify_padding
             ts.sendall(
-                to_raw(
                     TLSPlaintext(
                         data="GET / HTTP/1.1\r\nHOST: %s\r\n\r\n" %
-                        target[0]),
-                    ts.tls_ctx,
-                    pre_encrypt_hook=modify_padding))
-
+                        target[0]),)
             r = ts.recvall()
             if len(r.records) == 0:
                 self.capabilities.events.append(

@@ -29,19 +29,23 @@ if __name__ == "__main__":
                                                                  TLSExtSessionTicketTLS(data="")])])
 
 
+        pkt.show()
         tls_socket.sendall(pkt)
-        tls_socket.recvall()
+        resp = tls_socket.recvall()
+        resp.show()
         client_key_exchange = TLSRecord(version=version) / \
                               TLSHandshakes(handshakes=[TLSHandshake() /
                                                         tls_ctx.get_client_kex_data()])
 
         client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
         tls_socket.sendall(TLS.from_records([client_key_exchange, client_ccs]))
-        tls_socket.sendall(to_raw(TLSFinished(), tls_ctx))
+        tls_socket.sendall(TLSFinished())
         server_finished = tls_socket.recvall()
+        server_finished.show()
         ticket = server_finished[TLSSessionTicket].ticket
-        tls_socket.sendall(to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"), tls_ctx))
-        tls_socket.recvall()
+        tls_socket.sendall(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"))
+        resp = tls_socket.recvall()
+        resp.show()
         master_secret = tls_ctx.master_secret
 
     print("First session context: %s" % tls_ctx)
@@ -56,11 +60,13 @@ if __name__ == "__main__":
                                                                      cipher_suites=[cipher],
                                                                      extensions=[TLSExtension() /
                                                                                  TLSExtSessionTicketTLS(data=ticket)])])
+        pkt.show()
         tls_socket.sendall(pkt)
         resp = tls_socket.recvall()
+        resp.show()
         tls_socket.sendall(TLSRecord(version=version) / TLSChangeCipherSpec())
-        tls_socket.sendall(to_raw(TLSFinished(), tls_ctx))
-        tls_socket.sendall(to_raw(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"), tls_ctx))
+        tls_socket.sendall(TLSFinished())
+        tls_socket.sendall(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"))
         tls_socket.recvall()
 
     print("Resumed session context: %s" % tls_ctx)
