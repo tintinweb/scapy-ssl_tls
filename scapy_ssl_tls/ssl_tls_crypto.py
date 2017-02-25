@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 # -*- coding: UTF-8 -*-
-# Author : tintinweb@oststrom.com <github.com/tintinweb>
-# http://www.secdev.org/projects/scapy/doc/build_dissect.html
+# Author : <github.com/tintinweb/scapy-ssl_tls>
 
 from __future__ import division
 import binascii
@@ -153,6 +152,7 @@ class TLSSessionCtx(object):
         self.negotiated.sig = None
         self.negotiated.resumption = False
 
+        self.ticket = None
         self.encrypted_premaster_secret = None
         self.premaster_secret = None
         self.master_secret = None
@@ -178,6 +178,7 @@ TLS Session Context:
     negotiated.mac: {hmac}
     negotiated.compression: {comp}
     negotiated.resumption: {resume}
+    ticket: {ticket}
     encrypted_premaster_secret: {epms}
     premaster_secret: {pms}
     master_secret: {ms}
@@ -196,7 +197,8 @@ TLS Session Context:
                                pms=repr(self.premaster_secret), ms=repr(self.master_secret), early_secrets=self.early_secrets,
                                handshake_secrets=self.handshake_secrets, master_secrets=self.master_secrets,
                                resumption_secret=repr(self.resumption_secret), client_ctx=self.client_ctx,
-                               server_ctx=self.server_ctx)
+                               server_ctx=self.server_ctx,
+                               ticket=repr(self.ticket))
 
     def insert(self, pkt):
         """
@@ -462,6 +464,14 @@ TLS Session Context:
                 warnings.warn("Finished hash does not match. Wanted %s, got %s" % (repr(verify_data), repr(finished.data)))
         self.__finish_count += 1
 
+    def __handle_session_ticket(self, handshake):
+        if handshake.haslayer(tls.TLSSessionTicket):
+            # server provided ticket, lifetime..
+            self.ticket = handshake[tls.TLSSessionTicket]
+        elif handshake.haslayer(tls.TLSExtSessionTicketTLS):
+            # client provided raw session ticket
+            self.ticket = tls.TLSSessionTicket(ticket=handshake[tls.TLSExtSessionTicketTLS].data)
+
     def __generate_secrets(self):
         if isinstance(self.client_ctx.sym_keystore, tlsk.EmptySymKeyStore):
             self.client_ctx.sym_keystore = self.sec_params.client_keystore
@@ -491,6 +501,7 @@ TLS Session Context:
                 self.__handle_client_kex(pkt[tls.TLSClientKeyExchange])
             if pkt.haslayer(tls.TLSFinished):
                 self.__handle_finished(pkt[tls.TLSFinished])
+            self.__handle_session_ticket(pkt)
         if pkt.haslayer(tls.TLSChangeCipherSpec):
             self.__handle_ccs(pkt[tls.TLSChangeCipherSpec])
 

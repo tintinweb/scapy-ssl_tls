@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 # -*- coding: UTF-8 -*-
-# Author : tintinweb@oststrom.com <github.com/tintinweb>
-# http://www.secdev.org/projects/scapy/doc/build_dissect.html
+# Author : <github.com/tintinweb/scapy-ssl_tls>
 
 from scapy.packet import bind_layers, Packet, Raw
 from scapy.fields import *
