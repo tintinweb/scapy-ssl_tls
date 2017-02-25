@@ -200,7 +200,7 @@ TLS Session Context:
                                server_ctx=self.server_ctx,
                                ticket=repr(self.ticket))
 
-    def insert(self, pkt):
+    def insert(self, pkt, origin=None):
         """
         add packet to context
         - unpack SSL.records and add them to history
@@ -212,7 +212,7 @@ TLS Session Context:
 
         for pkt in ps:
             self.history.append(pkt)
-            self._process(pkt)
+            self._process(pkt, origin=origin)
 
     def __handle_client_hello(self, client_hello):
         # Update client context with random, session_id and generate a dummy PMS
@@ -433,7 +433,21 @@ TLS Session Context:
                                                                        self.server_ctx.random)
         self.__generate_secrets()
 
-    def __handle_ccs(self, ccs):
+    def __handle_ccs(self, ccs, origin):
+        if origin:
+            # if origin was specified, mark the according ctx as must_encrypt
+            # Note: abbreviated handshake: server CCS first, client CCS seconds
+            # this should work in all cases where origin information is available
+            if origin == "client":
+                self.client_ctx.must_encrypt = True
+                self.__ccs_count += 1
+                return
+            elif origin == "server":
+                self.server_ctx.must_encrypt = True
+                self.__ccs_count += 1
+                return
+        # origin not set, or invalid. 
+        # for full handshake: client CCS received first, server second. 
         if self.__ccs_count == 0:
             self.client_ctx.must_encrypt = True
         else:
@@ -483,7 +497,7 @@ TLS Session Context:
         self.client_ctx.crypto_ctx = factory.new(self.client_ctx)
         self.server_ctx.crypto_ctx = factory.new(self.server_ctx)
 
-    def _process(self, pkt):
+    def _process(self, pkt, origin=None):
         """
         fill context
         """
@@ -503,7 +517,7 @@ TLS Session Context:
                 self.__handle_finished(pkt[tls.TLSFinished])
             self.__handle_session_ticket(pkt)
         if pkt.haslayer(tls.TLSChangeCipherSpec):
-            self.__handle_ccs(pkt[tls.TLSChangeCipherSpec])
+            self.__handle_ccs(pkt[tls.TLSChangeCipherSpec], origin=origin)
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))

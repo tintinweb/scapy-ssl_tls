@@ -1252,6 +1252,12 @@ class TLSSocket(object):
         except AttributeError:
             return getattr(self._s, attr)
 
+    def _get_pkt_origin(self, direction=None):
+        if direction=='in':
+            return 'server' if self.client else 'client'
+        elif direction=='out':
+            return 'client' if self.client else 'server'
+
     def sendall(self, pkt, timeout=2):
         prev_timeout = self._s.gettimeout()
         self._s.settimeout(timeout)
@@ -1259,7 +1265,7 @@ class TLSSocket(object):
             self._s.sendall(str(tls_to_raw(pkt, self.tls_ctx, True, self.compress_hook, self.pre_encrypt_hook, self.encrypt_hook)))
         else:
             self._s.sendall(str(pkt))
-        self.tls_ctx.insert(pkt)
+        self.tls_ctx.insert(pkt, self._get_pkt_origin('out'))
         self._s.settimeout(prev_timeout)
 
     def recvall(self, size=8192, timeout=0.5):
@@ -1275,7 +1281,7 @@ class TLSSocket(object):
             except socket.timeout:
                 break
         self._s.settimeout(prev_timeout)
-        records = TLS("".join(resp), ctx=self.tls_ctx)
+        records = TLS("".join(resp), ctx=self.tls_ctx, _origin=self._get_pkt_origin('in'))
         return records
 
     def accept(self):
@@ -1306,6 +1312,7 @@ class SSL(Packet):
 
     def __init__(self, *args, **fields):
         self.tls_ctx = fields.pop("ctx", None)
+        self._origin = fields.pop("_origin", None)
         Packet.__init__(self, *args, **fields)
 
     @classmethod
@@ -1339,7 +1346,7 @@ class SSL(Packet):
                 payload = record(raw_bytes[pos:pos + record_header_len + payload_len], ctx=self.tls_ctx)
                 # Perform inline decryption if required
                 payload = self.do_decrypt_payload(payload)
-                self.tls_ctx.insert(payload)
+                self.tls_ctx.insert(payload, origin=self._origin)
             else:
                 payload = record(raw_bytes[pos:pos + record_header_len + payload_len])
             # Populate our list of found records
@@ -1416,7 +1423,6 @@ cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICAT
 
 def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
     import ssl_tls_crypto as tlsc
-
     if tls_ctx is None:
         raise ValueError("A valid TLS session context must be provided")
 
@@ -1456,6 +1462,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
             tls_ciphertext = TLSRecord(version=tls_ctx.negotiated.version, content_type=content_type) / ciphertext
     else:
         tls_ciphertext = ciphertext
+
     return tls_ciphertext
 
 tls_to_raw = to_raw
