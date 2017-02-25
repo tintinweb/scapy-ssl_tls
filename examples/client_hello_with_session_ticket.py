@@ -39,7 +39,8 @@ if __name__ == "__main__":
 
         client_ccs = TLSRecord(version=version) / TLSChangeCipherSpec()
         tls_socket.sendall(TLS.from_records([client_key_exchange, client_ccs]))
-        tls_socket.sendall(TLSFinished())
+        tls_socket.sendall(TLSHandshakes(handshakes=[TLSHandshake() /
+                                                     TLSFinished(data=tls_socket.tls_ctx.get_verify_data())]))
         server_finished = tls_socket.recvall()
         server_finished.show()
         ticket = server_finished[TLSSessionTicket].ticket
@@ -65,7 +66,8 @@ if __name__ == "__main__":
         resp = tls_socket.recvall()
         resp.show()
         tls_socket.sendall(TLSRecord(version=version) / TLSChangeCipherSpec())
-        tls_socket.sendall(TLSFinished())
+        tls_socket.sendall(TLSHandshakes(handshakes=[TLSHandshake() /
+                                                     TLSFinished(data=tls_socket.tls_ctx.get_verify_data())]))
         tls_socket.sendall(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"))
         tls_socket.recvall()
 
