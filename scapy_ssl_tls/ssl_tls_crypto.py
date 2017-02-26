@@ -387,10 +387,11 @@ TLS Session Context:
         # Walk around a bug where tls_ctx is not defined, thus prevents correct parsing
         # of the TLSKeyExchange by the upper layer. Dodgy, but I don't see anyway around it
         if client_kex.haslayer(Raw):
+            # Note (tin): client_kex[Raw] is short length+ data[length]
             if self.negotiated.key_exchange == tls.TLSKexNames.DHE:
-                client_kex = tls.TLSClientDHParams(data=client_kex[Raw].load)
+                client_kex = tls.TLSClientDHParams(client_kex[Raw].load)
             elif self.negotiated.key_exchange == tls.TLSKexNames.RSA:
-                client_kex = tls.TLSClientRSAParams(data=client_kex[Raw].load)
+                client_kex = tls.TLSClientRSAParams(client_kex[Raw].load)
 
         if client_kex.haslayer(tls.TLSClientRSAParams):
             self.encrypted_premaster_secret = client_kex[tls.TLSClientRSAParams].data

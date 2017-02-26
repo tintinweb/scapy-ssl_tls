@@ -22,12 +22,18 @@ class PopenProcess(object):
     """
     subprocess.Popen wrapper
     """
-    def __init__(self, target, args=(), cwd=None, shell=None):
-        self.pid = subprocess.Popen([target] + [str(a) for a in args], cwd=cwd, shell=shell, stdin=subprocess.PIPE)
+    def __init__(self, target, args=(), cwd=None, shell=None, want_stdout=False, want_stderr=False):
+        # optional stdout, stderr to prevent deadlocks
+        self.pid = subprocess.Popen([target] + [str(a) for a in args], 
+                                    cwd=cwd, shell=shell, 
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE if want_stdout else None,
+                                    stderr=subprocess.PIPE if want_stderr else None)
         self.stdin = self.pid.stdin
+        self.stdout = self.stderr = None
 
     def getReturnCode(self, input=None):
-        self.pid.communicate(input=input)
+        self.stdout, self.stderr = self.pid.communicate(input=input)
         exit_code = self.pid.poll()
         self.pid = None
         return exit_code
@@ -117,8 +123,10 @@ class PythonTlsServer(ForkProcess):
 
 class PythonInterpreter(PopenProcess):
 
-    def __init__(self, target, args=(), cwd=None):
-        super(PythonInterpreter, self).__init__(sys.executable, args=[target]+list(args), cwd=cwd)
+    def __init__(self, target, args=(), cwd=None, want_stderr=False, want_stdout=False):
+        super(PythonInterpreter, self).__init__(sys.executable, 
+                                                args=[target]+list(args), 
+                                                cwd=cwd, want_stderr=want_stderr, want_stdout=want_stdout)
 
 class OpenSslServer(PopenProcess):
     """
@@ -141,12 +149,13 @@ class OpenSslClient(PopenProcess):
     """
     OpenSSL s_server
     """
-    def __init__(self, target="openssl", args=()):
+    def __init__(self, target="openssl", args=(), want_stderr=False, want_stdout=False):
         self.target = args[:2]
         self.args = args[2:]
         super(OpenSslClient, self).__init__(target=target, args=["s_client",
                                                                  "-connect", "%s:%d"%self.target,
-                                                                 "-cipher", "ALL",],)
+                                                                 "-cipher", "ALL",],
+                                            want_stderr=want_stderr, want_stdout=want_stdout)
         
 
 class JavaTlsServer(PopenProcess):

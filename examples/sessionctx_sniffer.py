@@ -188,7 +188,7 @@ class Sniffer(object):
 
         if p_ssl.haslayer(TLSServerHello):
             session.printed = False
-            session.crypto.session.master_secret = None
+            session.master_secret = None
             session.match_server = source
             # reset the session and print it next time
         if p_ssl.haslayer(TLSClientHello):
@@ -196,8 +196,8 @@ class Sniffer(object):
 
         session.insert(p_ssl)
 
-        if session.crypto.session.master_secret and session.printed == False:
-            print (repr(session))
+        if session.master_secret and session.printed == False:
+            print (session)
             session.printed = True
 
         print (

@@ -10,6 +10,7 @@ import unittest
 import socket
 import time
 import os
+import time
 
 from helper import wait_for_server, wait_for_bind_to_become_ready, PopenProcess, PythonInterpreter, OpenSslClient, OpenSslServer
 
@@ -59,21 +60,21 @@ class TestExampleClientsAgainstLocalOpenSsl(unittest.TestCase):
         self.assertEqual(pid.getReturnCode(), 0)
         pid.kill()
     
-    @unittest.skip("NOT YET IMPLEMENTED")
     def test_sessionctx_sniffer_pcap_mode(self):
         """
         USAGE: <host> <port> <inteface or pcap> <keyfile> <num pkts>
 
-        python ../examples/sessionctx_sniffer.py 192.168.220.131 443 ../tests/files/RSA_WITH_AES_128_CBC_SHA.pcap ../tests/files/openssl_1_0_1_f_server.pem
+        python ../examples/sessionctx_sniffer.py 192.168.220.131 443 ../tests/files/RSA_WITH_AES_128_CBC_SHA_w_key.pcap ../tests/files/openssl_1_0_1_f_server.pem
         
         """
-        raise NotImplementedError("NOT YET IMPLEMENTED")
         pid = PythonInterpreter("sessionctx_sniffer.py", 
                                 args=["192.168.220.131", 443, 
-                                      os.path.join(basedir,"./tests/files/RSA_WITH_AES_128_CBC_SHA.pcap"),
+                                      os.path.join(basedir,"./tests/files/RSA_WITH_AES_128_CBC_SHA_w_key.pcap"),
                                       os.path.join(basedir,"./tests/files/openssl_1_0_1_f_server.pem")],
-                                cwd=EXAMPLES_CWD)
+                                cwd=EXAMPLES_CWD,
+                                want_stdout=True)
         self.assertEqual(pid.getReturnCode(), 0)
+        self.assertIn("no client certificate available\\n</BODY></HTML>\\r\\n\\r\\n", pid.stdout)
         pid.kill()
 
     @unittest.skip("NOT YET IMPLEMENTED")
@@ -112,7 +113,10 @@ class TestExampleServerAgainstLocalOpenSslClient(unittest.TestCase):
     def setUp(self):
         self.bind = BIND
         
-    def server_testcase(self, target, args=[], cwd=None, expect=0):
+    def server_testcase(self, target, args=[], cwd=None,
+                         expect_client=0, expect_server=0, 
+                         stdin="It works!\r\n\r\n",
+                         assert_client_stderr=None):
         # spawn server (example script)
         wait_for_bind_to_become_ready(tuple(args[:2]))
         server = PythonInterpreter(target, args, cwd)
@@ -120,35 +124,42 @@ class TestExampleServerAgainstLocalOpenSslClient(unittest.TestCase):
         # we cannot poll as this would mess up the server socket
         time.sleep(3)
         # connect with client (openssl)
-        client = OpenSslClient(args=(self.bind))
+        client = OpenSslClient(args=(self.bind), want_stderr=True if assert_client_stderr else False)
         # wait for server to exit until client quits (getReturnCode waits until proc exits)
-        client.stdin.write("It works!\r\n\r\n")
-        self.assertEqual(server.getReturnCode(), expect)
+        if stdin:
+            client.stdin.write(stdin)
+        self.assertEqual(server.getReturnCode(), expect_server)
         print ("server exit")
         print ("terminating client...")
-        self.assertEqual(client.getReturnCode("Q\n"), expect)
+        self.assertEqual(client.getReturnCode("Q\n"), expect_client)
+        if assert_client_stderr:
+            self.assertIn(assert_client_stderr, client.stderr)
         client.kill()
         server.kill()
         
     def test_server_rsa_py(self):
         self.server_testcase("server_rsa.py", 
-                             args=list(BIND)+list(SERVER_DER_KEY_RSA), 
+                             args=list(self.bind)+list(SERVER_DER_KEY_RSA), 
                              cwd=EXAMPLES_CWD)
         
     def test_tls_server_automata(self):
         self.server_testcase("tls_server_automata.py", 
-                             args=list(BIND)+[SERVER_PEM], 
+                             args=list(self.bind)+[SERVER_PEM], 
                              cwd=EXAMPLES_CWD)
         
     def test_cve_2014_3466(self):
+        self.bind = self.bind[0],8444
         self.server_testcase("cve-2014-3466.py", 
-                             args=list(BIND)+[SERVER_PEM], 
+                             args=list(self.bind)+ ["1"], 
                              cwd=EXAMPLES_CWD,
-                             expect=1)
+                             expect_server=0,
+                             expect_client=1,
+                             stdin=None,
+                             assert_client_stderr="session id too long")
 
 class TestExampleClientAgainstExternalServer(unittest.TestCase):
     """
-    TLS client tests against external server: server.py <ip> <port>
+    TLS client tests against external server: client.py <ip> <port>
     """
 
     def server_testcase(self, target, args=[], cwd=None):
