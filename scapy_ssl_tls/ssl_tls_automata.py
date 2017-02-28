@@ -5,8 +5,8 @@
 import socket
 import functools
 
-from ssl_tls import *
-from ssl_tls_crypto import *
+from scapy_ssl_tls.ssl_tls import *
+from scapy_ssl_tls.ssl_tls_crypto import *
 
 from scapy.automaton import Automaton, ATMT
 
@@ -239,7 +239,7 @@ class TLSClientAutomata(Automaton):
     def recv_server_finish(self):
         p = self.tlssock.recvall(timeout=self.timeout)
         if not (p.haslayer(TLSFinished) or (p.haslayer(TLSPlaintext) and SSL(
-                str(TLSRecord(content_type='handshake') / p[TLSPlaintext].data)).haslayer(TLSFinished))):
+                py3compat.bytes(TLSRecord(content_type='handshake') / p[TLSPlaintext].data)).haslayer(TLSFinished))):
             raise self.ERROR(p)
         raise self.SERVER_FINISH_RECV()
 

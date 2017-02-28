@@ -11,6 +11,7 @@ from scapy.asn1.asn1 import ASN1_SEQUENCE
 import tinyec.ec as ec
 import tinyec.registry as ec_reg
 
+import scapy_ssl_tls.py3compat as py3compat
 
 def rsa_public_from_der_certificate(certificate):
     # Extract subject_public_key_info field from X.509 certificate (see RFC3280)
@@ -32,24 +33,22 @@ def rsa_public_from_der_certificate(certificate):
         """
         subject_public_key_info = ASN1_SEQUENCE([ASN1_SEQUENCE([certificate.pubkey_algo, certificate.pk_value]),
                                                  certificate.pubkey])
-        return RSA.importKey(str(subject_public_key_info))
+        return RSA.importKey(py3compat.bytes(subject_public_key_info))
     except AttributeError:
         pass
-
     # Fallback method, may pot. allow to extract pubkey from incomplete der streams
     cert = DerSequence()
     cert.decode(certificate)
-
+    
     tbs_certificate = DerSequence()
     tbs_certificate.decode(cert[0])       # first DER SEQUENCE
-
     # search for pubkey OID: rsaEncryption: "1.2.840.113549.1.1.1"
     # hex: 06 09 2A 86 48 86 F7 0D 01 01 01
     subject_public_key_info = None
     for seq in tbs_certificate:
-        if not isinstance(seq, basestring):
+        if not isinstance(seq, py3compat.string_types):
             continue     # skip numerics and non sequence stuff
-        if "\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
+        if b"\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01" in seq:
             subject_public_key_info = seq
 
     if subject_public_key_info is None:
@@ -87,7 +86,7 @@ def str_to_int(str_):
 
 
 def ansi_str_to_point(str_):
-    if not str_.startswith("\x04"):
+    if not str_.startswith(b"\x04"):
         raise ValueError("ANSI octet string missing point prefix (0x04)")
     str_ = str_[1:]
     if len(str_) % 2 != 0:
@@ -97,7 +96,7 @@ def ansi_str_to_point(str_):
 
 
 def point_to_ansi_str(point):
-    return "\x04%s%s" % (int_to_str(point.x), int_to_str(point.y))
+    return b"\x04%s%s" % (int_to_str(point.x), int_to_str(point.y))
 
 
 def tls_group_to_keystore(named_group_id, point_str):

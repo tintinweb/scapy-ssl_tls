@@ -3,7 +3,6 @@
 # Author : <github.com/tintinweb/scapy-ssl_tls>
 
 from __future__ import division
-import binascii
 import copy
 import os
 import struct
@@ -13,9 +12,10 @@ import warnings
 
 import math
 
-import pkcs7
-import ssl_tls as tls
-import ssl_tls_keystore as tlsk
+import scapy_ssl_tls.py3compat as py3compat
+import scapy_ssl_tls.pkcs7 as pkcs7
+import ssl_tls as tls  # fix import
+import scapy_ssl_tls.ssl_tls_keystore as tlsk
 import tinyec.ec as ec
 import tinyec.registry as ec_reg
 
@@ -341,10 +341,10 @@ TLS Session Context:
             cert = cert_list.certificates[0].data
             # If we have a default keystore, create an RSA keystore and populate it from data on the wire
             if isinstance(self.server_ctx.asym_keystore, tlsk.EmptyAsymKeystore):
-                self.server_ctx.asym_keystore = tlsk.RSAKeystore.from_der_certificate(str(cert))
+                self.server_ctx.asym_keystore = tlsk.RSAKeystore.from_der_certificate(py3compat.bytes(cert))
             # Else keystore was assigned by user. Just add cert from the wire to the store
             else:
-                self.server_ctx.asym_keystore.certificate = str(cert)
+                self.server_ctx.asym_keystore.certificate = py3compat.bytes(cert)
         # TODO: Handle DSA sig key loading here to allow sig checks
         elif self.negotiated.key_exchange is not None and self.negotiated.sig == DSA:
             # Pycryptodoesn't currently have an interface to this.
@@ -614,7 +614,7 @@ TLS Session Context:
                         verify_data.append("%s%s%s" % (chr(handshake.type), struct.pack(">I", handshake.length)[1:],
                                                        handshake[tls.TLSFinished].data))
                     else:
-                        verify_data.append(str(handshake))
+                        verify_data.append(py3compat.bytes(handshake))
             else:
                 verify_data = [data]
 
@@ -631,7 +631,7 @@ TLS Session Context:
 
     def get_handshake_digest(self, hash_):
         for handshake in self._walk_handshake_msgs():
-            hash_.update(str(handshake))
+            hash_.update(py3compat.bytes(handshake))
         return hash_
 
     def get_handshake_hash(self, digest, up_to=None, include=True):
@@ -639,9 +639,9 @@ TLS Session Context:
         for handshake in self._walk_handshake_msgs():
             if handshake.haslayer(up_to):
                 if include:
-                    digest.update(str(handshake))
+                    digest.update(py3compat.bytes(handshake))
                 break
-            digest.update(str(handshake))
+            digest.update(py3compat.bytes(handshake))
         return digest.digest()
 
     def get_client_signed_handshake_hash(self, hash_=SHA256.new(), pre_sign_hook=lambda x: x, sig=Sig_PKCS1_v1_5):
@@ -724,7 +724,7 @@ class TLSPRF(object):
             xored = []
             for i in range(num_bytes):
                 xored.append(chr(ord(md5_bytes[i]) ^ ord(sha1_bytes[i])))
-            bytes_ = "".join(xored)
+            bytes_ = b"".join(xored)
         return bytes_
 
     def _get_bytes(self, digest, key, label, random, num_bytes):
@@ -831,7 +831,7 @@ class TLS13PRF(object):
 
     def expand_label(self, key, label, hash_, len_=None):
         len_ = len_ or self.digest_size
-        return HKDF(self.digest).expand(len_, str(TLS13PRF.HKDFLabel(len_, label, hash_)), key)
+        return HKDF(self.digest).expand(len_, py3compat.bytes(TLS13PRF.HKDFLabel(len_, label, hash_)), key)
 
     def derive_early_secrets(self, psk=None, client_hello_hash=b"", resumption_psk=True):
         psk = psk or "\x00" * self.digest_size
@@ -978,7 +978,7 @@ class StreamCryptoContext(CryptoContext):
         return self.encrypt(crypto_container)
 
     def encrypt(self, crypto_container):
-        ciphertext = self.enc_cipher.encrypt(str(crypto_container))
+        ciphertext = self.enc_cipher.encrypt(py3compat.bytes(crypto_container))
         self.ctx.sequence += 1
         return ciphertext
 
@@ -1011,7 +1011,7 @@ class CBCCryptoContext(CryptoContext):
     def encrypt(self, crypto_container):
         if self.tls_ctx.requires_iv:
             self.__init_ciphers()
-        ciphertext = self.enc_cipher.encrypt(str(crypto_container))
+        ciphertext = self.enc_cipher.encrypt(py3compat.bytes(crypto_container))
         self.ctx.sequence += 1
         return ciphertext
 
@@ -1047,7 +1047,7 @@ class EAEADCryptoContext(CryptoContext):
     def encrypt(self, crypto_container):
         self.__init_ciphers(self.get_nonce())
         self.enc_cipher.update(crypto_container.aead)
-        ciphertext, mac = self.enc_cipher.encrypt_and_digest(str(crypto_container))
+        ciphertext, mac = self.enc_cipher.encrypt_and_digest(py3compat.bytes(crypto_container))
         bytes_ = "%s%s%s" % (struct.pack("!Q", self.ctx.nonce), ciphertext, mac)
         self.ctx.nonce += 1
         self.ctx.sequence += 1
@@ -1098,7 +1098,7 @@ class IAEADCryptoContext(CryptoContext):
 
     def encrypt(self, crypto_container):
         self.__init_ciphers(self.get_nonce())
-        ciphertext, mac = self.enc_cipher.encrypt_and_digest(str(crypto_container))
+        ciphertext, mac = self.enc_cipher.encrypt_and_digest(py3compat.bytes(crypto_container))
         bytes_ = "%s%s" % (ciphertext, mac)
         self.ctx.sequence += 1
         return bytes_
@@ -1144,7 +1144,7 @@ class CryptoContainer(object):
         raise NotImplementedError()
 
     def __len__(self):
-        return len(str(self))
+        return len(py3compat.bytes(self))
 
 
 class StreamCryptoContainer(CryptoContainer):
@@ -1723,7 +1723,7 @@ class TLSSecurityParameters(object):
             s.append("%20s | %s" % (f, repr(getattr(self, f))))
         s.append("%20s| %s" % ("premaster_secret", repr(self.pms)))
         s.append("%20s| %s" % ("master_secret", repr(self.master_secret)))
-        s.append("%20s| %s" % ("master_secret [bytes]", binascii.hexlify(self.master_secret)))
+        s.append("%20s| %s" % ("master_secret [bytes]", py3compat.hexlify(self.master_secret)))
         return "\n".join(s)
 
 

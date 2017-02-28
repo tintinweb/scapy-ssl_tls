@@ -7,9 +7,8 @@ from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
 from scapy.layers import x509
 
-
-import ssl_tls_registry as registry
-
+import scapy_ssl_tls.py3compat as py3compat
+import scapy_ssl_tls.ssl_tls_registry as registry
 
 class BLenField(LenField):
 
@@ -52,7 +51,7 @@ class BLenField(LenField):
         """Extract an internal value from a string"""
         upack_data = s[:self.sz]
         # prepend struct.calcsize()-len(data) bytes to satisfy struct.unpack
-        upack_data = '\x00' * (struct.calcsize(self.fmt) - self.sz) + upack_data
+        upack_data = b'\x00' * (struct.calcsize(self.fmt) - self.sz) + upack_data
         return s[self.sz:], self.m2i(pkt, struct.unpack(self.fmt, upack_data)[0])
 
     def i2m(self, pkt, x):
@@ -235,7 +234,7 @@ class TypedPacketListField(PacketListField):
 class EnumStruct(object):
 
     def __init__(self, entries):
-        entries = dict((v.replace(' ', '_').upper(), k) for k, v in entries.iteritems())
+        entries = dict((v.replace(' ', '_').upper(), k) for k, v in entries.items())
         self.__dict__.update(entries)
 
 TLS_VERSIONS = {
@@ -893,7 +892,7 @@ class TLSCertificateList(Packet):
     def guess_payload_class(self, payload):
         tls13_cert = TLS13Certificate(payload)
         tls10_cert = TLS10Certificate(payload)
-        certs_len = lambda certs: len(b"".join([str(cert) for cert in certs.certificates]))
+        certs_len = lambda certs: len(b"".join([py3compat.bytes(cert) for cert in certs.certificates]))
         if tls13_cert.request_context_length == len(tls13_cert.request_context) and tls13_cert.length == certs_len(tls13_cert):
             return TLS13Certificate
         elif tls10_cert.length == certs_len(tls10_cert):
@@ -964,13 +963,13 @@ class TLSDecryptablePacket(PacketLengthFieldPayload):
     def pre_dissect(self, raw_bytes):
         data = raw_bytes
         if self.tls_ctx is not None:
-            import ssl_tls_crypto as tlsc
+            import scapy_ssl_tls.ssl_tls_crypto as tlsc
             hash_size = self.tls_ctx.sec_params.mac_key_length
             iv_size = self.tls_ctx.sec_params.iv_length
             # CBC mode
             if self.tls_ctx.sec_params.cipher_mode_name == tlsc.CipherMode.CBC:
                 try:
-                    self.padding_len = ord(raw_bytes[-1])
+                    self.padding_len = py3compat.byte_ord(raw_bytes[-1])
                     self.padding = raw_bytes[-self.padding_len - 1:-1]
                     self.mac = raw_bytes[-self.padding_len - hash_size - 1:-self.padding_len - 1]
                     if self.tls_ctx.requires_iv:
@@ -1223,7 +1222,7 @@ class TLSSocket(object):
             self.client = client
 
         if tls_ctx is None:
-            import ssl_tls_crypto as tlsc
+            import scapy_ssl_tls.ssl_tls_crypto as tlsc
             self.tls_ctx = tlsc.TLSSessionCtx(self.client)
         else:
             self.tls_ctx = tls_ctx
@@ -1262,9 +1261,9 @@ class TLSSocket(object):
         prev_timeout = self._s.gettimeout()
         self._s.settimeout(timeout)
         if self.ctx.must_encrypt:
-            self._s.sendall(str(tls_to_raw(pkt, self.tls_ctx, True, self.compress_hook, self.pre_encrypt_hook, self.encrypt_hook)))
+            self._s.sendall(py3compat.bytes(tls_to_raw(pkt, self.tls_ctx, True, self.compress_hook, self.pre_encrypt_hook, self.encrypt_hook)))
         else:
-            self._s.sendall(str(pkt))
+            self._s.sendall(py3compat.bytes(pkt))
         self.tls_ctx.insert(pkt, self._get_pkt_origin('out'))
         self._s.settimeout(prev_timeout)
 
@@ -1281,7 +1280,7 @@ class TLSSocket(object):
             except socket.timeout:
                 break
         self._s.settimeout(prev_timeout)
-        records = TLS("".join(resp), ctx=self.tls_ctx, _origin=self._get_pkt_origin('in'))
+        records = TLS(b"".join(resp), ctx=self.tls_ctx, _origin=self._get_pkt_origin('in'))
         return records
 
     def accept(self):
@@ -1317,14 +1316,14 @@ class SSL(Packet):
 
     @classmethod
     def from_records(cls, records, ctx=None):
-        pkt_str = "".join(list(map(str, records)))
+        pkt_str = b"".join(list(map(py3compat.bytes, records)))
         return cls(pkt_str, ctx)
 
     def pre_dissect(self, raw_bytes):
         # figure out if we're UDP or TCP
         if self.underlayer is not None and self.underlayer.haslayer(UDP):
             self.guessed_next_layer = DTLSRecord
-        elif ord(raw_bytes[0]) & 0x80:
+        elif py3compat.byte_ord(raw_bytes[0]) & 0x80:
             self.guessed_next_layer = SSLv2Record
         else:
             self.guessed_next_layer = TLSRecord
@@ -1360,7 +1359,7 @@ class SSL(Packet):
     def do_decrypt_payload(self, record):
         content_type = None
         encrypted_payload, layer = self._get_encrypted_payload(record)
-        if encrypted_payload is not None or self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+        if encrypted_payload is not None or (self.tls_ctx.negotiated.version is not None and self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3):
             try:
                 if self.tls_ctx.client:
                     cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
@@ -1392,14 +1391,14 @@ class SSL(Packet):
         # TLSFinished, encrypted
         if record.haslayer(TLSRecord) and record[TLSRecord].content_type == TLSContentType.HANDSHAKE \
                 and record.haslayer(TLSCiphertext):
-            encrypted_payload = str(record.payload)
+            encrypted_payload = py3compat.bytes(record.payload)
             decrypted_type = TLSHandshakes
         # Do not attempt to decrypt cleartext Alerts and CCS
         elif record.haslayer(TLSAlert) and record.length != 0x2:
-            encrypted_payload = str(record.payload)
+            encrypted_payload = py3compat.bytes(record.payload)
             decrypted_type = TLSAlert
         elif record.haslayer(TLSChangeCipherSpec) and record.length != 0x1:
-            encrypted_payload = str(record.payload)
+            encrypted_payload = py3compat.bytes(record.payload)
             decrypted_type = TLSChangeCipherSpec
         # Application data
         elif record.haslayer(TLSCiphertext):
@@ -1416,13 +1415,13 @@ def find_padding_start(payload, padding_byte=b"\x00"):
 
 
 cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
-                     TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt[TLSChangeCipherSpec])),
-                     TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt[TLSAlert])), #}
-                     TLSHandshakes: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(pkt[TLSHandshakes]))}
+                     TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, py3compat.bytes(pkt[TLSChangeCipherSpec])),
+                     TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, py3compat.bytes(pkt[TLSAlert])), #}
+                     TLSHandshakes: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, py3compat.bytes(pkt[TLSHandshakes]))}
 
 
 def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
-    import ssl_tls_crypto as tlsc
+    import scapy_ssl_tls.ssl_tls_crypto as tlsc
     if tls_ctx is None:
         raise ValueError("A valid TLS session context must be provided")
 
@@ -1430,7 +1429,7 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
     comp_method = ctx.compression
 
     content_type, data = None, None
-    for tls_proto, handler in cleartext_handler.iteritems():
+    for tls_proto, handler in cleartext_handler.items():
         if pkt.haslayer(tls_proto):
             content_type, data = handler(pkt[tls_proto], tls_ctx)
             break
@@ -1525,7 +1524,7 @@ def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
 def tls_fragment_payload(pkt, record=None, size=2**14):
     if size <= 0:
         raise ValueError("Fragment size must be strictly positive")
-    payload = str(pkt)
+    payload = py3compat.bytes(pkt)
     payloads = [payload[i: i + size] for i in range(0, len(payload), size)]
     if record is None:
         return payloads

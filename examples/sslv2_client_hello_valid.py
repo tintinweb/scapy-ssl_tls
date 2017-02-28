@@ -16,6 +16,7 @@ except ImportError:
     # If you installed this package via pip, you just need to execute this
     from scapy.layers.ssl_tls import *
 
+from scapy_ssl_tls.py3compat import bytes
 import socket
 
 if __name__ == "__main__":
@@ -30,15 +31,15 @@ if __name__ == "__main__":
     s.connect(target)
 
     # create SSLv2 Handhsake / Client Hello packet
-    p = SSLv2Record() / SSLv2ClientHello(cipher_suites=SSLv2_CIPHER_SUITES.keys(),
+    p = SSLv2Record() / SSLv2ClientHello(cipher_suites=list(SSLv2_CIPHER_SUITES.keys()),
                                          challenge='a' * 16,
                                          session_id='a' * 16)
     p.show()
 
-    SSL(str(p)).show()
+    SSL(bytes(p)).show()
 
     print ("sending TLS payload")
-    s.sendall(str(p))
+    s.sendall(bytes(p))
     resp = s.recv(8 * 1024)
     print ("received, %s" % repr(resp))
     SSL(resp).show()

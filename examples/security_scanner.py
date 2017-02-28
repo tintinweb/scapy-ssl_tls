@@ -474,7 +474,7 @@ class TLSScanner(object):
         versionlist=(
             (k,
              v) for k,
-            v in TLS_VERSIONS.iteritems() if v.startswith("TLS_") or v.startswith("SSL_"))):
+            v in TLS_VERSIONS.items() if v.startswith("TLS_") or v.startswith("SSL_"))):
         for magic, name in versionlist:
             pkt = TLSRecord(version=magic) / \
                   TLSHandshakes(handshakes=[TLSHandshake() /
