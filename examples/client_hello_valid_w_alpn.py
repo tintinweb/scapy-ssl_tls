@@ -31,14 +31,16 @@ if __name__ == "__main__":
 
     # create TLS Handhsake / Client Hello packet
     p = TLSRecord() / \
-        TLSHandshake() / \
-        TLSClientHello(compression_methods=range(0xff),
-                       cipher_suites=range(0xff),
-                       extensions=[TLSExtension() /
-                                   TLSExtALPN(protocol_name_list=[TLSALPNProtocol(data="http/1.1"),
-                                                                  TLSALPNProtocol(data="http/1.3"),
-                                                                  TLSALPNProtocol(data="\x00htt\x01%sp/1.1"),
-                                                                  ])],)
+        TLSHandshakes(handshakes=[
+                TLSHandshake() /
+                TLSClientHello(compression_methods=range(0xff),
+                               cipher_suites=range(0xff),
+                               extensions=[TLSExtension() /
+                                           TLSExtALPN(protocol_name_list=[TLSALPNProtocol(data="http/1.1"),
+                                                                          TLSALPNProtocol(data="http/1.3"),
+                                                                          TLSALPNProtocol(data="\x00htt\x01%sp/1.1"),
+                                                                          ])],)
+                ])
 
     p.show()
 

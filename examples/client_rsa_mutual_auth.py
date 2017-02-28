@@ -33,24 +33,30 @@ def do_tls_mutual_auth(host):
     tls_socket.tls_ctx.client_ctx.load_rsa_keys_from_file(os.path.join(
         basedir, "tests/integration/keys/scapy-tls-client.key.pem"))
 
-    client_hello = TLSRecord(version=tls_version) / TLSHandshake() /\
-        TLSClientHello(version=tls_version, compression_methods=[TLSCompressionMethod.NULL, ],
-                       cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])
+    client_hello = TLSRecord(version=tls_version) / \
+                   TLSHandshakes(handshakes=[TLSHandshake() /
+                                             TLSClientHello(version=tls_version,
+                                                            compression_methods=[TLSCompressionMethod.NULL, ],
+                                                            cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256, ])])
     tls_socket.sendall(client_hello)
     server_hello = tls_socket.recvall()
     server_hello.show()
 
-    client_cert = TLSRecord(version=tls_version) / TLSHandshake() / TLSCertificateList(certificates=certificate)
-    client_key_exchange = TLSRecord(version=tls_version) / TLSHandshake() / tls_socket.tls_ctx.get_client_kex_data()
+    client_cert = TLSRecord(version=tls_version) / \
+                  TLSHandshakes(handshakes=[TLSHandshake() /
+                                            TLSCertificateList(certificates=certificate)])
+    client_key_exchange = TLSRecord(version=tls_version) / \
+                          TLSHandshakes(handshakes=[TLSHandshake() /
+                                                    tls_socket.tls_ctx.get_client_kex_data()])
     p = TLS.from_records([client_cert, client_key_exchange])
     tls_socket.sendall(p)
 
-    sig_hash_alg = TLSSignatureHashAlgorithm(hash_alg=TLSHashAlgorithm.SHA256, sig_alg=TLSSignatureAlgorithm.RSA)
     sig = tls_socket.tls_ctx.get_client_signed_handshake_hash(SHA256.new())
     # sig = sig[:128] + chr(ord(sig[128]) ^ 0xff) + sig[129:]
-    client_cert_verify = TLSRecord(version=tls_version) / TLSHandshake() / \
-        TLSCertificateVerify(alg=sig_hash_alg,
-                             sig=sig)
+    client_cert_verify = TLSRecord(version=tls_version) / \
+                         TLSHandshakes(handshakes=[TLSHandshake() /
+                                                   TLSCertificateVerify(alg=TLSSignatureScheme.RSA_PKCS1_SHA256,
+                                                                        sig=sig)])
     tls_socket.sendall(client_cert_verify)
 
     client_ccs = TLSRecord(version=tls_version) / TLSChangeCipherSpec()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
-# Author : tintinweb@oststrom.com <github.com/tintinweb>
+# Author : <github.com/tintinweb/scapy-ssl_tls>
 
 import socket
 import functools
@@ -157,13 +157,11 @@ class TLSClientAutomata(Automaton):
     @hookable
     @ATMT.action(send_client_hello)
     def do_send_client_hello(self):
-        client_hello = TLSRecord(
-            version=self.tls_version) / TLSHandshake() / TLSClientHello(
-            version=self.tls_version,
-            compression_methods=[
-                TLSCompressionMethod.NULL,
-            ],
-            cipher_suites=self.cipher_suites)
+        client_hello = TLSRecord(version=self.tls_version) / \
+                       TLSHandshakes(handshakes=[TLSHandshake() /
+                                                 TLSClientHello(version=self.tls_version,
+                                                                compression_methods=[ TLSCompressionMethod.NULL,],
+                                                                cipher_suites=self.cipher_suites)])
         self.tlssock.sendall(client_hello)
 
     @hookable
@@ -201,8 +199,9 @@ class TLSClientAutomata(Automaton):
     @ATMT.action(send_client_key_exchange)
     def do_send_client_key_exchange(self):
         tls_version = self.tlssock.tls_ctx.negotiated.version
-        client_key_exchange = TLSRecord(
-            version=tls_version) / TLSHandshake() / self.tlssock.tls_ctx.get_client_kex_data()
+        client_key_exchange = TLSRecord(version=tls_version) / \
+                              TLSHandshakes(handshakes=[TLSHandshake() /
+                                                       self.tlssock.tls_ctx.get_client_kex_data()])
         self.tlssock.sendall(client_key_exchange)
 
     @hookable
@@ -226,8 +225,7 @@ class TLSClientAutomata(Automaton):
     @hookable
     @ATMT.condition(CLIENT_CHANGE_CIPHERSPEC_SENT)
     def send_client_finish(self):
-        finished = to_raw(TLSFinished(), self.tlssock.tls_ctx)
-        self.tlssock.sendall(finished)
+        self.tlssock.sendall( TLSHandshakes(handshakes=[TLSHandshake() / TLSFinished(data=self.tlssock.tls_ctx.get_verify_data())]))
         raise self.CLIENT_FINISH_SENT()
 
     @hookable
@@ -259,7 +257,7 @@ class TLSClientAutomata(Automaton):
     @hookable
     @ATMT.action(recv_server_finish)
     def do_send_client_appdata(self):
-        self.tlssock.sendall(to_raw(TLSPlaintext(data=self.request), self.tlssock.tls_ctx))
+        self.tlssock.sendall(TLSPlaintext(data=self.request))
 
     @hookable
     @ATMT.state()
@@ -440,10 +438,11 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_hello)
     def do_send_server_hello(self):
-        rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        server_hello = rec_hs / TLSServerHello(version=self.tls_version,
-                                               compression_method=TLSCompressionMethod.NULL,
-                                               cipher_suite=self.cipher_suite)
+        server_hello = TLSRecord(version=self.tls_version) / \
+                       TLSHandshakes(handshakes=[TLSHandshake() /
+                                                 TLSServerHello(version=self.tls_version,
+                                                                compression_method=TLSCompressionMethod.NULL,
+                                                                cipher_suite=self.cipher_suite)])
         server_hello.show()
         self.tlssock.sendall(server_hello)
 
@@ -460,9 +459,15 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_certificates)
     def do_send_server_certificates(self):
-        rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        server_certificates = rec_hs / \
-            TLSCertificateList(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])
+        if self.tls_version == "TLS_1_3":
+            cls_cert = TLS13Certificate
+        else:
+            cls_cert = TLS10Certificate
+
+        server_certificates = TLSRecord(version=self.tls_version) / \
+                              TLSHandshakes(handshakes=[TLSHandshake() /
+                                                        TLSCertificateList() / cls_cert(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])])
+
         server_certificates.show()
         self.tlssock.sendall(server_certificates)
 
@@ -479,9 +484,9 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_hello_done)
     def do_send_server_hello_done(self):
-        rec_hs = TLSRecord(version=self.tls_version) / TLSHandshake()
-        (rec_hs / TLSServerHelloDone()).show2()
-        server_hello_done = TLSRecord(version=self.tls_version) / TLSHandshake(type=TLSHandshakeType.SERVER_HELLO_DONE)
+        server_hello_done = TLSRecord(version=self.tls_version) / \
+                            TLSHandshakes(handshakes=[TLSHandshake() /
+                                                      TLSServerHelloDone()])
         self.tlssock.sendall(server_hello_done)
 
     @hookable
@@ -555,8 +560,7 @@ class TLSServerAutomata(Automaton):
     @ATMT.action(send_server_finish)
     def do_send_server_finish(self):
         # TODO: fix server finish calculation
-        finished = to_raw(TLSFinished(), self.tlssock.tls_ctx)
-        self.tlssock.sendall(finished)
+        self.tlssock.sendall( TLSHandshakes(handshakes=[TLSHandshake() / TLSFinished(data=self.tlssock.tls_ctx.get_verify_data())]))
 
     @hookable
     @ATMT.state()
@@ -596,7 +600,7 @@ class TLSServerAutomata(Automaton):
     @hookable
     @ATMT.action(send_server_appdata)
     def do_send_server_appdata(self):
-        self.tlssock.sendall(to_raw(TLSPlaintext(data=self.response), self.tlssock.tls_ctx))
+        self.tlssock.sendall(TLSPlaintext(data=self.response))
 
     @hookable
     @ATMT.state()
@@ -616,8 +620,6 @@ class TLSServerAutomata(Automaton):
     @ATMT.state(final=1)
     def END(self):
         self.tlssock.sendall(
-            to_raw(
                 TLSAlert(
                     level=TLSAlertLevel.WARNING,
-                    description=TLSAlertDescription.CLOSE_NOTIFY),
-                self.tlssock.tls_ctx))
+                    description=TLSAlertDescription.CLOSE_NOTIFY))

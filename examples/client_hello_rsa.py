@@ -29,7 +29,8 @@ if __name__ == "__main__":
     s.connect(target)
 
     # create TLS Handhsake / Client Hello packet
-    p = TLSRecord() / TLSHandshake() / TLSClientHello(cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA])
+    p = TLSRecord() / TLSHandshakes(handshakes=[TLSHandshake() /
+                                                TLSClientHello(cipher_suites=[TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA])])
 
     p.show()
     print ("sending TLS payload")

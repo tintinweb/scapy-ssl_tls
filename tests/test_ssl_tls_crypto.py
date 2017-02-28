@@ -85,13 +85,21 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         rsa_priv_key = RSA.importKey(self.pem_priv_key)
         self.priv_key = PKCS1_v1_5.new(rsa_priv_key)
         self.pub_key = PKCS1_v1_5.new(rsa_priv_key.publickey())
+        self.tls13_client_extensions = [tls.TLSExtension() / tls.TLSExtSupportedVersions(),
+                                        tls.TLSExtension() / tls.TLSExtSignatureAlgorithms(),
+                                        tls.TLSExtension() / tls.TLSExtSupportedGroups(),
+                                        tls.TLSExtension() / tls.TLSExtALPN(),
+                                        tls.TLSExtension() / tls.TLSExtECPointsFormat(),
+                                        tls.TLSExtension() / tls.TLSExtServerNameIndication(server_names=tls.TLSServerName(data="sni.example.com")),
+                                        tls.TLSExtension(type=tls.TLSExtensionType.EXTENDED_MASTER_SECRET)]
+        self.tls13_server_extensions = []
         unittest.TestCase.setUp(self)
 
     def test_negotiated_cipher_is_used_in_context(self):
         # RSA_WITH_NULL_MD5
         cipher_suite = 0x1
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A" * 28,
-                                                                        cipher_suite=cipher_suite)
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A" * 28,
+                                                                                                      cipher_suite=cipher_suite)])
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.negotiated.key_exchange,
@@ -102,8 +110,8 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_negotiated_compression_method_is_used_in_context(self):
         # DEFLATE
         compression_method = 0x1
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A" * 28,
-                                                                        compression_method=compression_method)
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=123456, random_bytes="A" * 28,
+                                                                                                      compression_method=compression_method)])
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.negotiated.compression_algo,
@@ -113,7 +121,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
                          input_)
 
     def test_encrypted_pms_is_only_available_after_server_certificate_is_presented(self):
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello()
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello()])
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.insert(pkt)
         with self.assertRaises(ValueError):
@@ -121,20 +129,20 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
 
     def test_encrypting_pms_fails_if_no_certificate_in_connection(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)])
         tls_ctx.insert(pkt)
         with self.assertRaises(ValueError):
             tls_ctx.get_encrypted_pms()
 
     def test_random_pms_is_generated_on_client_hello(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)])
         tls_ctx.insert(pkt)
         self.assertIsNotNone(tls_ctx.premaster_secret)
 
     def test_keys_are_set_in_context_when_loaded(self):
         tls_ctx = tlsc.TLSSessionCtx()
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello(version=0x0301)])
         tls_ctx.insert(pkt)
         tls_ctx.server_ctx.load_rsa_keys(self.pem_priv_key)
         self.assertIsNotNone(tls_ctx.server_ctx.asym_keystore.private)
@@ -150,42 +158,45 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
     def test_decrypted_pms_matches_generated_pms(self):
         tls_ctx = tlsc.TLSSessionCtx()
         tls_ctx.server_ctx.load_rsa_keys(self.pem_priv_key)
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello()
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello()])
         tls_ctx.insert(pkt)
         epms = tls_ctx.get_encrypted_pms()
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello()
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello()])
         tls_ctx.insert(pkt)
-        pkt = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=epms)
+        pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=epms)])
         tls_ctx.insert(pkt)
         self.assertEqual(tls_ctx.encrypted_premaster_secret, epms)
         self.assertEqual(tls_ctx.premaster_secret, self.priv_key.decrypt(epms, None))
 
     def test_fixed_crypto_data_matches_verify_data(self):
+        version = tls.TLSVersion.TLS_1_0
         client_verify_data = "e23f73911909a86be9e93fdb"
-        server_verify_data = "c83b8eb028d3c4a8d82c1c17"
+        server_verify_data = "dfed5860b3eb4a3deaa9cf39"
         tls_ctx = tlsc.TLSSessionCtx()
         # tls_ctx.rsa_load_keys(self.pem_priv_key)
-        client_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientHello(gmt_unix_time=1234,
-                                                                                 random_bytes="A" * 28)
+        client_hello = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello(version=version,
+                                                                                                               gmt_unix_time=1234,
+                                                                                                               random_bytes="A" * 28)])
         # Hello Request should be ignored in verify_data calculation
         tls_ctx.insert(tls.TLSHelloRequest())
         tls_ctx.insert(client_hello)
         tls_ctx.premaster_secret = "B" * 48
         epms = "C" * 256
-        server_hello = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSServerHello(gmt_unix_time=1234,
-                                                                                 session_id="",
-                                                                                 random_bytes="A" * 28)
+        server_hello = tls.TLSRecord(version=version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello(version=version,
+                                                                                                                              gmt_unix_time=1234,
+                                                                                                                              session_id="",
+                                                                                                                              random_bytes="A" * 28)])
         tls_ctx.insert(server_hello)
-        client_kex = tls.TLSRecord() / tls.TLSHandshake() / tls.TLSClientKeyExchange() /\
-            tls.TLSClientRSAParams(data=epms)
+        client_kex = tls.TLSRecord(version=version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientKeyExchange() /
+            tls.TLSClientRSAParams(data=epms)])
         tls_ctx.insert(client_kex)
         self.assertEqual(client_verify_data, binascii.hexlify(tls_ctx.get_verify_data()))
         # Make sure that client finish is included in server finish calculation
         tls_ctx.set_mode(server=True)
-        client_finish = tls.TLSRecord() / tls.TLSHandshake() / tls.tls_to_raw(
-            tls.TLSFinished(data=tls_ctx.get_verify_data()), tls_ctx)
+        verify_data = tls_ctx.get_verify_data()
+        client_finish = tls.TLSRecord(version=version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSFinished(data=verify_data)])
         tls_ctx.insert(client_finish)
-        self.assertEqual(server_verify_data, binascii.hexlify(tls_ctx.get_verify_data()))
+        self.assertEqual(server_verify_data, binascii.hexlify(verify_data))
 
     def test_client_dh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
@@ -214,11 +225,75 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         client_keys = ec.Keypair(secp256r1, client_privkey)
         client_pubkey = tls_ctx.get_client_ecdh_pubkey(client_privkey)
         self.assertTrue(client_pubkey.startswith("\x04"))
-        self.assertEqual("\x04%s%s" % (tlsc.int_to_str(client_keys.pub.x), tlsc.int_to_str(client_keys.pub.y)),
+        self.assertEqual("\x04%s%s" % (tlsk.int_to_str(client_keys.pub.x), tlsk.int_to_str(client_keys.pub.y)),
                          client_pubkey)
         self.assertEqual(client_keys.pub, tls_ctx.client_ctx.kex_keystore.public)
         self.assertEqual("'(\x17\x94l\xd7AO\x03\xd4Fi\x05}mP\x1aX5C7\xf0_\xa9\xb0\xac\xba{r\x1f\x12\x8f",
                          tls_ctx.premaster_secret)
+
+    def test_after_tl13_server_hello_then_key_material_is_installed(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        nist256 = reg.get_curve(tls.TLS_SUPPORTED_GROUPS[tls.TLSSupportedGroup.SECP256R1])
+        keypair = ec.make_keypair(nist256)
+        client_keystore = tlsk.ECDHKeyStore.from_keypair(nist256, keypair)
+        tls_ctx.client_ctx.shares.append(client_keystore)
+        ec_pub = tlsk.point_to_ansi_str(keypair.pub)
+        key_share = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSClientHelloKeyShare(
+            client_shares=[tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange=ec_pub)])
+        self.tls13_client_extensions.append(key_share)
+        client_hello = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() /
+                                                                       tls.TLSClientHello(cipher_suites=[tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384],
+                                                                                          extensions=self.tls13_client_extensions)])
+        self.assertEqual(len(tls_ctx.client_ctx.shares), 1)
+        self.assertIn(client_keystore, tls_ctx.client_ctx.shares)
+        self.assertIsNotNone(tls_ctx.client_ctx.shares[0].private)
+        tls_ctx.insert(client_hello)
+        self.assertIsNotNone(tls_ctx.client_ctx.shares[0].private)
+        self.assertEqual(client_keystore, tls_ctx.client_ctx.shares[0])
+
+        server_ec_pub = ("\x043\xc0\xd0D\xa6\xe8\x9c\xbf\xf7\x0e\xa1\x80\xdf\x15\n\xf3\x85\x7f\xf6\xb2\xa2\x01\xfc\xcf\x93FH"
+                         "\xed\xfa\x87\xb0\x19L\xc5\xb1\xd6\xf0\xcap?\xf1\xe7\x04\xc5\xde\xba/\xea\x1a\x86\xfb\xc9\rI\x9cU?r`"
+                         "\x18\xac\xb95\xc8")
+        tls13_server_extensions = [tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSServerHelloKeyShare(
+            server_share=tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange=server_ec_pub))]
+        server_hello = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() /
+                                                                       tls.TLSServerHello(version=tls.TLSVersion.TLS_1_3,
+                                                                                          cipher_suite=tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384,
+                                                                                          extensions=tls13_server_extensions)])
+        tls_ctx.insert(server_hello)
+        self.assertNotIsInstance(tls_ctx.client_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertNotIsInstance(tls_ctx.server_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertIsNotNone(tls_ctx.group_secret)
+        self.assertIsNone(tls_ctx.premaster_secret)
+        self.assertIsNone(tls_ctx.master_secret)
+        self.assertNotIsInstance(tls_ctx.client_ctx.sym_keystore, tlsk.EmptySymKeyStore)
+        self.assertNotIsInstance(tls_ctx.server_ctx.sym_keystore, tlsk.EmptySymKeyStore)
+        self.assertEqual(len(tls_ctx.client_ctx.sym_keystore_history), 1)
+        self.assertEqual(len(tls_ctx.server_ctx.sym_keystore_history), 1)
+
+    def test_when_mismatching_key_shares_are_used_then_a_protocol_error_is_raised(self):
+        tls_ctx = tlsc.TLSSessionCtx()
+        client_key_share = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSClientHelloKeyShare(
+            client_shares=[tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP256R1, key_exchange="\x041234")])
+        client_hello = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() /
+                                                                       tls.TLSClientHello(cipher_suites=[tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384],
+                                                                                          extensions=[client_key_share,
+                                                                                                      tls.TLSExtension() / tls.TLSExtSupportedVersions()])])
+        server_key_share = tls.TLSExtension() / tls.TLSExtKeyShare() / tls.TLSServerHelloKeyShare(
+            server_share=tls.TLSKeyShareEntry(named_group=tls.TLSSupportedGroup.SECP521R1, key_exchange="\x041234"))
+        server_hello = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() /
+                                                                       tls.TLSServerHello(version=tls.TLSVersion.TLS_1_3,
+                                                                                          cipher_suite=tls.TLSCipherSuite.TLS_AES_256_GCM_SHA384,
+                                                                                          extensions=[server_key_share])])
+        # Ignore off curve warnings generated by the invalid keys
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tls_ctx.insert(client_hello)
+            with self.assertRaises(tls.TLSProtocolError):
+                tls_ctx.insert(server_hello)
+        self.assertIsInstance(tls_ctx.client_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertNotIsInstance(tls_ctx.server_ctx.kex_keystore, tlsk.EmptyKexKeystore)
+        self.assertIsNone(tls_ctx.master_secret)
 
 
 class TestTLSSecurityParameters(unittest.TestCase):
@@ -442,15 +517,15 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.cipher_suite = tls.TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA
         # DEFLATE
         self.comp_method = tls.TLSCompressionMethod.NULL
-        self.client_hello = tls.TLSRecord(version=self.record_version) / tls.TLSHandshake() / tls.TLSClientHello(
-            version=version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])
+        self.client_hello = tls.TLSRecord(version=self.record_version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientHello(
+            version=version, compression_methods=[self.comp_method], cipher_suites=[self.cipher_suite])])
         self.tls_ctx.insert(self.client_hello)
-        self.server_hello = tls.TLSRecord(version=self.version) / tls.TLSHandshake() / tls.TLSServerHello(
-            version=version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)
+        self.server_hello = tls.TLSRecord(version=self.version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSServerHello(
+            version=version, compression_method=self.comp_method, cipher_suite=self.cipher_suite)])
         self.tls_ctx.insert(self.server_hello)
         # Build method to generate EPMS automatically in TLSSessionCtx
-        self.client_kex = tls.TLSRecord(version=self.version) / tls.TLSHandshake() / tls.TLSClientKeyExchange() /\
-            tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())
+        self.client_kex = tls.TLSRecord(version=self.version) / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSClientKeyExchange() /
+            tls.TLSClientRSAParams(data=self.tls_ctx.get_encrypted_pms())])
         self.tls_ctx.insert(self.client_kex)
 
     def test_crypto_container_increments_sequence_number(self):
@@ -601,7 +676,7 @@ class TestTLSPRF(unittest.TestCase):
         self.assertEqual(prf.digest, SHA384)
 
 
-class TestGcmCryptoContext(unittest.TestCase):
+class TestEAEADCryptoContext(unittest.TestCase):
     def setUp(self):
         cipher_suite = tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_128_GCM_SHA256
         self.tls_ctx = tlsc.TLSSessionCtx()
@@ -622,9 +697,9 @@ class TestGcmCryptoContext(unittest.TestCase):
         self.tls_ctx.client_ctx.sym_keystore = self.tls_ctx.sec_params.client_keystore
         unittest.TestCase.setUp(self)
 
-    def test_when_GCM_crypto_container_is_built_aead_is_generated(self):
+    def test_when_EAEAD_crypto_container_is_built_aead_is_generated(self):
         plaintext = b"1234"
-        crypto_container = tlsc.GCMCryptoContainer.from_data(self.tls_ctx, self.ctx, plaintext)
+        crypto_container = tlsc.EAEADCryptoContainer.from_data(self.tls_ctx, self.ctx, plaintext)
         self.assertEqual(str(crypto_container), plaintext)
         self.assertTrue(crypto_container.aead != b"")
         self.assertTrue(crypto_container.aead.startswith(struct.pack("!Q", 5)))
@@ -633,7 +708,7 @@ class TestGcmCryptoContext(unittest.TestCase):
         with self.assertRaises(AttributeError):
             crypto_container.mac
 
-    def test_when_GCM_crypto_context_is_used_security_parameters_are_set(self):
+    def test_when_EAEAD_crypto_context_is_used_security_parameters_are_set(self):
         self.assertEqual(len(self.tls_ctx.client_ctx.sym_keystore.iv), 4)
         self.assertEqual(self.tls_ctx.client_ctx.sym_keystore.iv, "\xd4\x80\xd0\xa8")
         self.assertEqual(len(self.tls_ctx.server_ctx.sym_keystore.iv), 4)
@@ -647,11 +722,11 @@ class TestGcmCryptoContext(unittest.TestCase):
         self.assertEqual(len(self.tls_ctx.server_ctx.sym_keystore.key), 16)
         self.assertEqual(self.tls_ctx.server_ctx.sym_keystore.key, "\xda\xa7{\xcb&\xd3\xfb\xe3\x1f\xb3v2\xa9\\?\xa6")
 
-    def test_when_GCM_crypto_context_is_used_nonce_is_incremented(self):
+    def test_when_EAEAD_crypto_context_is_used_nonce_is_incremented(self):
         plaintext = b"1234"
         initial_nonce = self.tls_ctx.server_ctx.nonce
         initial_seq = self.tls_ctx.server_ctx.sequence
-        crypto_ctx = tlsc.GCMCryptoContext(self.tls_ctx, self.ctx)
+        crypto_ctx = tlsc.EAEADCryptoContext(self.tls_ctx, self.ctx)
         ciphertext = crypto_ctx.encrypt_data(plaintext)
         self.assertEqual(initial_nonce + 1, self.tls_ctx.server_ctx.nonce)
         self.assertEqual(initial_seq + 1, self.tls_ctx.server_ctx.sequence)
@@ -663,6 +738,156 @@ class TestGcmCryptoContext(unittest.TestCase):
         self.ctx.sequence = 5
         decrypted = crypto_ctx.decrypt(ciphertext)
         self.assertEqual(plaintext, decrypted[8: 8 + len(plaintext)])
+
+
+class TestHKDF(unittest.TestCase):
+    """Test vectors taken from here: https://tools.ietf.org/html/rfc5869"""
+    def test_rfc5869_test_case_1(self):
+        ikm = binascii.unhexlify("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
+        salt = binascii.unhexlify("000102030405060708090a0b0c")
+        info = binascii.unhexlify("f0f1f2f3f4f5f6f7f8f9")
+        len_ = 42
+        prk = binascii.unhexlify("077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5")
+        okm = binascii.unhexlify("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865")
+        hkdf = tlsc.HKDF(SHA256).extract(ikm, salt)
+        self.assertEqual(len(hkdf.prk), SHA256.digest_size)
+        self.assertEqual(hkdf.prk, prk)
+        bytes_ = hkdf.expand(len_, info)
+        self.assertEqual(len(bytes_), len_)
+        self.assertEqual(bytes_, okm)
+
+    def test_rfc5869_test_case_2(self):
+        ikm = binascii.unhexlify(("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                                  "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+                                  "404142434445464748494a4b4c4d4e4f"))
+        salt = binascii.unhexlify(("606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+                                   "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+                                   "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"))
+        info = binascii.unhexlify(("b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+                                   "d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef"
+                                   "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"))
+        len_ = 82
+        prk = binascii.unhexlify("06a6b88c5853361a06104c9ceb35b45cef760014904671014a193f40c15fc244")
+        okm = binascii.unhexlify(("b11e398dc80327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c"
+                                  "59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71"
+                                  "cc30c58179ec3e87c14c01d5c1f3434f1d87"))
+        hkdf = tlsc.HKDF(SHA256).extract(ikm, salt)
+        self.assertEqual(len(hkdf.prk), SHA256.digest_size)
+        self.assertEqual(hkdf.prk, prk)
+        bytes_ = hkdf.expand(len_, info)
+        self.assertEqual(len(bytes_), len_)
+        self.assertEqual(bytes_, okm)
+
+    def test_rfc5869_test_case_3(self):
+        ikm = binascii.unhexlify("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
+        salt = binascii.unhexlify("")
+        info = binascii.unhexlify("")
+        len_ = 42
+        prk = binascii.unhexlify("19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04")
+        okm = binascii.unhexlify("8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8")
+        hkdf = tlsc.HKDF(SHA256).extract(ikm, salt)
+        self.assertEqual(len(hkdf.prk), SHA256.digest_size)
+        self.assertEqual(hkdf.prk, prk)
+        bytes_ = hkdf.expand(len_, info)
+        self.assertEqual(len(bytes_), len_)
+        self.assertEqual(bytes_, okm)
+
+    def test_rfc5869_test_case_5(self):
+        ikm = binascii.unhexlify(("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                                  "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+                                  "404142434445464748494a4b4c4d4e4f"))
+        salt = binascii.unhexlify(("606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+                                   "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+                                   "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"))
+        info = binascii.unhexlify(("b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+                                   "d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef"
+                                   "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"))
+        len_ = 82
+        prk = binascii.unhexlify("8adae09a2a307059478d309b26c4115a224cfaf6")
+        okm = binascii.unhexlify(("0bd770a74d1160f7c9f12cd5912a06ebff6adcae899d92191fe4305673ba2ffe"
+                                  "8fa3f1a4e5ad79f3f334b3b202b2173c486ea37ce3d397ed034c7f9dfeb15c5e"
+                                  "927336d0441f4c4300e2cff0d0900b52d3b4"))
+        hkdf = tlsc.HKDF(SHA).extract(ikm, salt)
+        self.assertEqual(len(hkdf.prk), SHA.digest_size)
+        self.assertEqual(hkdf.prk, prk)
+        bytes_ = hkdf.expand(len_, info)
+        self.assertEqual(len(bytes_), len_)
+        self.assertEqual(bytes_, okm)
+
+    def test_rfc5869_test_case_7(self):
+        ikm = binascii.unhexlify("0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c")
+        len_ = 42
+        prk = binascii.unhexlify("2adccada18779e7c2077ad2eb19d3f3e731385dd")
+        okm = binascii.unhexlify("2c91117204d745f3500d636a62f64f0ab3bae548aa53d423b0d1f27ebba6f5e5673a081d70cce7acfc48")
+        hkdf = tlsc.HKDF(SHA).extract(ikm)
+        self.assertEqual(len(hkdf.prk), SHA.digest_size)
+        self.assertEqual(hkdf.prk, prk)
+        bytes_ = hkdf.expand(len_)
+        self.assertEqual(len(bytes_), len_)
+        self.assertEqual(bytes_, okm)
+
+
+class TestTLS13PRF(unittest.TestCase):
+    """Test vectors taken from https://tools.ietf.org/html/draft-thomson-tls-tls13-vectors-00"""
+    def setUp(self):
+        self.client_hello = tls.TLSRecord(binascii.unhexlify(b"16030100fa010000f603034a772c764c3313f344b2f4fae943e816fe5af3eac7"
+                                                             b"4809c21e2c24989f3e8c5200003e130113031302c02bc02fcca9cca8c00ac009"
+                                                             b"c013c023c027c014009eccaa00330032006700390038006b00160013009c002f"
+                                                             b"003c0035003d000a000500040100008f0000000b0009000006736572766572ff"
+                                                             b"01000100000a00140012001d00170018001901000101010201030104000b0002"
+                                                             b"010000230000002800260024001d0020e122b20099cbe5059a9bbe5880e02ed6"
+                                                             b"525d6f72f8f7afabb87a32dbe9e23022002b0007067f1003030302000d002000"
+                                                             b"1e040305030603020308040805080604010501060102010402050206020202"))
+        # missing test vector for server_hello
+        # self.server_hello = tls.TLSRecord()
+        self.hello_hash = binascii.unhexlify(b"79027f438271dba2d8e207b6e36a5180bdd916869ab43f24f2e2fa98b2db135c")
+        self.handshake_hash = binascii.unhexlify(b"16756399da565370337a4ede5774b9e60bf328086272dc393b8b1d8ba6e6ebbb")
+        self.client_finish_hash = binascii.unhexlify(b"e74cc34c780d9562b1b3e7321f2ebcb0e6646246dbae060d5d1335ac5f8db917")
+        unittest.TestCase.setUp(self)
+
+    def test_when_1rtt_is_used_then_test_vectors_are_generated(self):
+        early_secret = binascii.unhexlify(b"33ad0a1c607ec03b09e6cd9893680ce210adf300aa1f2660e1b22e10f170f92a")
+        # This is the computed ECDH shared secret (old master secret)
+        ec_ikm = binascii.unhexlify(b"0dfa4c5e11a6f606d4b75f138412d85a4b2da0d5f981ffc1d2e8ceff2e00a12c")
+        handshake_secret = binascii.unhexlify(b"1b3f45dcdc375a9ae91bf34d669f24c753132f1d394553afbfffe6568a27e22c")
+        master_secret = binascii.unhexlify(b"cab4645a3995d0d85bea9942596284e72058a3d4d8f3e0d9885aa92c517ad9e4")
+        client_handshake_secret = binascii.unhexlify(b"f737c2b29be2ef489d145dd3df48510386e812edcf79992527e9ad5479967193")
+        server_handshake_secret = binascii.unhexlify(b"3550ca3a8c2192729cc385313e3bc83292a14f4ecb3d2b9218ea7907c67ab3a7")
+        server_handshake_write_key = binascii.unhexlify(b"d2dd45f87ad87801a85ac38187f9023b")
+        server_handshake_write_iv = binascii.unhexlify(b"f0a14f808692cef87a3daf70")
+        finish = binascii.unhexlify(b"1ba8c586468bb93dcd9264e62929e77deba36e5bfc5e06ad029f667448e5e6c8")
+        client_traffic_secret = binascii.unhexlify(b"2a1d25e6f9f13f92e4b482fa06bc44471218368d2d4e03e0504d4e342b16ff8f")
+        # No test vectors for these elements
+        server_traffic_secret = binascii.unhexlify(b"56231ff04300e7f74964da88c8bbdf1242a31ade351ce97446598d28632e79ca")
+        server_traffic_write_key = binascii.unhexlify(b"3381f6b3f94500f16226de440193e858")
+        server_traffic_write_iv = binascii.unhexlify(b"4f1d73cc1d465eb30021c41f")
+        exporter_secret = binascii.unhexlify(b"407265d811f66c2430de0832fbc4bd25719a4736301f131298fd9107653a78f2")
+        resumption_secret = binascii.unhexlify(b"05438edfa0f6e6630d7a9ffe81dc67736d753a4ee351a79d296975918b16039e")
+        prf = tlsc.TLS13PRF(SHA256)
+        early_secrets = prf.derive_early_secrets()
+        self.assertEqual(early_secrets.early_secret, early_secret)
+
+        handshake_secrets = prf.derive_handshake_secrets(ec_ikm, early_secrets.early_secret, self.hello_hash, {"key_len": 16, "iv_len": 12})
+        self.assertEqual(handshake_secrets.handshake_secret, handshake_secret)
+        self.assertEqual(handshake_secrets.client.secret, client_handshake_secret)
+        self.assertEqual(handshake_secrets.server.secret, server_handshake_secret)
+        self.assertEqual(handshake_secrets.server.write_key, server_handshake_write_key)
+        self.assertEqual(handshake_secrets.server.write_iv, server_handshake_write_iv)
+
+        computed_finish = prf.derive_finish_secret(handshake_secrets.server.secret)
+        self.assertEqual(computed_finish, finish)
+
+        computed_resumption_secret = prf.derive_resumption_secret(handshake_secrets.handshake_secret, self.client_finish_hash)
+        self.assertEqual(computed_resumption_secret, resumption_secret)
+
+        master_secrets = prf.derive_traffic_secrets(handshake_secrets.handshake_secret, self.handshake_hash, {"key_len": 16, "iv_len": 12})
+        self.assertEqual(master_secrets.master_secret, master_secret)
+        self.assertEqual(master_secrets.client.secret, client_traffic_secret)
+        self.assertEqual(master_secrets.server.secret, server_traffic_secret)
+        self.assertEqual(master_secrets.server.write_key, server_traffic_write_key)
+        self.assertEqual(master_secrets.server.write_iv, server_traffic_write_iv)
+        self.assertEqual(master_secrets.exporter_secret, exporter_secret)
+
 
 if __name__ == "__main__":
     unittest.main()

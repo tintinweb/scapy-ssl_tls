@@ -36,7 +36,8 @@ def send_application_data(server, cipher_suite, data, hook):
     tls_socket = TLSSocket(s, client=True)
     version = TLSVersion.TLS_1_0
     tls_do_handshake(tls_socket, version, cipher_suite)
-    tls_socket.sendall(to_raw(TLSPlaintext(data=data), tls_socket.tls_ctx, pre_encrypt_hook=hook))
+    tls_socket.pre_encrypt_hook = hook
+    tls_socket.sendall(TLSPlaintext(data=data))
     r = tls_socket.recvall()
     return r
 

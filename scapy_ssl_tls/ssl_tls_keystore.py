@@ -3,11 +3,13 @@
 import binascii
 import math
 import random
+import warnings
 
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Util.asn1 import DerSequence
 from scapy.asn1.asn1 import ASN1_SEQUENCE
 import tinyec.ec as ec
+import tinyec.registry as ec_reg
 
 
 def rsa_public_from_der_certificate(certificate):
@@ -68,7 +70,54 @@ def pem_to_der(certificate):
 
 
 def nb_bits(int_):
+    if int_ == 0:
+        return 0
     return int(math.ceil(math.log(int_) / math.log(2)))
+
+
+def int_to_str(int_):
+    hex_ = "%x" % int_
+    return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
+
+
+def str_to_int(str_):
+    if str_ == "":
+        return 0
+    return int(binascii.hexlify(str_), 16)
+
+
+def ansi_str_to_point(str_):
+    if not str_.startswith("\x04"):
+        raise ValueError("ANSI octet string missing point prefix (0x04)")
+    str_ = str_[1:]
+    if len(str_) % 2 != 0:
+        raise ValueError("Can't parse curve point. Odd ANSI string length")
+    half = len(str_) // 2
+    return str_to_int(str_[:half]), str_to_int(str_[half:])
+
+
+def point_to_ansi_str(point):
+    return "\x04%s%s" % (int_to_str(point.x), int_to_str(point.y))
+
+
+def tls_group_to_keystore(named_group_id, point_str):
+    import scapy_ssl_tls.ssl_tls as tls
+    try:
+        point = ansi_str_to_point(point_str)
+        named_group_name = tls.TLS_SUPPORTED_GROUPS[named_group_id]
+    # Unknown curve case. Just record raw values, but do nothing with them
+    except KeyError:
+        keystore = ECDHKeyStore(None, point)
+        warnings.warn("Unknown TLS defined group id: %d" % named_group_id)
+    # We are on a known group
+    else:
+        try:
+            group = ec_reg.get_curve(named_group_name)
+            keystore = ECDHKeyStore(group, ec.Point(group, *point))
+        except ValueError:
+            keystore = ECDHKeyStore(None, point)
+            warnings.warn("Unsupported TinyEC group: %s" % named_group_name)
+    return keystore
 
 
 class AsymKeyStore(object):
@@ -229,7 +278,7 @@ class EmptySymKeyStore(SymKeyStore):
 
 class CipherKeyStore(SymKeyStore):
 
-    def __init__(self, properties, key, hmac, iv=b""):
+    def __init__(self, properties, key, hmac=b"", iv=b""):
         self.properties = properties
         # Be consistent and track everything in bits
         self.block_size = self.properties["cipher"]["type"].block_size * 8
@@ -261,6 +310,6 @@ class CipherKeyStore(SymKeyStore):
                 size: {prf_size}"""
         return template.format(name=self.name, cipher_name=self.properties["cipher"]["name"],
                                mode=self.properties["cipher"]["mode_name"], key=repr(self.key), size=self.size,
-                               block_size=self.block_size, iv=repr(self.iv), hmac_name=self.properties["hash"]["name"],
+                               block_size=self.block_size, iv=repr(self.iv), hmac_name=self.properties.get("hash", {}).get("name", ""),
                                hmac_key=repr(self.hmac), hmac_size=self.hmac_size, prf_name=self.prf_name,
                                prf_size=self.prf_size)

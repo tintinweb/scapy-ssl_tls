@@ -45,12 +45,13 @@ if __name__ == "__main__":
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect(target)
         print ("connected.")
-        # create TLS Handhsake / Client Hello packet
+        # create TLS Handshake / Client Hello packet
         outer, inner = t
-        p = TLSRecord(version=outer) / TLSHandshake() / TLSClientHello(version=inner,
-                                                                       compression_methods=range(0xff),
-                                                                       cipher_suites=range(0xff) + [0x5600],
-                                                                       )
+        p = TLSRecord(version=outer) / \
+            TLSHandshakes(handshakes=[TLSHandshake() /
+                                      TLSClientHello(version=inner,
+                                                     compression_methods=range(0xff),
+                                                     cipher_suites=range(0xff) + [0x5600],)])
         p.show()
         print ("sending TLS payload")
         s.sendall(str(p))

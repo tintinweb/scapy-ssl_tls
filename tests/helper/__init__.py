@@ -22,13 +22,18 @@ class PopenProcess(object):
     """
     subprocess.Popen wrapper
     """
-    def __init__(self, target, args=(), cwd=None, shell=None):
-        print [target] + [str(a) for a in args]
-        self.pid = subprocess.Popen([target] + [str(a) for a in args], cwd=cwd, shell=shell, stdin=subprocess.PIPE)
+    def __init__(self, target, args=(), cwd=None, shell=None, want_stdout=False, want_stderr=False):
+        # optional stdout, stderr to prevent deadlocks
+        self.pid = subprocess.Popen([target] + [str(a) for a in args], 
+                                    cwd=cwd, shell=shell, 
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE if want_stdout else None,
+                                    stderr=subprocess.PIPE if want_stderr else None)
         self.stdin = self.pid.stdin
+        self.stdout = self.stderr = None
 
     def getReturnCode(self, input=None):
-        self.pid.communicate(input=input)
+        self.stdout, self.stderr = self.pid.communicate(input=input)
         exit_code = self.pid.poll()
         self.pid = None
         return exit_code
@@ -64,7 +69,7 @@ class ForkProcess(object):
 
 def pytls_serve(bind=('', 8443),
                 certfile="../tests/files/openssl_1_0_1_f_server.pem",
-                ssl_version=ssl.PROTOCOL_TLSv1, ciphers="ALL"):
+                ssl_version=ssl.PROTOCOL_TLSv1_2, ciphers="ALL"):
     """
     python tls http echo server implementation
     :param bind:
@@ -78,14 +83,15 @@ def pytls_serve(bind=('', 8443),
     s.bind(bind)
     s.listen(1)
     while True:
+        ssl_sock = None
         client_sock, addr = s.accept()
-        ssl_sock = ssl.wrap_socket(client_sock,
-                                   server_side=True,
-                                   certfile=certfile,
-                                   keyfile=certfile,
-                                   ssl_version=ssl_version,
-                                   ciphers=ciphers,)
         try:
+            ssl_sock = ssl.wrap_socket(client_sock,
+                                       server_side=True,
+                                       certfile=certfile,
+                                       keyfile=certfile,
+                                       ssl_version=ssl_version,
+                                       ciphers=ciphers,)
             data = []
             chunk = ssl_sock.read()
             while chunk:
@@ -96,11 +102,12 @@ def pytls_serve(bind=('', 8443),
             # echo request
             head = "HTTP/1.1 200 OK\r\nContent-type: text/html\r\nX-SERVER: pytls\r\n\r\n"
             ssl_sock.write(head + ''.join(data))
-        except:
+        except Exception:
             pass
         finally:
-            ssl_sock.shutdown(socket.SHUT_RDWR)
-            ssl_sock.close()
+            if ssl_sock is not None:
+                ssl_sock.shutdown(socket.SHUT_RDWR)
+                ssl_sock.close()
 
 class PythonTlsServer(ForkProcess):
     """
@@ -116,8 +123,10 @@ class PythonTlsServer(ForkProcess):
 
 class PythonInterpreter(PopenProcess):
 
-    def __init__(self, target, args=(), cwd=None):
-        super(PythonInterpreter, self).__init__(sys.executable, args=[target]+list(args), cwd=cwd)
+    def __init__(self, target, args=(), cwd=None, want_stderr=False, want_stdout=False):
+        super(PythonInterpreter, self).__init__(sys.executable, 
+                                                args=[target]+list(args), 
+                                                cwd=cwd, want_stderr=want_stderr, want_stdout=want_stdout)
 
 class OpenSslServer(PopenProcess):
     """
@@ -140,12 +149,13 @@ class OpenSslClient(PopenProcess):
     """
     OpenSSL s_server
     """
-    def __init__(self, target="openssl", args=()):
+    def __init__(self, target="openssl", args=(), want_stderr=False, want_stdout=False):
         self.target = args[:2]
         self.args = args[2:]
         super(OpenSslClient, self).__init__(target=target, args=["s_client",
                                                                  "-connect", "%s:%d"%self.target,
-                                                                 "-cipher", "ALL",],)
+                                                                 "-cipher", "ALL",],
+                                            want_stderr=want_stderr, want_stdout=want_stdout)
         
 
 class JavaTlsServer(PopenProcess):
