@@ -14,6 +14,7 @@ Features
 ---------
 
 * Protocol Support
+ * TLS 1.3 draft 18
  * TLS 1.2
  * TLS 1.1
  * TLS 1.0
