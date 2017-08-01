@@ -117,7 +117,7 @@ def os_install_requires():
     #dependencies = ["scapy>=2.2.0,<2.3.3", "pycrypto", "tinyec"]
     # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
     if platform.system() == "Darwin":
-        dependencies.extend(("dnet", "pcapy"))
+        dependencies.extend(("pydumbnet", "pcapy"))
     return dependencies
 
 
