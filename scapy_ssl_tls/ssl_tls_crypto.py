@@ -1540,7 +1540,7 @@ class TLSSecurityParameters(object):
                                                                "hash": {"type": SHA256, "name": "SHA256"}},
         tls.TLSCipherSuite.ECDHE_RSA_WITH_AES_256_CBC_SHA384: {"name": tls.TLS_CIPHER_SUITES[0xc028], "export": False,
                                                                "key_exchange": {"type": ECDHE, "name": tls.TLSKexNames.ECDHE, "sig": RSA},
-                                                               "cipher": {"type": AES, "name": "AES", "key_len": 16, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
+                                                               "cipher": {"type": AES, "name": "AES", "key_len": 32, "mode": AES.MODE_CBC, "mode_name": CipherMode.CBC},
                                                                "hash": {"type": SHA384, "name": "SHA384"}},
         tls.TLSCipherSuite.RSA_WITH_AES_128_GCM_SHA256: {"name": tls.TLS_CIPHER_SUITES[0x009c], "export": False,
                                                                  "key_exchange": {"type": RSA, "name": tls.TLSKexNames.RSA, "sig": RSA},
