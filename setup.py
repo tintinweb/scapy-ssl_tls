@@ -116,8 +116,10 @@ def os_install_requires():
     dependencies = [l.strip() for l in read("requirements.txt").strip().split('\n') if l.strip()]
     #dependencies = ["scapy>=2.2.0,<2.3.3", "pycrypto", "tinyec"]
     # Scapy on OSX requires dnet and pcapy, but fails to declare them as dependencies
+    #  - with pip 9.x we're switching from unmaintained dnet to pydumbnet
+    #  - in order to avoid API errors we're switching from pcapy to pypcap
     if platform.system() == "Darwin":
-        dependencies.extend(("pydumbnet", "pcapy"))
+        dependencies.extend(("pydumbnet", "pypcap"))
     return dependencies
 
 
