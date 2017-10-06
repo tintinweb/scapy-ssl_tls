@@ -934,7 +934,7 @@ class TLSCertificateRequest(Packet):
                    XFieldLenField("alg_length", None, length_of="algs", fmt="H"),
                    ReprFieldListField("algs", DEFAULT_SIG_SCHEME_LIST, ShortEnumField("alg", None, TLS_SIGNATURE_SCHEMES),
                                       length_from=lambda x: x.alg_length),
-                   XFieldLenField("dn_length", None, length_of="dns", fmt="H"),
+                   XFieldLenField("dn_length", None, length_of="ca_dns", fmt="H"),
                    PacketListField("ca_dns", None, TLSCADistinguishedName, length_from=lambda x: x.dn_length)]
 
 
