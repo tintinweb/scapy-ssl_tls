@@ -417,7 +417,7 @@ class TLSSignatureHashAlgorithm(PacketNoPayload):
 class TLSExtSignatureAndHashAlgorithm(PacketNoPayload):
     name = "TLS Extension Signature And Hash Algorithm"
     fields_desc = [
-                   XFieldLenField("length", None, length_of="algorithms", fmt="H"),
+                   XFieldLenField("length", None, length_of="algs", fmt="H"),
                    PacketListField("algs", None, TLSSignatureHashAlgorithm, length_from=lambda x:x.length),
                   ]
 
