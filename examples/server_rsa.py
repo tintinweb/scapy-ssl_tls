@@ -45,7 +45,7 @@ def main():
         else:
             try:
                 r = client_socket.recvall()
-                version = r[TLSClientHello].version
+                version = r[TLSHandshakes].handshakes[0][TLSClientHello].version
                 server_hello = TLSRecord(version=version) / \
                                TLSHandshakes(handshakes=[TLSHandshake() / TLSServerHello(version=version, cipher_suite=cipher),
                                                          TLSHandshake() / TLSCertificateList() /TLS10Certificate(certificates=certificates),
