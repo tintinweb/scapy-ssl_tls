@@ -213,7 +213,7 @@ xVgf/Neb/avXgIgi6drj8dp1fWA=
         self.assertEqual(
             ("}\xcae\xd2y\xd7F$\xde\"\xa9s\xfbNR9v\x19t9\x87\xa8\xa3\x9c\xccb]\x13\xb7\x8a\x8f\xdf\x7fv\x05\xa6\xf1\xa7"
              "\xc8\xf4X\xe3\xd4\xac\xd6\x1e4\xb4\x1cc\xbb\xce\xbe\x94lQ\x91\xb9\xde\xb7\xa6gu_"),
-            tls_ctx.premaster_secret)
+            tlsk.int_to_str(tls_ctx.client_ctx.kex_keystore.get_psk(tls_ctx.server_ctx.kex_keystore.public)))
 
     def test_client_ecdh_parameters_generation_matches_fixed_data(self):
         tls_ctx = tlsc.TLSSessionCtx()
