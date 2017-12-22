@@ -3,6 +3,7 @@
 import binascii
 import math
 import random
+import struct
 import warnings
 
 from Cryptodome.PublicKey import RSA
@@ -78,6 +79,11 @@ def nb_bits(int_):
 def int_to_str(int_):
     hex_ = "%x" % int_
     return binascii.unhexlify("%s%s" % ("" if len(hex_) % 2 == 0 else "0", hex_))
+
+
+def int_to_vector(num, fmt="!H"):
+    num_str = int_to_str(num)
+    return "%s%s" % (struct.pack(fmt, len(num_str)), num_str)
 
 
 def str_to_int(str_):
