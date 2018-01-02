@@ -416,7 +416,18 @@ TLS Session Context:
                                                                    server_kex_keystore.p, client_public)
                 else:
                     raise RuntimeError("Server keystore is not a DH keystore")
-                # TODO: Calculate PMS
+            pms = None
+            if isinstance(self.server_ctx.kex_keystore, tlsk.DHKeyStore) and isinstance(self.client_ctx.kex_keystore, tlsk.DHKeyStore):
+                if self.server_ctx.kex_keystore.private is not None:
+                    pms = self.server_ctx.kex_keystore.get_psk(self.client_ctx.kex_keystore.public)
+                if self.client_ctx.kex_keystore.private is not None:
+                    pms = self.client_ctx.kex_keystore.get_psk(self.server_ctx.kex_keystore.public)
+            if pms is None:
+                raise RuntimeError("No DH private key in client or server DH Keystore")
+            # Per RFC 4346 section 8.1.2
+            # Leading bytes of Z that contain all zero bits are stripped before it is used as the
+            # pre_master_secret.
+            self.premaster_secret = tlsk.int_to_str(pms).lstrip("\x00")
         elif client_kex.haslayer(tls.TLSClientECDHParams):
             # Check if we have an unitialized keystore, and if so build a new one
             if isinstance(self.client_ctx.kex_keystore, tlsk.EmptyKexKeystore):
@@ -537,13 +548,7 @@ TLS Session Context:
             raise RuntimeError("Server keystore is not DH")
         g = self.server_ctx.kex_keystore.g
         p = self.server_ctx.kex_keystore.p
-        public = self.server_ctx.kex_keystore.public
         self.client_ctx.kex_keystore = tlsk.DHKeyStore.new_keypair(g, p, private)
-        pms = self.client_ctx.kex_keystore.get_psk(public)
-        # Per RFC 4346 section 8.1.2
-        # Leading bytes of Z that contain all zero bits are stripped before it is used as the
-        # pre_master_secret.
-        self.premaster_secret = tlsk.int_to_str(pms).lstrip("\x00")
         return tlsk.int_to_str(self.client_ctx.kex_keystore.public)
 
     def get_client_ecdh_pubkey(self, private=None):
@@ -574,6 +579,20 @@ TLS Session Context:
             return tls.TLSClientKeyExchange() / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
         else:
             raise NotImplementedError("Key exchange unknown or currently not supported")
+
+    def get_server_dhe_ske(self, sig=Sig_PKCS1_v1_5, digest=SHA256):
+        if self.client_ctx.random is None or self.server_ctx.random is None:
+            raise ValueError("Server/client randoms cannot be none")
+        if not isinstance(self.server_ctx.kex_keystore, tlsk.DHKeyStore):
+            raise ValueError("Server keystore is not a DHKeystore")
+        dhk = self.server_ctx.kex_keystore
+        msg = "%s%s" % (self.client_ctx.random, self.server_ctx.random)
+        msg += tlsk.int_to_vector(dhk.p)
+        msg += tlsk.int_to_vector(dhk.g)
+        msg += tlsk.int_to_vector(dhk.public)
+        ske_sig = sig.new(self.server_ctx.asym_keystore.private).sign(digest.new(msg))
+        # TODO: Be smart, set scheme_type based on sig and hash. This is a pain to do, so being lazy
+        return tls.TLSServerDHParams(p=tlsk.int_to_str(dhk.p), g=tlsk.int_to_str(dhk.g), y_s=tlsk.int_to_str(dhk.public), sig=ske_sig)
 
     def _walk_handshake_msgs(self):
         for pkt in self.history:
