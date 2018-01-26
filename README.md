@@ -10,6 +10,11 @@ SSL/TLS and DTLS layers and TLS utiltiy functions for [Scapy](http://www.secdev.
 An offensive stack for SSLv2, SSLv3 (TLS), TLS, DTLS penetration testing providing easy access to packet crafting, automatic dissection, encryption, decryption, session tracking, basic TLS state machines, automated handshakes, TLSSocket abstraction, cryptography containers, predefined hooks, SSL sniffing including minimalistic PCAP stream decryption (RSA_WITH_\*), fuzzing and security scanning (*Renegotiation, Heartbleed, Poodle, Logjam/Freak, DROWN, various Buffer overflows, ...*).
 
 
+| branch | release status |
+|---------------|----------|
+| [v1.2.x](https://github.com/tintinweb/scapy-ssl_tls/releases) | :heavy_check_mark: maintenance: only bug-fixes will be released |
+| [v2.x](https://github.com/tintinweb/scapy-ssl_tls/releases) | :warning: experimental: not fully backwards compatible with v1.x due to interface changes |
+
 Features
 ---------
 
