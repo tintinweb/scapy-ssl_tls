@@ -29,7 +29,7 @@ TEST_SCRIPT_AS_CLIENT = [ 'SCSV_fallback_test.py', 'client_hello_complex_invalid
                            'sslv2_client_hello_valid.py', 'tls_client_automata.py']
 
 EXTERNAL_SERVER = ("cloudflare.com", 443) # tls13
-TEST_SCRIPT_AGAINST_EXTERNAL_SERVER = ['tls_1_3-client.py',]
+TEST_SCRIPT_AGAINST_EXTERNAL_SERVER = [] #'tls_1_3-client.py',]
 
 class TestExampleClientsAgainstLocalOpenSsl(unittest.TestCase):
     """
