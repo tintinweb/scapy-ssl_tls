@@ -18,10 +18,19 @@ decryption (RSA\_WITH\_\*), fuzzing and security scanning
 (*Renegotiation, Heartbleed, Poodle, Logjam/Freak, DROWN, various Buffer
 overflows, ...*).
 
+Compatibility
+-------------
+
+**!! v2.x breaks backwards compatibility to v1.2.x branch due to major interface refactoring introduced with tls1_3 support !!**
+
+see `Release Notes <https://github.com/tintinweb/scapy-ssl_tls/releases>`_ 
+
+
 Features
 --------
 
 -  Protocol Support
+-  TLS 1.3 draft 18
 -  TLS 1.2
 -  TLS 1.1
 -  TLS 1.0
@@ -75,6 +84,8 @@ Option 3: manual installation
     +                   "mgcp", "mobileip", "netbios", "netflow", "ntp", "ppp", "radius", "rip", "rtp","ssl_tls",
                         "sebek", "skinny", "smb", "snmp", "tftp", "x509", "bluetooth", "dhcp6", "llmnr", "sctp", "vrrp" ]
 
+
+
 verify installation:
 ''''''''''''''''''''
 
@@ -101,7 +112,6 @@ Troubleshooting
 
 **Q:** ``sessionctx_sniffer.py`` does not seem to detect ``SSL/TLS`` or
 does not show any sniffed ``SSL/TLS`` sessions.
-
 **A:** This is problem caused by the import magic in
 ``sessionctx_sniffer.py`` where the example might mix up imports from
 the projects directory with the ones installed with ``pip`` or via
@@ -110,14 +120,11 @@ the projects directory with the ones installed with ``pip`` or via
 scapy-ssl\_tls to use it directly from the project directory, or remove
 the ``from scapy_ssl_tls.ssl_tls import *`` import lines from the
 example.
-
 **Note:** This has been addressed with ``>=v1.2.3`` where the
 system-wide import has preference.
 
-
 **Q:** ``sessionctx_sniffer.py`` does not seem to dissect large
 ``SSL/TLS`` records properly.
-
 **A:** In order to fully reconstruct *sniffed* ``SSL/TLS`` records one
 needs to ``defragment`` the sniffed IP packets and ``reassemble`` them
 to TCP segments. Since TCP Stream reassembly is not an easy task

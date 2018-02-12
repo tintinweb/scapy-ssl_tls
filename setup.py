@@ -140,7 +140,7 @@ except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict):
 
 setup(
     name="scapy-ssl_tls",
-    version="1.3.0",
+    version="2.0.0",
     packages=["scapy_ssl_tls"],
     author="tintinweb",
     author_email="tintinweb@oststrom.com",
@@ -149,7 +149,7 @@ setup(
     license="GPLv2",
     keywords=["scapy", "ssl", "tls", "layer", "network", "dissect", "packets", "decrypt"],
     url="https://github.com/tintinweb/scapy-ssl_tls/",
-    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v1.3.0",
+    download_url="https://github.com/tintinweb/scapy-ssl_tls/tarball/v2.0.0",
     # generate rst from .md:  pandoc --from=markdown --to=rst README.md -o README.rst (fix diff section and footer)
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=os_install_requires(),
