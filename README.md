@@ -12,8 +12,9 @@ An offensive stack for SSLv2, SSLv3 (TLS), TLS, DTLS penetration testing providi
 
 | branch | release status |
 |---------------|----------|
+| [v2.x](https://github.com/tintinweb/scapy-ssl_tls/releases) | :heavy_check_mark: **not fully backwards compatible with v1.x due to interface changes** :warning: |
 | [v1.2.x](https://github.com/tintinweb/scapy-ssl_tls/releases) | :heavy_check_mark: maintenance: only bug-fixes will be released |
-| [v2.x](https://github.com/tintinweb/scapy-ssl_tls/releases) | :warning: experimental: not fully backwards compatible with v1.x due to interface changes |
+
 
 Features
 ---------
