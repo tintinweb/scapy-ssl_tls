@@ -35,6 +35,8 @@ Features
 * State Machines
  * TLS Client Scapy Automata
  * TLS Server Scapy Automata
+ 
+:snake: **Note:** an **experimental python 3** compat mode is available on the [py3compat branch](https://github.com/tintinweb/scapy-ssl_tls/tree/py3compat) and is planned to be merged into master once fully tested (see [issue #39](https://github.com/tintinweb/scapy-ssl_tls/issues/39)).
 
 Installation
 ------------
