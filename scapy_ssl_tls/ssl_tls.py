@@ -1319,7 +1319,8 @@ class SSL(Packet):
     COMPOUND CLASS for SSL
     """
     name = "SSL/TLS"
-    fields_desc = [PacketListField("records", None, TLSRecord)]
+    fields_desc = [PacketListField("records", None, None,
+                   next_cls_cb=lambda *args: self.guessed_next_layer)]
     CONTENT_TYPE_MAP = {0x15: TLSAlert, 0x16: TLSHandshakes, 0x17: TLSPlaintext}
 
     def __init__(self, *args, **fields):
@@ -1340,8 +1341,6 @@ class SSL(Packet):
             self.guessed_next_layer = SSLv2Record
         else:
             self.guessed_next_layer = TLSRecord
-        # what a hack. thanks @p-l- for adding __slots__ :(
-        self.fields_desc[:] = [PacketListField("records", None, self.guessed_next_layer)]
         return raw_bytes
 
     def do_dissect(self, raw_bytes):
