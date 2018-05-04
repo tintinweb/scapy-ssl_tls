@@ -64,7 +64,7 @@ class TestTLSRecord(unittest.TestCase):
         stacked_handshake_layers = tls.TLSRecord() / tls.TLSHandshakes(handshakes=
                                                                        [tls.TLSHandshake() / tls.TLSServerHello(),
                                                                         tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
-                                                                            certificates=[tls.TLSCertificate(data=x509.X509Cert(der_cert))]),
+                                                                            certificates=[tls.TLSCertificate(data=x509.X509_Cert(der_cert))]),
                                                                         tls.TLSHandshake() / tls.TLSServerHelloDone()])
         self.stacked_handshake = tls.TLS(str(stacked_handshake_layers))
             # str(tls.TLSRecord(content_type="handshake") / "".join(list(map(str, stacked_handshake_layers)))))
@@ -545,7 +545,7 @@ class TestPCAP(unittest.TestCase):
         self.assertTrue(record.haslayer(tls.TLSHandshakes))
         self.assertTrue(record.haslayer(tls.TLSCertificateList))
         self.assertEqual(len(record[tls.TLSCertificateList].certificates), 1)
-        self.assertTrue(record.haslayer(x509.X509Cert))
+        self.assertTrue(record.haslayer(x509.X509_Cert))
         try:
             record[tls.TLSCertificate].data.pubkey
         except AttributeError as ae:
@@ -815,7 +815,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 
     def test_tls_certificate_x509(self):
         pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
-            certificates=[tls.TLSCertificate(data=x509.X509Cert(self.der_cert))])])
+            certificates=[tls.TLSCertificate(data=x509.X509_Cert(self.der_cert))])])
 
         self.assertEqual(str(pkt[tls.TLSCertificateList].certificates[0].data), self.der_cert)
         self.assertEqual(str(pkt[tls.TLSCertificate].data), self.der_cert)
@@ -837,9 +837,9 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     def test_tls_certificate_multiple_x509(self):
         # issue #27
         pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
-            certificates=[tls.TLSCertificate(data=x509.X509Cert(self.der_cert)),
-                          tls.TLSCertificate(data=x509.X509Cert(self.der_cert)),
-                          tls.TLSCertificate(data=x509.X509Cert(self.der_cert))])])
+            certificates=[tls.TLSCertificate(data=x509.X509_Cert(self.der_cert)),
+                          tls.TLSCertificate(data=x509.X509_Cert(self.der_cert)),
+                          tls.TLSCertificate(data=x509.X509_Cert(self.der_cert))])])
 
         self.assertEqual(len(pkt[tls.TLSCertificateList].certificates), 3)
 
@@ -865,7 +865,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
 
     def test_tls_certificate_x509_pubkey(self):
         pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
-            certificates=[tls.TLSCertificate(data=x509.X509Cert(self.der_cert))])])
+            certificates=[tls.TLSCertificate(data=x509.X509_Cert(self.der_cert))])])
         # dissect and extract pubkey
         pkt = tls.SSL(str(pkt))
 
@@ -885,11 +885,11 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
     def test_when_using_tls13_then_certificates_are_dissected_differently(self):
         pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS13Certificate(
             request_context="1234",
-            certificates=[tls.TLSCertificateEntry(cert_data=x509.X509Cert(self.der_cert),
+            certificates=[tls.TLSCertificateEntry(cert_data=x509.X509_Cert(self.der_cert),
                                                   extensions=[tls.TLSExtension(type=tls.TLSExtensionType.SIGNED_CERTIFICATE_TIMESTAMP) /
                                                               "whatever"]),
-                          tls.TLSCertificateEntry(cert_data=x509.X509Cert(self.der_cert)),
-                          tls.TLSCertificateEntry(cert_data=x509.X509Cert(self.der_cert))])])
+                          tls.TLSCertificateEntry(cert_data=x509.X509_Cert(self.der_cert)),
+                          tls.TLSCertificateEntry(cert_data=x509.X509_Cert(self.der_cert))])])
         self.assertTrue(pkt.haslayer(tls.TLSCertificateList))
         self.assertFalse(pkt.haslayer(tls.TLS10Certificate))
         self.assertTrue(pkt.haslayer(tls.TLS13Certificate))
