@@ -22,18 +22,7 @@ def rsa_public_from_der_certificate(certificate):
         # received completely, in that case, we'll try to extract it anyway
         # using the old method.
         # TODO: get rid of the old method and always expect X509Cert obj ?
-        """
-        Rebuild ASN1 SubjectPublicKeyInfo since X509Cert does not provide the full struct
-
-        ASN1F_SEQUENCE(
-                ASN1F_SEQUENCE(ASN1F_OID("pubkey_algo","1.2.840.113549.1.1.1"),
-                               ASN1F_field("pk_value",ASN1_NULL(0))),
-                ASN1F_BIT_STRING("pubkey","")
-                ),
-        """
-        subject_public_key_info = ASN1_SEQUENCE([ASN1_SEQUENCE([certificate.pubkey_algo, certificate.pk_value]),
-                                                 certificate.pubkey])
-        return RSA.importKey(str(subject_public_key_info))
+        return RSA.importKey(str(certificate.tbsCertificate.subjectPublicKeyInfo))
     except AttributeError:
         pass
 
