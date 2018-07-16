@@ -43,7 +43,6 @@ class TestExampleClientsAgainstLocalOpenSsl(unittest.TestCase):
         wait_for_bind_to_become_ready(self.bind)
         self.tls_server = OpenSslServer(args=(self.bind, SERVER_PEM))
         wait_for_server(self.tls_server.bind)
-        raw_input()
         
     def tearDown(self):
         self.tls_server.kill()
