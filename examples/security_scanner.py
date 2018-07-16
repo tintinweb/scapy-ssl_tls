@@ -425,7 +425,7 @@ class TLSScanner(object):
             pkt = TLSRecord() / \
                   TLSHandshakes(handshakes=[TLSHandshake() /
                                             TLSClientHello(version=TLSVersion.TLS_1_1,
-                                                           cipher_suites=range(0xfe)[::-1],
+                                                           cipher_suites=list(range(0xfe))[::-1],
                                                            compression_methods=comp)])
             # connect
             try:
@@ -479,7 +479,7 @@ class TLSScanner(object):
             pkt = TLSRecord(version=magic) / \
                   TLSHandshakes(handshakes=[TLSHandshake() /
                                             TLSClientHello(version=magic,
-                                                           cipher_suites=range(0xfe)[::-1],
+                                                           cipher_suites=list(range(0xfe))[::-1],
                                                            extensions=[TLSExtension() /
                                                                        TLSExtHeartbeat(mode=TLSHeartbeatMode.PEER_ALLOWED_TO_SEND)])])
             try:
@@ -523,7 +523,7 @@ class TLSScanner(object):
         pkt = TLSRecord(version=TLSVersion.TLS_1_1) / \
               TLSHandshakes(handshakes=[TLSHandshake() /
                                         TLSClientHello(version=TLSVersion.TLS_1_0,
-                                                       cipher_suites=[TLSCipherSuite.FALLBACK_SCSV] + range(0xfe)[::-1])])
+                                                       cipher_suites=[TLSCipherSuite.FALLBACK_SCSV] + list(range(0xfe))[::-1])])
         # connect
         try:
             t = TCPConnection(target, starttls=starttls)
