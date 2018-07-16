@@ -51,7 +51,7 @@ if __name__ == "__main__":
             TLSHandshakes(handshakes=[TLSHandshake() /
                                       TLSClientHello(version=inner,
                                                      compression_methods=range(0xff),
-                                                     cipher_suites=range(0xff) + [0x5600],)])
+                                                     cipher_suites=list(range(0xff)) + [0x5600],)])
         p.show()
         print ("sending TLS payload")
         s.sendall(str(p))

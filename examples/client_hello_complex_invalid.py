@@ -32,8 +32,8 @@ if __name__ == "__main__":
     p = TLSRecord(version='TLS_1_2') / \
         TLSHandshakes(handshakes=[
             TLSHandshake() /
-            TLSClientHello(compression_methods=[TLSCompressionMethod.NULL, TLSCompressionMethod.DEFLATE] + range(255 - 2),
-                           cipher_suites=[TLSCipherSuite.NULL_WITH_NULL_NULL] + range(0xff - 1),
+            TLSClientHello(compression_methods=[TLSCompressionMethod.NULL, TLSCompressionMethod.DEFLATE] + list(range(255 - 2)),
+                           cipher_suites=[TLSCipherSuite.NULL_WITH_NULL_NULL] + list(range(0xff - 1)),
                            extensions=[
                 TLSExtension() /
                 TLSExtServerNameIndication(server_names=[TLSServerName(data="a" * 500, length=16),
