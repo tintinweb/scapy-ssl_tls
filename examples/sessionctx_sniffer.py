@@ -73,8 +73,9 @@ class L4TcpReassembler(object):
 
         def process(self, pkt):
             self.last_seq = pkt[TCP].seq
-            payload_size = len(pkt[TCP].payload)
-
+            if not pkt[TCP].payload:
+                pkt[TCP].payload = Raw()
+            payload_size = len(pkt[TCP].payload)   
             if payload_size < self.mss:
                 # flush pktlist as [pkt stack, current_pkt]
                 if len(self.pktlist) > 1:
@@ -84,8 +85,8 @@ class L4TcpReassembler(object):
                     del p_reassembled[IP].chksum
                     del p_reassembled[TCP].chksum
                     #p_reassembled.name = "TCPReassembled"
-                    p_reassembled[TCP].payload = ''.join(str(p[TCP].payload)
-                                                         for p in self.pktlist) + str(p_reassembled[TCP].payload)
+                    p_reassembled[TCP].payload = Raw(load=''.join(str(p[TCP].payload) 
+                                                                  for p in self.pktlist) + str(p_reassembled[TCP].payload))
                     p_reassembled[TCP] = TCP(str(p_reassembled[TCP]))       # force re-dissect
 
                     self.pktlist = []
