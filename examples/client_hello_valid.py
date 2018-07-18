@@ -32,7 +32,7 @@ if __name__ == "__main__":
     # create TLS Handhsake / Client Hello packet
     p = TLSRecord() / TLSHandshakes(handshakes=[TLSHandshake() /
                                                 TLSClientHello(compression_methods=list(range(0xff))[::-1],
-                                                               cipher_suites=range(0xff))])
+                                                               cipher_suites=list(range(0xff)))])
 
     p.show()
 
