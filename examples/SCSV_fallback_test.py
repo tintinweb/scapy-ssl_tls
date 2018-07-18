@@ -50,7 +50,7 @@ if __name__ == "__main__":
         p = TLSRecord(version=outer) / \
             TLSHandshakes(handshakes=[TLSHandshake() /
                                       TLSClientHello(version=inner,
-                                                     compression_methods=range(0xff),
+                                                     compression_methods=list(range(0xff)),
                                                      cipher_suites=list(range(0xff)) + [0x5600],)])
         p.show()
         print ("sending TLS payload")
