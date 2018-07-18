@@ -59,7 +59,7 @@ class L4TcpReassembler(object):
                 raise Exception("NOT THE BEGINNING OF A STREAM: %s" % repr(self.stream_id))
 
             self.syn = pkt[TCP]
-            self.syn.payload = None   # strip payload
+            self.syn.payload = NoPayload()   # strip payload
             self.initial_seq = pkt[TCP].seq
 
             self.last_seq = self.initial_seq
@@ -73,8 +73,6 @@ class L4TcpReassembler(object):
 
         def process(self, pkt):
             self.last_seq = pkt[TCP].seq
-            if not pkt[TCP].payload:
-                pkt[TCP].payload = Raw()
             payload_size = len(pkt[TCP].payload)   
             if payload_size < self.mss:
                 # flush pktlist as [pkt stack, current_pkt]
