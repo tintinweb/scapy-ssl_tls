@@ -91,7 +91,7 @@ class TestHandshakeWithData(unittest.TestCase):
         self.assertIn(TLSServerHello, server_hello)
         self.assertIn(TLSCertificateList, server_hello)
         self.assertIn(TLSCertificate, server_hello)
-        self.assertIn(X509Cert, server_hello)
+        self.assertIn(X509_Cert, server_hello)
         server_finish = self.tlsutil.tls_client_key_exchange()
         print("Finished handshake. Sending application data (GET request)")
         self.tlsutil.sock.sendall(TLSPlaintext(data="GET / HTTP/1.1\r\nHOST: localhost\r\n\r\n"))

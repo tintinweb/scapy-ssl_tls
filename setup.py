@@ -3,9 +3,10 @@
 
 from __future__ import print_function
 from __future__ import with_statement
-import fileinput
 import os
 import platform
+import re
+import shutil
 import sys
 from setuptools import setup
 from setuptools.command.install import install as _install
@@ -87,28 +88,25 @@ def _post_install(dir_):
     """ Patches scapy config.py to add autoloading of the ssl_tls layer
     Takes a backup in the form of a config.py.bak file
     """
+
+    def patch_ll(ll_match):
+        match_start = ll_match.start()
+        prefix = ll_match.start(1) - match_start
+        suffix = ll_match.end(1) - match_start
+        orig_code = ll_match.group(0)
+        return orig_code[:prefix] + ', "ssl_tls",' + orig_code[suffix:]
+    ll_regex = re.compile(r"load_layers = \[[^\]]*(,)[^,\]]*\]", re.DOTALL)
+
     scapy_locations = get_scapy_locations(get_site_packages())
     for scapy_location in scapy_locations:
         scapy_config = os.path.join(scapy_location, "config.py")
-        processing_layer_list = False
-        for line in fileinput.input(scapy_config, inplace=1, backup=".bak"):
-            if line.strip().startswith("load_layers"):
-                print(line, end="")
-                processing_layer_list = True
-            else:
-                if processing_layer_list and line.strip().endswith("]"):
-                    # TODO, consider single quote strings, and consider lonely
-                    # ] characters
-                    last_quote = line.rfind("\"")
-                    if last_quote > 0 and "ssl_tls" not in line:
-                        print("%s, \"ssl_tls\" ]" % line[
-                              :last_quote + 1], end="")
-                        processing_layer_list = False
-                    else:
-                        print(line)
-                        processing_layer_list = False
-                else:
-                    print(line, end="")
+        if os.path.isfile(scapy_config):
+            shutil.copy(scapy_config, scapy_config + ".bak")
+            with open(scapy_config, "r+") as f:
+                config_source = f.read()
+                f.truncate(0)
+                f.seek(0)
+                f.write(ll_regex.sub(patch_ll, config_source))
 
 
 def os_install_requires():
