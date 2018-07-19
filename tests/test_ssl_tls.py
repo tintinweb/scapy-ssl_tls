@@ -547,11 +547,7 @@ class TestPCAP(unittest.TestCase):
         self.assertEqual(len(record[tls.TLSCertificateList].certificates), 1)
         self.assertTrue(record.haslayer(x509.X509_Cert))
         try:
-            record[tls.TLSCertificate].data.pubkey
-        except AttributeError as ae:
-            self.fail(ae)
-        try:
-            record[tls.TLSCertificate].data.signature
+            record[tls.TLSCertificate].data.tbsCertificate
         except AttributeError as ae:
             self.fail(ae)
         # server hello done
@@ -820,7 +816,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertEqual(str(pkt[tls.TLSCertificateList].certificates[0].data), self.der_cert)
         self.assertEqual(str(pkt[tls.TLSCertificate].data), self.der_cert)
         try:
-            pkt[tls.TLSCertificate].data.pubkey
+            pkt[tls.TLSCertificate].data.tbsCertificate
         except AttributeError as ae:
             self.fail(ae)
         # serialize and dissect the same packet
@@ -828,11 +824,10 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertEqual(str(pkt_d[tls.TLSCertificateList].certificates[0].data), self.der_cert)
         self.assertEqual(str(pkt_d[tls.TLSCertificate].data), self.der_cert)
         try:
-            pkt_d[tls.TLSCertificate].data.pubkey
+            pkt_d[tls.TLSCertificate].data.tbsCertificate
         except AttributeError as ae:
             self.fail(ae)
-        # compare pubkeys
-        self.assertEqual(pkt[tls.TLSCertificate].data.pubkey, pkt_d[tls.TLSCertificate].data.pubkey)
+        self.assertEqual(pkt[tls.TLSCertificate].data.tbsCertificate, pkt_d[tls.TLSCertificate].data.tbsCertificate)
 
     def test_tls_certificate_multiple_x509(self):
         # issue #27
@@ -846,7 +841,7 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         for tlscert in pkt[tls.TLSCertificateList].certificates:
             self.assertEqual(str(tlscert.data), self.der_cert)
             try:
-                tlscert.data.pubkey
+                tlscert.data.tbsCertificate
             except AttributeError as ae:
                 self.fail(ae)
 
@@ -857,11 +852,10 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         for tlscert in pkt_d[tls.TLSCertificateList].certificates:
             self.assertEqual(str(tlscert.data), self.der_cert)
             try:
-                tlscert.data.pubkey
+                tlscert.data.tbsCertificate
             except AttributeError as ae:
                 self.fail(ae)
-            # compare pubkeys
-            self.assertEqual(pkt[tls.TLSCertificate].data.pubkey, tlscert.data.pubkey)
+            self.assertEqual(pkt[tls.TLSCertificate].data.tbsCertificate, tlscert.data.tbsCertificate)
 
     def test_tls_certificate_x509_pubkey(self):
         pkt = tls.TLSRecord() / tls.TLSHandshakes(handshakes=[tls.TLSHandshake() / tls.TLSCertificateList() / tls.TLS10Certificate(
