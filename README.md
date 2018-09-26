@@ -15,6 +15,7 @@ An offensive stack for SSLv2, SSLv3 (TLS), TLS, DTLS penetration testing providi
 | [v2.x](https://github.com/tintinweb/scapy-ssl_tls/releases) | :heavy_check_mark: **not fully backwards compatible with v1.x due to interface changes** :warning: |
 | [v1.2.x](https://github.com/tintinweb/scapy-ssl_tls/releases) | :heavy_check_mark: maintenance: only bug-fixes will be released |
 
+:warning: requires `scapy==2.4.0`. support with [scapy](https://github.com/secdev/scapy) before v2.4 is broken due to major changes in scapy.
 
 Features
 ---------
