@@ -1,4 +1,5 @@
 #from scapy.all import *
+from __future__ import print_function
 import subprocess
 import socket
 import ssl
@@ -124,6 +125,7 @@ class PythonTlsServer(ForkProcess):
 class PythonInterpreter(PopenProcess):
 
     def __init__(self, target, args=(), cwd=None, want_stderr=False, want_stdout=False):
+        print ('Executing:', target, ' '.join(map(str, args)))
         super(PythonInterpreter, self).__init__(sys.executable, 
                                                 args=[target]+list(args), 
                                                 cwd=cwd, want_stderr=want_stderr, want_stdout=want_stdout)

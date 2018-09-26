@@ -33,8 +33,8 @@ if __name__ == "__main__":
     p = TLSRecord() / \
         TLSHandshakes(handshakes=[
                 TLSHandshake() /
-                TLSClientHello(compression_methods=range(0xff),
-                               cipher_suites=range(0xff),
+                TLSClientHello(compression_methods=list(range(0xff)),
+                               cipher_suites=list(range(0xff)),
                                extensions=[TLSExtension() /
                                            TLSExtALPN(protocol_name_list=[TLSALPNProtocol(data="http/1.1"),
                                                                           TLSALPNProtocol(data="http/1.3"),

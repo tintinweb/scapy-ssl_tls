@@ -466,7 +466,7 @@ class TLSServerAutomata(Automaton):
 
         server_certificates = TLSRecord(version=self.tls_version) / \
                               TLSHandshakes(handshakes=[TLSHandshake() /
-                                                        TLSCertificateList() / cls_cert(certificates=[TLSCertificate(data=x509.X509Cert(self.dercert))])])
+                                                        TLSCertificateList() / cls_cert(certificates=[TLSCertificate(data=x509.X509_Cert(self.dercert))])])
 
         server_certificates.show()
         self.tlssock.sendall(server_certificates)
