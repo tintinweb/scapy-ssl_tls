@@ -547,7 +547,8 @@ class TestPCAP(unittest.TestCase):
         self.assertEqual(len(record[tls.TLSCertificateList].certificates), 1)
         self.assertTrue(record.haslayer(x509.X509_Cert))
         try:
-            record[tls.TLSCertificate].data.tbsCertificate
+            record[tls.TLSCertificate].data.tbsCertificate.subjectPublicKeyInfo.subjectPublicKey
+            record[tls.TLSCertificate].data.signatureValue
         except AttributeError as ae:
             self.fail(ae)
         # server hello done
@@ -816,7 +817,8 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertEqual(str(pkt[tls.TLSCertificateList].certificates[0].data), self.der_cert)
         self.assertEqual(str(pkt[tls.TLSCertificate].data), self.der_cert)
         try:
-            pkt[tls.TLSCertificate].data.tbsCertificate
+            pkt[tls.TLSCertificate].data.tbsCertificate.subjectPublicKeyInfo.subjectPublicKey
+            pkt[tls.TLSCertificate].data.signatureValue
         except AttributeError as ae:
             self.fail(ae)
         # serialize and dissect the same packet
@@ -824,10 +826,11 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         self.assertEqual(str(pkt_d[tls.TLSCertificateList].certificates[0].data), self.der_cert)
         self.assertEqual(str(pkt_d[tls.TLSCertificate].data), self.der_cert)
         try:
-            pkt_d[tls.TLSCertificate].data.tbsCertificate
+            pkt[tls.TLSCertificate].data.tbsCertificate.subjectPublicKeyInfo.subjectPublicKey
+            pkt[tls.TLSCertificate].data.signatureValue
         except AttributeError as ae:
             self.fail(ae)
-        self.assertEqual(pkt[tls.TLSCertificate].data.tbsCertificate, pkt_d[tls.TLSCertificate].data.tbsCertificate)
+        self.assertEqual(pkt[tls.TLSCertificate].data.tbsCertificate.subjectPublicKeyInfo.subjectPublicKey, pkt_d[tls.TLSCertificate].data.tbsCertificate.subjectPublicKeyInfo.subjectPublicKey)
 
     def test_tls_certificate_multiple_x509(self):
         # issue #27
@@ -841,7 +844,8 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         for tlscert in pkt[tls.TLSCertificateList].certificates:
             self.assertEqual(str(tlscert.data), self.der_cert)
             try:
-                tlscert.data.tbsCertificate
+                tlscert.data.tbsCertificate.subjectPublicKeyInfo.subjectPublicKey
+                tlscert.data.signatureValue
             except AttributeError as ae:
                 self.fail(ae)
 
@@ -852,7 +856,8 @@ UM6j0ZuSMFOCr/lGPAoOQU0fskidGEHi1/kW+suSr28TqsyYZpwBDQ==
         for tlscert in pkt_d[tls.TLSCertificateList].certificates:
             self.assertEqual(str(tlscert.data), self.der_cert)
             try:
-                tlscert.data.tbsCertificate
+                tlscert.data.tbsCertificate.subjectPublicKeyInfo.subjectPublicKey
+                tlscert.data.signatureValue
             except AttributeError as ae:
                 self.fail(ae)
             self.assertEqual(pkt[tls.TLSCertificate].data.tbsCertificate, tlscert.data.tbsCertificate)
