@@ -71,6 +71,8 @@ def get_layer_files_dst(sites, path="scapy_ssl_tls"):
             if os.path.isfile(layer_file_path):
                 layer_files.append(layer_file_path)
     for scapy_location in scapy_locations:
+        if scapy_location.startswith(sys.prefix):
+            scapy_location = scapy_location [len(sys.prefix):].lstrip(os.path.sep)
         data_files.append(
             (os.path.join(scapy_location, "layers"), layer_files))
     return data_files
