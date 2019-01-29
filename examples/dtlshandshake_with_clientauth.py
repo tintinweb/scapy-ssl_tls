@@ -62,17 +62,13 @@ def dtls_client(server):
 
                 p = TLS.from_records([client_cert, client_key_exchange])
                 tls_socket.sendall(p)
-                #tls_socket.do_round_trip(p, recv=False)
-                #tls_socket.do_round_trip([client_cert, client_key_exchange], False)
-
+                
                 sig = tls_socket.tls_ctx.compute_client_cert_verify(digest=Sig_multi_PKCS1_v1_5)
-                #sig = sign_cv(tls_socket.tls_ctx, 1024 // 8)
 
                 client_cert_verify = DTLSRecord(version=version, sequence=4) / \
                                      DTLSHandshake(fragment_offset=0, sequence=3) / \
                                      DTLSCertificateVerify(sig=sig)
 
-                #tls_socket.do_round_trip(client_cert_verify, False)
                 tls_socket.sendall(client_cert_verify)
 
                 client_ccs = DTLSRecord(version=version, sequence=5) / DTLSChangeCipherSpec()
