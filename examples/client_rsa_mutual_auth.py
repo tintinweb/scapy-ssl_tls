@@ -38,7 +38,7 @@ def do_tls_mutual_auth(host):
                                                  TLSClientHello(version=tls_version,
                                                                 cipher_suites=[0x0035])])
         server_hello = tls_socket.do_round_trip(client_hello)
-        # server_hello.show()
+        server_hello.show()
 
         client_cert = TLSRecord(version=tls_version) / \
                       TLSHandshakes(handshakes=[TLSHandshake() / TLSCertificateList() /
