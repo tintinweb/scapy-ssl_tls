@@ -19,23 +19,24 @@ except ImportError:
     from scapy.layers.ssl_tls import *
     from scapy.all import *
 
+from scapy_ssl_tls import multidigest_pkcs1_15 as Sig_multi_PKCS1_v1_5
 
 def do_tls_mutual_auth(host):
-    with open(os.path.join(basedir, "tests/integration/keys/scapy-tls-client.crt.der"), "rb") as f:
+    with open(os.path.join(basedir, "tests/integration/keys/rsa_clnt1.der"), "rb") as f:
         client_cert = f.read()
     certificate = TLSCertificate(data=client_cert)
 
-    tls_version = TLSVersion.TLS_1_2
+    tls_version = TLSVersion.TLS_1_0
 
     with TLSSocket(socket.socket(), client=True) as tls_socket:
         tls_socket.connect(host)
         tls_socket.tls_ctx.client_ctx.load_rsa_keys_from_file(os.path.join(
-            basedir, "tests/integration/keys/scapy-tls-client.key.pem"))
+            basedir, "tests/integration/keys/rsa_clnt1ky"))
 
         client_hello = TLSRecord(version=tls_version) / \
                        TLSHandshakes(handshakes=[TLSHandshake() /
                                                  TLSClientHello(version=tls_version,
-                                                                cipher_suites=[TLSCipherSuite.ECDHE_RSA_WITH_AES_128_CBC_SHA256])])
+                                                                cipher_suites=[0x0035])])
         server_hello = tls_socket.do_round_trip(client_hello)
         # server_hello.show()
 
@@ -48,12 +49,18 @@ def do_tls_mutual_auth(host):
         p = TLS.from_records([client_cert, client_key_exchange])
         tls_socket.do_round_trip(p, recv=False)
 
-        sig = tls_socket.tls_ctx.compute_client_cert_verify(digest=Cryptodome.Hash.SHA256)
+        sig = tls_socket.tls_ctx.compute_client_cert_verify(digest=Sig_multi_PKCS1_v1_5)   #TLS1.0
+        #sig = tls_socket.tls_ctx.compute_client_cert_verify(digest=Cryptodome.Hash.SHA256)  #TLS1.2
+
+        #client_cert_verify = TLSRecord(version=tls_version) / \
+        #                     TLSHandshakes(handshakes=[TLSHandshake() /
+        #                                               TLS12CertificateVerify(alg=TLSSignatureScheme.RSA_PKCS1_SHA256,
+        #                                                                    sig=sig)])     #TLS1.2
 
         client_cert_verify = TLSRecord(version=tls_version) / \
                              TLSHandshakes(handshakes=[TLSHandshake() /
-                                                       TLSCertificateVerify(alg=TLSSignatureScheme.RSA_PKCS1_SHA256,
-                                                                            sig=sig)])
+                                                       TLSCertificateVerify(sig=sig)])      #TLS1.0
+
         tls_socket.do_round_trip(client_cert_verify, recv=False)
 
         client_ccs = TLSRecord(version=tls_version) / TLSChangeCipherSpec()
@@ -71,5 +78,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         server = (sys.argv[1], int(sys.argv[2]))
     else:
-        server = ("127.0.0.1", 8443)
+        server = ("10.102.59.251", 443)
     do_tls_mutual_auth(server)

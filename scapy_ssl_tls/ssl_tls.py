@@ -775,7 +775,7 @@ class TLSKeyExchange(Packet):
         pkt = self.underlayer
         # If our underlayer is a handshake, use the tls_ctx to determine
         # wheat KEX we are currently using
-        if pkt is not None and pkt.haslayer(TLSHandshake) and hasattr(pkt, "tls_ctx"):
+        if pkt is not None and (pkt.haslayer(TLSHandshake) or pkt.haslayer(DTLSHandshake)) and hasattr(pkt, "tls_ctx"):
             if pkt.tls_ctx is not None:
                 kex = pkt.tls_ctx.negotiated.key_exchange
                 return self.kex_payload_table.get(kex, Raw)
@@ -918,12 +918,16 @@ class TLSCertificateList(Packet):
             return TLS10Certificate
 
 
-class TLSCertificateVerify(PacketNoPayload):
+class TLS12CertificateVerify(PacketNoPayload):
     name = "TLS Certificate Verify"
     fields_desc = [ShortEnumField("alg", TLSSignatureScheme.RSA_PKCS1_SHA256, TLS_SIGNATURE_SCHEMES),
                    XFieldLenField("sig_length", None, length_of="sig", fmt="H"),  # ASN.1 signature element
                    StrLenField("sig", "", length_from=lambda x:x.sig_length)]
 
+class TLSCertificateVerify(PacketNoPayload):
+    name = "TLS Certificate Verify"
+    fields_desc = [XFieldLenField("sig_length", None, length_of="sig", fmt="H"),  # ASN.1 signature element
+                   StrLenField("sig", "", length_from=lambda x:x.sig_length)]
 
 class TLSCertificateType(PacketNoPayload):
     name = "TLS Certificate Type"
@@ -1101,6 +1105,26 @@ class TLSCiphertext(Packet):
     name = "TLS Ciphertext"
     fields_desc = [StrField("data", None, fmt="H")]
 
+class DTLSServerDHParams(PacketNoPayload):
+    name = "DTLS Diffie-Hellman Server Params"
+    fields_desc = [XFieldLenField("p_length", None, length_of="p", fmt="!H"),
+                   StrLenField("p", '', length_from=lambda x:x.p_length),
+                   XFieldLenField("g_length", None, length_of="g", fmt="!H"),
+                   StrLenField("g", '', length_from=lambda x:x.g_length),
+                   XFieldLenField("ys_length", None, length_of="y_s", fmt="!H"),
+                   StrLenField("y_s", "", length_from=lambda x:x.ys_length),
+                   XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
+                   StrLenField("sig", '', length_from=lambda x:x.sig_length)]
+
+
+class DTLSServerECDHParams(PacketNoPayload):
+    name = "DTLS EC Diffie-Hellman Server Params"
+    fields_desc = [ByteEnumField("curve_type", TLSECCurveTypes.NAMED_CURVE, TLS_EC_CURVE_TYPES),
+                   ShortEnumField("curve_name", TLSSupportedGroup.SECP256R1, TLS_SUPPORTED_GROUPS),
+                   XFieldLenField("p_length", None, length_of="p", fmt="!B"),
+                   StrLenField("p", '', length_from=lambda x:x.p_length),
+                   XFieldLenField("sig_length", None, length_of="sig", fmt="!H"),
+                   StrLenField("sig", '', length_from=lambda x:x.sig_length)]
 
 class DTLSRecord(PacketLengthFieldPayload):
     name = "DTLS Record"
@@ -1141,16 +1165,105 @@ class DTLSClientHello(PacketNoPayload):
                                        else False),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length)]
 
-SSLv2_CERTIFICATE_TYPES = {0x01: 'x509'}
-SSLv2CertificateType = EnumStruct(SSLv2_CERTIFICATE_TYPES)
-
-
 class DTLSHelloVerify(PacketNoPayload):
     name = "DTLS Hello Verify"
     fields_desc = [XShortEnumField("version", TLSVersion.DTLS_1_0, TLS_VERSIONS),
                    XFieldLenField("cookie_length", None, length_of="cookie", fmt="B"),
                    StrLenField("cookie", '', length_from=lambda x:x.cookie_length)]
 
+class DTLSServerHello(PacketNoPayload):
+    name = "DTLS Server Hello"
+    fields_desc = [XShortEnumField("version", TLSVersion.DTLS_1_0, TLS_VERSIONS),
+                   IntField("gmt_unix_time", int(time.time())),
+                   StrFixedLenField("random_bytes", os.urandom(28), 28),
+                   XFieldLenField("session_id_length", None, length_of="session_id", fmt="B"),
+                   StrLenField("session_id", os.urandom(20), length_from=lambda x:x.session_id_length),
+                   XShortEnumField("cipher_suite", TLSCipherSuite.RSA_WITH_AES_128_CBC_SHA, TLS_CIPHER_SUITES),
+                   ByteEnumField("compression_method", TLSCompressionMethod.NULL, TLS_COMPRESSION_METHODS),
+                   StrConditionalField(XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
+                                       lambda pkt, s, val: True if val or pkt.extensions or (s and struct.unpack("!H", s[:2])[0] == len(s) - 2) else False),
+                   TypedPacketListField("extensions", None, TLSExtension, length_from=lambda x:x.extensions_length, type_="DTLSServerHello")]
+
+class DTLSCertificateList(Packet):
+    name = "DTLS Certificate List"
+    fields_desc = []
+
+    def guess_payload_class(self, payload):
+        tls13_cert = TLS13Certificate(payload)
+        tls10_cert = TLS10Certificate(payload)
+        certs_len = lambda certs: len(b"".join([str(cert) for cert in certs.certificates]))
+        if tls13_cert.request_context_length == len(tls13_cert.request_context) and tls13_cert.length == certs_len(tls13_cert):
+            return TLS13Certificate
+        elif tls10_cert.length == certs_len(tls10_cert):
+            return TLS10Certificate
+        else:
+            pkt = self.underlayer
+            # If our underlayer is a handshake, use the tls_ctx to determine
+            # whether we are using a tls 1.3 cert or an older version
+            if pkt is not None and pkt.haslayer(TLSHandshake):
+                if pkt.tls_ctx is not None:
+                    if pkt.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+                        return TLS13Certificate
+            return TLS10Certificate
+
+class DTLSServerKeyExchange(TLSKeyExchange):
+    name = "DTLS Server Key Exchange"
+    kex_payload_table = {TLSKexNames.DHE: DTLSServerDHParams,
+                         TLSKexNames.ECDHE: DTLSServerECDHParams}
+
+    def guess_payload_class(self, payload):
+        dh_params = DTLSServerDHParams(payload)
+        ecdh_params = DTLSServerECDHParams(payload)
+        # Try to figure out what is the next Key Exchange layer
+        if dh_params.p_length == len(dh_params.p) and dh_params.g_length == len(dh_params.g) and \
+                        dh_params.ys_length == len(dh_params.y_s) and dh_params.sig_length == len(dh_params.sig):
+            return DTLSServerDHParams
+        elif ecdh_params.p_length == len(ecdh_params.p) and ecdh_params.sig_length == len(ecdh_params.sig):
+            return DTLSServerECDHParams
+        # If we don't have a match, fallback to the standard mechanism
+        else:
+            return TLSKeyExchange.guess_payload_class(payload)
+
+
+class DTLSServerHelloDone(PacketNoPayload):
+    name = "DTLS Server Hello Done"
+    fields_desc = []
+
+class DTLSClientKeyExchange(TLSKeyExchange):
+    name = "DTLS Client Key Exchange"
+    kex_payload_table = {TLSKexNames.RSA: TLSClientRSAParams,
+                         TLSKexNames.DHE: TLSClientDHParams,
+                         TLSKexNames.ECDHE: TLSClientECDHParams}
+
+    def guess_payload_class(self, payload):
+        ecdh_params = TLSClientECDHParams(payload)
+        # Try to figure out what is the next Key Exchange layer. Can only do this for ECDHE,
+        # since RSA and DHE parse in exactly the same way.
+        if ecdh_params.length == len(ecdh_params.data) and ecdh_params.data.startswith(b"\x04"):
+            return TLSClientECDHParams
+        else:
+            return TLSKeyExchange.guess_payload_class(self, payload)
+
+class DTLSCertificateVerify(PacketNoPayload):
+    name = "DTLS Certificate Verify "
+    fields_desc = [XFieldLenField("sig_length", None, length_of="sig", fmt="H"),  # ASN.1 signature element
+                   StrLenField("sig", "", length_from=lambda x:x.sig_length)]
+
+class DTLSFinished(PacketNoPayload):
+    name = "DTLS Handshake Finished"
+    fields_desc = [StrLenField("data", "", length_from=lambda x:x.underlayer.length)]
+
+class DTLSChangeCipherSpec(TLSDecryptablePacket):
+    name = "DTLS ChangeCipherSpec"
+    fields_desc = [StrField("message", '\x01', fmt="H")]
+
+class DTLSHelloRequest(Packet):
+    name = "DTLS Hello Request"
+    fields_desc = []
+
+
+SSLv2_CERTIFICATE_TYPES = {0x01: 'x509'}
+SSLv2CertificateType = EnumStruct(SSLv2_CERTIFICATE_TYPES)
 
 SSLv2_MESSAGE_TYPES = {
     0x01: 'client_hello',
@@ -1306,7 +1419,10 @@ class TLSSocket(object):
         self.close()
 
     def do_handshake(self, version, ciphers, extensions=[]):
-        return tls_do_handshake(self, version, ciphers, extensions)
+        if version == TLSVersion.DTLS_1_0:
+            return dtls_do_handshake(self, version, ciphers, extensions)
+        else:
+            return tls_do_handshake(self, version, ciphers, extensions)
 
     def do_round_trip(self, pkt, recv=True):
         return tls_do_round_trip(self, pkt, recv)
@@ -1335,7 +1451,7 @@ class SSL(Packet):
 
     def pre_dissect(self, raw_bytes):
         # figure out if we're UDP or TCP
-        if self.underlayer is not None and self.underlayer.haslayer(UDP):
+        if ord(raw_bytes[1]) == 0xfe and ord(raw_bytes[2]) == 0xff:
             self.guessed_next_layer = DTLSRecord
         elif ord(raw_bytes[0]) & 0x80:
             self.guessed_next_layer = SSLv2Record
@@ -1355,7 +1471,10 @@ class SSL(Packet):
         while pos < len(raw_bytes) - record_header_len:
             payload_len = record(raw_bytes[pos:pos + record_header_len]).length
             if self.tls_ctx is not None:
-                payload = record(raw_bytes[pos:pos + record_header_len + payload_len], ctx=self.tls_ctx)
+                if record == DTLSRecord:
+                    payload = record(raw_bytes[pos:pos + record_header_len + payload_len])
+                else:
+                    payload = record(raw_bytes[pos:pos + record_header_len + payload_len], ctx=self.tls_ctx)
                 # Perform inline decryption if required
                 payload = self.do_decrypt_payload(payload)
                 self.tls_ctx.insert(payload, origin=self._origin)
@@ -1372,7 +1491,7 @@ class SSL(Packet):
     def do_decrypt_payload(self, record):
         content_type = None
         encrypted_payload, layer = self._get_encrypted_payload(record)
-        if encrypted_payload is not None or self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+        if encrypted_payload is not None or (self.tls_ctx.negotiated.version >= TLSVersion.TLS_1_3 and self.tls_ctx.negotiated.version != TLSVersion.DTLS_1_0):
             try:
                 if self.tls_ctx.client:
                     cleartext = self.tls_ctx.server_ctx.crypto_ctx.decrypt(encrypted_payload,
@@ -1430,7 +1549,9 @@ def find_padding_start(payload, padding_byte=b"\x00"):
 cleartext_handler = {TLSPlaintext: lambda pkt, tls_ctx: (TLSContentType.APPLICATION_DATA, pkt[TLSPlaintext].data),
                      TLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt[TLSChangeCipherSpec])),
                      TLSAlert: lambda pkt, tls_ctx: (TLSContentType.ALERT, str(pkt[TLSAlert])), #}
-                     TLSHandshakes: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(pkt[TLSHandshakes]))}
+                     TLSHandshakes: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(pkt[TLSHandshakes])),
+                     DTLSChangeCipherSpec: lambda pkt, tls_ctx: (TLSContentType.CHANGE_CIPHER_SPEC, str(pkt[DTLSChangeCipherSpec])),
+                     DTLSHandshake: lambda pkt, tls_ctx: (TLSContentType.HANDSHAKE, str(pkt[DTLSHandshake]))}
 
 
 def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_hook=None, encrypt_hook=None):
@@ -1468,8 +1589,11 @@ def to_raw(pkt, tls_ctx, include_record=True, compress_hook=None, pre_encrypt_ho
         ciphertext = ctx.crypto_ctx.encrypt(crypto_container)
 
     if include_record:
-        if tls_ctx.negotiated.version >= TLSVersion.TLS_1_3:
+        if tls_ctx.negotiated.version >= TLSVersion.TLS_1_3 and tls_ctx.negotiated.version != TLSVersion.DTLS_1_0:
             tls_ciphertext = TLSRecord(content_type=TLSContentType.APPLICATION_DATA) / ciphertext
+        elif tls_ctx.negotiated.version == TLSVersion.DTLS_1_0:
+            tls_ciphertext = DTLSRecord(version=tls_ctx.negotiated.version, content_type=content_type, sequence=0,
+                                        epoch=1) / ciphertext
         else:
             tls_ciphertext = TLSRecord(version=tls_ctx.negotiated.version, content_type=content_type) / ciphertext
     else:
@@ -1534,6 +1658,32 @@ def tls_do_handshake(tls_socket, version, ciphers, extensions=[]):
         raise NotImplementedError("Do handshake not implemented for TLS 1.3")
 
 
+def dtls_do_handshake(tls_socket, version, ciphers, extensions=[]):
+    if version == TLSVersion.DTLS_1_0:
+        client_hello = DTLSRecord(version=version, sequence=0) / \
+                       DTLSHandshake(fragment_offset=0) / \
+                                                 DTLSClientHello(version=version,
+                                                                 compression_methods=TLSCompressionMethod.NULL,
+                                                                 cipher_suites=ciphers,
+                                                                 extensions=extensions)
+        resp1 = tls_do_round_trip(tls_socket, client_hello)
+        client_key_exchange = DTLSRecord(version=version, sequence=1) / \
+                                DTLSHandshake(fragment_offset=0, sequence=1) / DTLSClientKeyExchange() / \
+                                    tls_socket.tls_ctx.get_client_kex_data()
+
+        client_ccs = DTLSRecord(version=version, sequence=2) / DTLSChangeCipherSpec()
+        tls_do_round_trip(tls_socket, TLS.from_records([client_key_exchange, client_ccs]), False)
+
+        client_finished = DTLSRecord(version=version, sequence=0, epoch=1) / \
+                                DTLSHandshake(fragment_offset=0, sequence=2) / \
+                                        DTLSFinished(data=tls_socket.tls_ctx.get_verify_data())
+
+        resp2 = tls_do_round_trip(tls_socket, client_finished)
+        return resp1, resp2
+    else:
+        raise NotImplementedError("Invalid DTLS Version")
+
+
 def tls_fragment_payload(pkt, record=None, size=2**14):
     if size <= 0:
         raise ValueError("Fragment size must be strictly positive")
@@ -1585,6 +1735,7 @@ bind_layers(TLSHandshake, TLSFinished, {'type': TLSHandshakeType.FINISHED})
 bind_layers(TLSHandshake, TLSSessionTicket, {'type': TLSHandshakeType.NEWSESSIONTICKET})
 bind_layers(TLSHandshake, TLSCertificateRequest, {"type": TLSHandshakeType.CERTIFICATE_REQUEST})
 bind_layers(TLSHandshake, TLSCertificateVerify, {"type": TLSHandshakeType.CERTIFICATE_VERIFY})
+bind_layers(TLSHandshake, TLS12CertificateVerify, {"type": TLSHandshakeType.CERTIFICATE_VERIFY})
 bind_layers(TLSHandshake, TLSEncryptedExtensions, {"type": TLSHandshakeType.ENCRYPTED_EXTENSIONS})
 # <---
 
@@ -1610,7 +1761,16 @@ bind_layers(TLSExtension, TLSExtPreSharedKey, {'type': TLSExtensionType.PRE_SHAR
 
 # DTLSRecord
 bind_layers(DTLSRecord, DTLSHandshake, {'content_type': TLSContentType.HANDSHAKE})
+bind_layers(DTLSHandshake, DTLSHelloRequest, {'type': TLSHandshakeType.HELLO_REQUEST})
 bind_layers(DTLSHandshake, DTLSClientHello, {'type': TLSHandshakeType.CLIENT_HELLO})
+bind_layers(DTLSHandshake, DTLSServerHello, {'type': TLSHandshakeType.SERVER_HELLO})
+bind_layers(DTLSHandshake, DTLSServerKeyExchange, {'type': TLSHandshakeType.SERVER_KEY_EXCHANGE})
+bind_layers(DTLSHandshake, DTLSServerHelloDone, {'type': TLSHandshakeType.SERVER_HELLO_DONE})
+bind_layers(DTLSHandshake, DTLSCertificateList, {'type': TLSHandshakeType.CERTIFICATE})
+bind_layers(DTLSHandshake, DTLSClientKeyExchange, {'type': TLSHandshakeType.CLIENT_KEY_EXCHANGE})
+bind_layers(DTLSRecord, DTLSChangeCipherSpec, {'content_type': TLSContentType.CHANGE_CIPHER_SPEC})
+bind_layers(DTLSHandshake, DTLSCertificateVerify, {"type": TLSHandshakeType.CERTIFICATE_VERIFY})
+bind_layers(DTLSHandshake, DTLSFinished, {'type': TLSHandshakeType.FINISHED})
 
 # SSLv2
 bind_layers(SSLv2Record, SSLv2ServerHello, {'content_type': SSLv2MessageType.SERVER_HELLO})
