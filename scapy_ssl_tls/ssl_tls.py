@@ -2,6 +2,8 @@
 # -*- coding: UTF-8 -*-
 # Author : <github.com/tintinweb/scapy-ssl_tls>
 
+import os
+
 from scapy.packet import bind_layers, Packet, Raw
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
@@ -9,6 +11,7 @@ from scapy.layers import x509
 
 import scapy_ssl_tls.py3compat as py3compat
 import scapy_ssl_tls.ssl_tls_registry as registry
+
 
 class BLenField(LenField):
 
