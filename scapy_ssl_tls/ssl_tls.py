@@ -96,6 +96,8 @@ class XFieldLenField(FieldLenField):
 
 class BEnumField(EnumField):
 
+    __slots__ = ['numbytes', 'fmt', 'default', 'sz', 'owners']
+
     def __init__(self, name, default, enum, fmt="!I", numbytes=None):
         EnumField.__init__(self, name, default, enum, fmt)
         self.numbytes = numbytes
