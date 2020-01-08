@@ -931,7 +931,7 @@ class TLSCertificateType(PacketNoPayload):
 class TLSCADistinguishedName(PacketNoPayload):
     name = "TLS CA Distinguished Name"
     fields_desc = [XFieldLenField("length", None, length_of="dn", fmt="H"),
-                   PacketLenField("ca_dn", None, x509.X509v3Ext, length_from=lambda x:x.length)]
+                   PacketLenField("ca_dn", None, x509.X509_Extension, length_from=lambda x:x.length)]
 
 
 class TLSCertificateRequest(Packet):
