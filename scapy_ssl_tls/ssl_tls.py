@@ -868,7 +868,7 @@ class TLSServerHelloDone(PacketNoPayload):
 class TLSCertificate(PacketNoPayload):
     name = "TLS Certificate"
     fields_desc = [XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
-                   PacketLenField("data", None, x509.X509Cert, length_from=lambda x:x.length)]
+                   PacketLenField("data", None, x509.X509_Cert, length_from=lambda x:x.length)]
 
 
 class TLS10Certificate(PacketNoPayload):
@@ -880,7 +880,7 @@ class TLS10Certificate(PacketNoPayload):
 class TLSCertificateEntry(PacketNoPayload):
     name = "TLS Certificate Entry"
     fields_desc = [XBLenField("length", None, length_of="cert_data", fmt="!I", numbytes=3),
-                   PacketLenField("cert_data", None, x509.X509Cert, length_from=lambda x: x.length),
+                   PacketLenField("cert_data", None, x509.X509_Cert, length_from=lambda x: x.length),
                    XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x: x.extensions_length)]
 
