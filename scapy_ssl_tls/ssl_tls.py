@@ -15,6 +15,9 @@ import scapy_ssl_tls.ssl_tls_registry as registry
 
 class BLenField(LenField):
 
+    __slots__ = ['name', 'adjust_i2m', 'adjust_m2i', 'numbytes',
+                 'length_of', 'count_of', 'fmt', 'default', 'sz', 'owners']
+
     def __init__(
             self,
             name,
@@ -226,6 +229,8 @@ class TypedPacketListField(PacketListField):
     This is specifically used to handle the Key Share extension in TLS 1.3, where the parsing semantics
     change depending on which handshake packet type has defined the Key Share.
     """
+    __slots__ = ['type_']
+
     def __init__(self, name, default, cls, count_from=None, length_from=None, type_=None):
         self.type_ = type_
         PacketListField.__init__(self, name, default, cls, count_from=None, length_from=None)
