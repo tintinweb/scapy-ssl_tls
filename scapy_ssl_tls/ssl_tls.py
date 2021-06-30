@@ -2,6 +2,8 @@
 # -*- coding: UTF-8 -*-
 # Author : <github.com/tintinweb/scapy-ssl_tls>
 
+import os
+
 from scapy.packet import bind_layers, Packet, Raw
 from scapy.fields import *
 from scapy.layers.inet import TCP, UDP
@@ -10,7 +12,11 @@ from scapy.layers import x509
 import scapy_ssl_tls.py3compat as py3compat
 import scapy_ssl_tls.ssl_tls_registry as registry
 
+
 class BLenField(LenField):
+
+    __slots__ = ['name', 'adjust_i2m', 'adjust_m2i', 'numbytes',
+                 'length_of', 'count_of', 'fmt', 'default', 'sz', 'owners']
 
     def __init__(
             self,
@@ -89,6 +95,8 @@ class XFieldLenField(FieldLenField):
 
 
 class BEnumField(EnumField):
+
+    __slots__ = ['numbytes', 'fmt', 'default', 'sz', 'owners']
 
     def __init__(self, name, default, enum, fmt="!I", numbytes=None):
         EnumField.__init__(self, name, default, enum, fmt)
@@ -223,6 +231,8 @@ class TypedPacketListField(PacketListField):
     This is specifically used to handle the Key Share extension in TLS 1.3, where the parsing semantics
     change depending on which handshake packet type has defined the Key Share.
     """
+    __slots__ = ['type_']
+
     def __init__(self, name, default, cls, count_from=None, length_from=None, type_=None):
         self.type_ = type_
         PacketListField.__init__(self, name, default, cls, count_from=None, length_from=None)
@@ -860,7 +870,7 @@ class TLSServerHelloDone(PacketNoPayload):
 class TLSCertificate(PacketNoPayload):
     name = "TLS Certificate"
     fields_desc = [XBLenField("length", None, length_of="data", fmt="!I", numbytes=3),
-                   PacketLenField("data", None, x509.X509Cert, length_from=lambda x:x.length)]
+                   PacketLenField("data", None, x509.X509_Cert, length_from=lambda x:x.length)]
 
 
 class TLS10Certificate(PacketNoPayload):
@@ -872,7 +882,7 @@ class TLS10Certificate(PacketNoPayload):
 class TLSCertificateEntry(PacketNoPayload):
     name = "TLS Certificate Entry"
     fields_desc = [XBLenField("length", None, length_of="cert_data", fmt="!I", numbytes=3),
-                   PacketLenField("cert_data", None, x509.X509Cert, length_from=lambda x: x.length),
+                   PacketLenField("cert_data", None, x509.X509_Cert, length_from=lambda x: x.length),
                    XFieldLenField("extensions_length", None, length_of="extensions", fmt="H"),
                    PacketListField("extensions", None, TLSExtension, length_from=lambda x: x.extensions_length)]
 
@@ -923,7 +933,7 @@ class TLSCertificateType(PacketNoPayload):
 class TLSCADistinguishedName(PacketNoPayload):
     name = "TLS CA Distinguished Name"
     fields_desc = [XFieldLenField("length", None, length_of="dn", fmt="H"),
-                   PacketLenField("ca_dn", None, x509.X509v3Ext, length_from=lambda x:x.length)]
+                   PacketLenField("ca_dn", None, x509.X509_Extension, length_from=lambda x:x.length)]
 
 
 class TLSCertificateRequest(Packet):
