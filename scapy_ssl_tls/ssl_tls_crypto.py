@@ -20,10 +20,12 @@ import tinyec.ec as ec
 import tinyec.registry as ec_reg
 
 from collections import namedtuple
+
 from Cryptodome.Cipher import AES, ARC2, ARC4, DES, DES3, PKCS1_v1_5
 from Cryptodome.Hash import HMAC, MD5, SHA, SHA256, SHA384
 from Cryptodome.PublicKey import DSA, RSA
 from Cryptodome.Signature import PKCS1_v1_5 as Sig_PKCS1_v1_5
+from scapy_ssl_tls import multidigest_pkcs1_15 as Sig_multi_PKCS1_v1_5
 from scapy.packet import Raw
 
 # Added this to get all certificate dissection to work OK, without the need to import this in the client script
@@ -326,9 +328,9 @@ TLS Session Context:
                                                                      tls.TLS_CIPHER_SUITES.get(self.negotiated.ciphersuite, "UNKNOWN")))
         self.negotiated.encryption = (self.cipher_properties["cipher"]["name"], self.cipher_properties["cipher"]["key_len"],
                                       self.cipher_properties["cipher"]["mode_name"])
-        self.requires_iv = True if tls.TLSVersion.TLS_1_0 < self.negotiated.version < tls.TLSVersion.TLS_1_3 else False
+        self.requires_iv = True if ((tls.TLSVersion.TLS_1_0 < self.negotiated.version < tls.TLSVersion.TLS_1_3) or self.negotiated.version == tls.TLSVersion.DTLS_1_0) else False
 
-        if self.negotiated.version < tls.TLSVersion.TLS_1_3:
+        if self.negotiated.version < tls.TLSVersion.TLS_1_3 or self.negotiated.version == tls.TLSVersion.DTLS_1_0:
             self.__handle_tls12_server_hello(server_hello)
         # TlS 1.3 case. Extract KEX data from KeyShare extension
         else:
@@ -382,6 +384,37 @@ TLS Session Context:
                         warnings.warn("Unsupported elliptic curve: %s" % curve_name)
         else:
             warnings.warn("Unknown server key exchange")
+
+    def __handle_dtls_server_kex(self, server_kex):
+        # DHE case
+        if server_kex.haslayer(tls.DTLSServerDHParams):
+            if isinstance(self.server_ctx.kex_keystore, tlsk.EmptyKexKeystore):
+                p = tlsk.str_to_int(server_kex[tls.DTLSServerDHParams].p)
+                g = tlsk.str_to_int(server_kex[tls.DTLSServerDHParams].g)
+                public = tlsk.str_to_int(server_kex[tls.DTLSServerDHParams].y_s)
+                self.server_ctx.kex_keystore = tlsk.DHKeyStore(g, p, public)
+        elif server_kex.haslayer(tls.DTLSServerECDHParams):
+            if isinstance(self.server_ctx.kex_keystore, tlsk.EmptyKexKeystore):
+                try:
+                    curve_id = server_kex[tls.DTLSServerECDHParams].curve_name
+                    # TODO: DO NOT assume uncompressed EC points!
+                    point = tlsk.ansi_str_to_point(server_kex[tls.DTLSServerECDHParams].p)
+                    curve_name = tls.TLS_SUPPORTED_GROUPS[curve_id]
+                # Unknown curve case. Just record raw values, but do nothing with them
+                except KeyError:
+                    self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
+                    warnings.warn("Unknown elliptic curve id: %d. Client KEX calculation is up to you" % curve_id)
+                # We are on a known curve
+                else:
+                    try:
+                        curve = ec_reg.get_curve(curve_name)
+                        self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(curve, ec.Point(curve, *point))
+                    except ValueError:
+                        self.server_ctx.kex_keystore = tlsk.ECDHKeyStore(None, point)
+                        warnings.warn("Unsupported elliptic curve: %s" % curve_name)
+        else:
+            warnings.warn("Unknown server key exchange")
+
 
     def __handle_client_kex(self, client_kex):
         # Walk around a bug where tls_ctx is not defined, thus prevents correct parsing
@@ -467,7 +500,7 @@ TLS Session Context:
         self.__ccs_count += 1
 
     def __handle_finished(self, finished):
-        if self.negotiated.version >= tls.TLSVersion.TLS_1_3:
+        if self.negotiated.version >= tls.TLSVersion.TLS_1_3 and self.negotiated.version != tls.TLSVersion.DTLS_1_0:
             ctx = self.client_ctx
             verify_data = self.derive_client_finished()
             # This is the first finished in the connection, coming from the server. Transition to traffic secrets
@@ -513,23 +546,37 @@ TLS Session Context:
         """
         fill context
         """
-        if pkt.haslayer(tls.TLSHandshake):
+        if pkt.haslayer(tls.TLSHandshake) or pkt.haslayer(tls.DTLSHandshake):
             # requires handshake messages
             if pkt.haslayer(tls.TLSClientHello):
                 self.__handle_client_hello(pkt[tls.TLSClientHello])
+            if pkt.haslayer(tls.DTLSClientHello):
+                self.__handle_client_hello(pkt[tls.DTLSClientHello])
             if pkt.haslayer(tls.TLSServerHello):
                 self.__handle_server_hello(pkt[tls.TLSServerHello])
+            if pkt.haslayer(tls.DTLSServerHello):
+                self.__handle_server_hello(pkt[tls.DTLSServerHello])
             if pkt.haslayer(tls.TLSCertificateList):
                 self.__handle_cert_list(pkt[tls.TLSCertificateList])
+            if pkt.haslayer(tls.DTLSCertificateList):
+                self.__handle_cert_list(pkt[tls.DTLSCertificateList])
             if pkt.haslayer(tls.TLSServerKeyExchange):
                 self.__handle_server_kex(pkt[tls.TLSServerKeyExchange])
+            if pkt.haslayer(tls.DTLSServerKeyExchange):
+                self.__handle_dtls_server_kex(pkt[tls.DTLSServerKeyExchange])
             if pkt.haslayer(tls.TLSClientKeyExchange):
                 self.__handle_client_kex(pkt[tls.TLSClientKeyExchange])
+            if pkt.haslayer(tls.DTLSClientKeyExchange):
+                self.__handle_client_kex(pkt[tls.DTLSClientKeyExchange])
             if pkt.haslayer(tls.TLSFinished):
                 self.__handle_finished(pkt[tls.TLSFinished])
+            if pkt.haslayer(tls.DTLSFinished):
+                self.__handle_finished(pkt[tls.DTLSFinished])
             self.__handle_session_ticket(pkt)
         if pkt.haslayer(tls.TLSChangeCipherSpec):
             self.__handle_ccs(pkt[tls.TLSChangeCipherSpec], origin=origin)
+        if pkt.haslayer(tls.DTLSChangeCipherSpec):
+            self.__handle_ccs(pkt[tls.DTLSChangeCipherSpec], origin=origin)
 
     def _generate_random_pms(self, version):
         return "%s%s" % (struct.pack("!H", version), os.urandom(46))
@@ -572,11 +619,20 @@ TLS Session Context:
 
     def get_client_kex_data(self, val=None):
         if self.negotiated.key_exchange == tls.TLSKexNames.RSA:
-            return tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=self.get_encrypted_pms(val))
+            if self.negotiated.version == tls.TLSVersion.DTLS_1_0:
+                return tls.DTLSClientKeyExchange() / tls.TLSClientRSAParams(data=self.get_encrypted_pms(val))
+            else:
+                return tls.TLSClientKeyExchange() / tls.TLSClientRSAParams(data=self.get_encrypted_pms(val))
         elif self.negotiated.key_exchange == tls.TLSKexNames.DHE:
-            return tls.TLSClientKeyExchange() / tls.TLSClientDHParams(data=self.get_client_dh_pubkey(val))
+            if self.negotiated.version == tls.TLSVersion.DTLS_1_0:
+                return tls.DTLSClientKeyExchange() / tls.TLSClientDHParams(data=self.get_client_dh_pubkey(val))
+            else:
+                return tls.TLSClientKeyExchange() / tls.TLSClientDHParams(data=self.get_client_dh_pubkey(val))
         elif self.negotiated.key_exchange == tls.TLSKexNames.ECDHE:
-            return tls.TLSClientKeyExchange() / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
+            if self.negotiated.version == tls.TLSVersion.DTLS_1_0:
+                return tls.DTLSClientKeyExchange() / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
+            else:
+                return tls.TLSClientKeyExchange() / tls.TLSClientECDHParams(data=self.get_client_ecdh_pubkey(val))
         else:
             raise NotImplementedError("Key exchange unknown or currently not supported")
 
@@ -600,6 +656,10 @@ TLS Session Context:
                 for handshake in pkt[tls.TLSHandshakes].handshakes:
                     if not handshake.haslayer(tls.TLSHelloRequest):
                         yield handshake
+            if pkt.haslayer(tls.DTLSHandshake):
+                for handshake in pkt[tls.DTLSHandshake]:
+                    if not handshake.haslayer(tls.DTLSHelloRequest):
+                        yield handshake
 
     def _derive_finished(self, secret, hash_):
         return HMAC.new(secret, hash_, digestmod=self.prf.digest).digest()
@@ -615,7 +675,7 @@ TLS Session Context:
         return self._derive_finished(self.client_ctx.finished_secret, self.get_handshake_hash(self.prf.digest, tls.TLSFinished, True))
 
     def get_verify_data(self, data=None):
-        if self.negotiated.version >= tls.TLSVersion.TLS_1_3:
+        if self.negotiated.version >= tls.TLSVersion.TLS_1_3 and self.negotiated.version != tls.TLSVersion.DTLS_1_0:
             if self.client:
                 prf_verify_data = self.derive_client_finished()
             else:
@@ -632,6 +692,10 @@ TLS Session Context:
                         # Special case of encrypted handshake. Remove crypto material to compute verify_data
                         verify_data.append("%s%s%s" % (chr(handshake.type), struct.pack(">I", handshake.length)[1:],
                                                        handshake[tls.TLSFinished].data))
+                    elif handshake.haslayer(tls.DTLSFinished):
+                        # Special case of encrypted handshake. Remove crypto material to compute verify_data
+                        verify_data.append("%s%s%s" % (chr(handshake.type), struct.pack(">I", handshake.length)[1:],
+                                                       handshake[tls.DTLSFinished].data))
                     else:
                         verify_data.append(str(handshake))
             else:
@@ -667,8 +731,13 @@ TLS Session Context:
         """Legacy way to get the certificate verify hash. Added sig as last parameter to preserve prior use"""
         if self.client_ctx.asym_keystore.private is None:
             raise RuntimeError("Missing client private key. Can't sign")
-        msg_hash = self.get_handshake_digest(hash_)
-        msg_hash = pre_sign_hook(msg_hash)
+
+        if self.negotiated.version == tls.TLSVersion.TLS_1_2:
+            msg_hash = self.get_handshake_digest(hash_)
+            msg_hash = pre_sign_hook(msg_hash)
+        else:
+            msg_hash = self.get_handshake_digest(MD5.new()).digest() + self.get_handshake_digest(SHA.new()).digest()
+
         # Will throw exception if we can't sign or if data is larger the modulus
         return sig.new(self.client_ctx.asym_keystore.private).sign(msg_hash)
 
@@ -687,15 +756,18 @@ TLS Session Context:
         return self._compute_cert_verify(self.server_ctx, hash_, sig_label, sig, digest, pre_sign_hook)
 
     def compute_client_cert_verify(self, sig=Sig_PKCS1_v1_5, digest=SHA256, pre_sign_hook=lambda x: x):
-        if self.negotiated.version >= tls.TLSVersion.TLS_1_3:
+        '''For TLS1.0, TLS1.1 and DTLS1.0, the certificate verify message digest is calculated by joining the MD5 and SHA1 digest of the handshake messages'''
+        if self.negotiated.version >= tls.TLSVersion.TLS_1_3 and self.negotiated.version != tls.TLSVersion.DTLS_1_0:
             sig_label = b"TLS 1.3, client CertificateVerify"
             if self.prf is None:
                 raise RuntimeError("PRF must be initialized prior to computing TLS 1.3 signature")
             # TODO: calculate handshake hash properly until the second tls.TLSCertificateList for client based certs
             hash_ = self.get_handshake_hash(self.prf.digest, tls.TLSCertificateList)
             return self._compute_cert_verify(self.server_ctx, hash_, sig_label, sig, digest, pre_sign_hook)
-        else:
+        elif self.negotiated.version == tls.TLSVersion.TLS_1_2:
             return self.get_client_signed_handshake_hash(digest.new(), pre_sign_hook, sig)
+        else:
+            return self.get_client_signed_handshake_hash(None, pre_sign_hook, Sig_multi_PKCS1_v1_5)
 
     def set_mode(self, client=None, server=None):
         self.client = client if client else not server
@@ -728,7 +800,7 @@ class TLSPRF(object):
                 self.digest = digest
 
     def get_bytes(self, key, label, random, num_bytes):
-        if self.tls_version >= tls.TLSVersion.TLS_1_2:
+        if self.tls_version >= tls.TLSVersion.TLS_1_2 and self.tls_version != tls.TLSVersion.DTLS_1_0:
             bytes_ = self._get_bytes(self.digest, key, label, random, num_bytes)
         else:
             key_len = (len(key) + 1) // 2
@@ -1220,7 +1292,11 @@ class CBCCryptoContainer(CryptoContainer):
         return CBCCryptoContainer.from_context(tls_ctx, ctx, crypto_data)
 
     def __mac(self):
-        sequence_ = struct.pack("!Q", self.crypto_data.sequence)
+        if self.crypto_data.version == tls.TLSVersion.DTLS_1_0:
+            epoch_ = 1
+            sequence_ = struct.pack("!H6B", epoch_,0, 0, 0, 0, 0, 0)
+        else:
+            sequence_ = struct.pack("!Q", self.crypto_data.sequence)
         content_type_ = struct.pack("!B", self.crypto_data.content_type)
         version_ = struct.pack("!H", self.crypto_data.version)
         len_ = struct.pack("!H", self.crypto_data.data_len)
